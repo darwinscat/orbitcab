@@ -1,42 +1,39 @@
-# OrbitCab — Free Open-Source IR Cabinet Loader (VST3 / AU / CLAP)
+# OrbitCab
 
-Load a guitar or bass cabinet impulse response (`.wav`) and hear your DI through it,
-in any DAW. Free and open-source — no account, no trial, no lock-in. Zero-latency
-convolution; VST3 · AU · CLAP, for Windows, macOS, and Linux. *A cabinet on orbit.*
-
-**OrbitCab** is part of the **Felitronics** plugin line by **Darwin's Cat** — the
-sound-utils ecosystem ([darwinscat.com/orbitcab](https://darwinscat.com/orbitcab)).
-
----
-
-<!-- TODO @release: add a UI screenshot/GIF at the top here, e.g. ![OrbitCab](docs/screenshot.png) -->
-
-## What it is
-
-Drop in a cabinet impulse response and OrbitCab plays your signal through it — the
-software version of micing a real cab. Run two IRs at once and blend between them,
-shape each with HPF / LPF / trim / phase / dry-wet, A/B your settings, and save it all
-in your DAW session. Bundled cabinet packs get you started; drag and drop your own
-anytime.
-
-OrbitCab is the cabinet, not the amp — place it **after** your amp sim, preamp, or
-Neural Amp Modeler (NAM) amp-head capture. NAM gives you the amp; OrbitCab gives you
-the cabinet.
+Free, open-source impulse-response (IR) cabinet loader for electric guitar and bass.
+Load a cabinet IR and hear your DI through it — in any DAW.
 
 ## Features
 
-- Load IRs by file/folder browser or drag-and-drop, plus bundled cabinet packs
-- Two IR slots (I / II), each with HPF · LPF · trim · phase · dry/wet
-- A↔B blend between the two slots
+- Two IR slots with A↔B blend
+- Per-slot HPF, LPF, trim, phase, and dry/wet
 - A/B/C/D snapshots, undo/redo, auto-level, live spectrum
+- File/folder browser and drag-and-drop loading; bundled cabinet packs
 - Presets that export/import with the IR embedded
-- State saved in the DAW session, and versioned so updates don't break old sessions
+- Session state is versioned, so updates don't break old projects
 
-## Download
+## Install
 
-Get the VST3, AU, CLAP, and standalone builds for Windows, macOS, and Linux from the
-[**Releases**](https://github.com/darwinscat/orbitcab/releases/latest) page, then drop
-the plugin into your system plugin folder and rescan in your DAW.
+Download the latest build for Windows, macOS, or Linux from the
+[Releases](https://github.com/darwinscat/orbitcab/releases/latest) page, copy the plugin
+into your system plugin folder, and rescan in your DAW. A standalone app is included for
+use without a DAW.
+
+| Format | Platforms |
+|--------|-----------|
+| VST3   | Windows, macOS, Linux |
+| CLAP   | Windows, macOS, Linux |
+| AU     | macOS |
+| AAX (Pro Tools) | Not supported |
+
+> No AAX/Pro Tools build: the AAX SDK needs Avid approval and PACE/iLok signing, which
+> can't be shipped with a free, open-source plugin.
+
+## Usage
+
+OrbitCab is a cabinet, not an amp. Place it after your amp sim, preamp, or amp-head
+capture (e.g. Neural Amp Modeler): the amp shapes the gain, OrbitCab supplies the speaker
+cabinet. Load an IR into a slot, optionally load a second, and blend the two.
 
 ## Build from source
 
@@ -45,38 +42,20 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-The first configure fetches and builds JUCE (pinned tag); artefacts land in
-`build/OrbitCab_artefacts/`. See [`docs/BUILD.md`](docs/BUILD.md) for validation
-(`auval`, `pluginval`) and cutting a release.
-
-## Formats
-
-| Format | Platforms | SDK license |
-|--------|-----------|-------------|
-| **VST3** | Windows · macOS · Linux — all DAWs | MIT |
-| **AU**   | macOS — Logic / GarageBand | Apple, Apache-2.0 SDK |
-| **CLAP** | Windows · macOS · Linux — Reaper / Bitwig / FL / Studio One / Ardour | MIT (`clap-juce-extensions`) |
-| **Standalone** | Windows · macOS · Linux — no DAW needed | — |
+The first configure fetches and builds JUCE (pinned). Artefacts are written to
+`build/OrbitCab_artefacts/`. See [docs/BUILD.md](docs/BUILD.md) for validation and packaging.
 
 ## License
 
-**GNU AGPLv3 or later** (see [`LICENSE`](LICENSE)). OrbitCab is free and open source;
-if you distribute it — modified or not — you must pass the corresponding source along
-under the same license (AGPL §13's network clause adds nothing for a locally-run
-plugin). It links the **JUCE** framework under JUCE's AGPLv3 option (JUCE is
-dual-licensed AGPLv3 / commercial). Third-party SDK, font, and bundled-IR notices are
-in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The OrbitCab / Darwin's Cat names
-and logos are trademarks and are **not** covered by the code license.
-
-## Docs
-
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — signal chain, state model, code layout
-- [`docs/IR-LOADER-DESIGN.md`](docs/IR-LOADER-DESIGN.md) — IR loader design
-- [`docs/BUILD.md`](docs/BUILD.md) — how to build, validate, and cut a release
-- [`docs/CODING-STYLE.md`](docs/CODING-STYLE.md) — style conventions + `.clang-format`
-- [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md) — per-asset ledger for bundled IRs + test audio
+[AGPL-3.0-or-later](LICENSE). You may use, modify, and redistribute OrbitCab; if you
+distribute it, you must make the corresponding source available under the same license.
+Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The "OrbitCab"
+and "Darwin's Cat" names and logos are trademarks, not covered by the code license.
 
 ## Contributing
 
-Issues and PRs are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Changes to `main`
-go through a reviewed pull request.
+Bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+OrbitCab is part of the Felitronics line by [Darwin's Cat](https://darwinscat.com/orbitcab).
