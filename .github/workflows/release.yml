@@ -130,7 +130,15 @@ jobs:
           path: dist/*
 
   linux:
-    runs-on: ubuntu-latest
+    # Native x86_64 + arm64 — both are free hosted runners for public repos, so it's a
+    # real native build on each arch (no cross-compile, no QEMU).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,    arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64  }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
@@ -160,10 +168,10 @@ jobs:
           # -e not -d: a Linux .clap is a single .so-style FILE, not a macOS-style bundle dir.
           if [ -e "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
           if [ -f "$REL/Standalone/OrbitCab" ];  then cp "$REL/Standalone/OrbitCab" stage/; fi
-          tar -C stage -czf "dist/OrbitCab-$VER-Linux.tar.gz" .
+          tar -C stage -czf "dist/OrbitCab-$VER-Linux-${{ matrix.arch }}.tar.gz" .
       - uses: actions/upload-artifact@v7
         with:
-          name: linux
+          name: linux-${{ matrix.arch }}
           path: dist/*
 
   release:
