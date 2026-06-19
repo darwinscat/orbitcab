@@ -29,7 +29,7 @@ use without a DAW.
 | Standalone | Windows, macOS, Linux |
 | AAX (Pro Tools) | Not supported |
 
-macOS builds are universal (Apple Silicon + Intel); Windows is x64; Linux ships x86_64 and arm64.
+macOS builds are universal (Apple Silicon + Intel); Windows ships x64 and arm64; Linux ships x86_64 and arm64.
 
 > No AAX/Pro Tools build: the AAX SDK needs Avid approval and PACE/iLok signing, which
 > can't be shipped with a free, open-source plugin.
