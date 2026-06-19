@@ -4,6 +4,7 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "../core/IRMath.h"
 
 #include <functional>
 #include <vector>
@@ -550,24 +551,9 @@ private:
         // (threshold 0.001 x peak, ~0.2 ms pre-roll, ignore < 0.5 ms) so the indicator
         // matches exactly what HEAD trim removes.
         {
-            float pk = 0.0f;
-            for (int c = 0; c < buf.getNumChannels(); ++c)
-                pk = juce::jmax (pk, buf.getMagnitude (c, 0, n));
-            int onset = n;
-            if (pk > 0.0f)
-            {
-                const float th = 0.001f * pk;
-                for (int c = 0; c < buf.getNumChannels() && onset > 0; ++c)
-                {
-                    const float* d = buf.getReadPointer (c);
-                    for (int i = 0; i < onset; ++i)
-                        if (std::abs (d[i]) > th) { onset = i; break; }
-                }
-            }
-            const int lead = juce::jmax (0, onset - (int) (0.0002 * sr));
-            const bool meaningful = lead > (int) (0.0005 * sr) && n > 0;
-            leadFraction = meaningful ? (float) lead / (float) n : 0.0f;
-            leadMs       = meaningful ? lead / sr * 1000.0 : 0.0;
+            const int lead = cab::detectLeadingSilence (buf, n, sr);
+            leadFraction = (lead > 0 && n > 0) ? (float) lead / (float) n : 0.0f;
+            leadMs       =  lead > 0 ? lead / sr * 1000.0 : 0.0;
         }
 
         const double ms = reader->sampleRate > 0.0 ? n / reader->sampleRate * 1000.0 : 0.0;

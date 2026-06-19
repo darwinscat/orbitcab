@@ -332,6 +332,19 @@ void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
 //==============================================================================
 // A/B/C/D compare — snapshot registers (full settings, live-register model).
 //==============================================================================
+void OrbitCabAudioProcessor::writeIRRefs (juce::ValueTree& ir) const
+{
+    // The per-slot IR references — shared by the session tree (buildStateTree) and the
+    // A/B/C/D snapshots (captureStateTree) so the two can't drift.
+    ir.setProperty ("aBundled", slotBundledA,      nullptr);
+    ir.setProperty ("aRef",     slotRefA,          nullptr);
+    ir.setProperty ("aTrim",    trimFractionA,     nullptr);
+    ir.setProperty ("bLoaded",  slotBLoaded.load(), nullptr);
+    ir.setProperty ("bBundled", slotBundledB,      nullptr);
+    ir.setProperty ("bRef",     slotRefB,          nullptr);
+    ir.setProperty ("bTrim",    trimFractionB,     nullptr);
+}
+
 juce::ValueTree OrbitCabAudioProcessor::captureStateTree()
 {
     // A snapshot of the live state: the parameter tree + the per-slot IR references.
@@ -340,13 +353,7 @@ juce::ValueTree OrbitCabAudioProcessor::captureStateTree()
     t.appendChild (apvts.copyState(), nullptr);
 
     juce::ValueTree ir ("IR");
-    ir.setProperty ("aBundled", slotBundledA,    nullptr);
-    ir.setProperty ("aRef",     slotRefA,         nullptr);
-    ir.setProperty ("aTrim",    trimFractionA,    nullptr);
-    ir.setProperty ("bLoaded",  slotBLoaded.load(), nullptr);
-    ir.setProperty ("bBundled", slotBundledB,    nullptr);
-    ir.setProperty ("bRef",     slotRefB,         nullptr);
-    ir.setProperty ("bTrim",    trimFractionB,    nullptr);
+    writeIRRefs (ir);
     t.appendChild (ir, nullptr);
     return t;
 }
@@ -562,13 +569,7 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
     root.appendChild (apvts.copyState(), nullptr);
 
     juce::ValueTree ir ("IR");
-    ir.setProperty ("aBundled", slotBundledA, nullptr);
-    ir.setProperty ("aRef",     slotRefA,     nullptr);
-    ir.setProperty ("aTrim",    trimFractionA, nullptr);
-    ir.setProperty ("bLoaded",  slotBLoaded.load(), nullptr);
-    ir.setProperty ("bBundled", slotBundledB, nullptr);
-    ir.setProperty ("bRef",     slotRefB,     nullptr);
-    ir.setProperty ("bTrim",    trimFractionB, nullptr);
+    writeIRRefs (ir);
     ir.setProperty ("userIRs",  userIRPaths.joinIntoString ("\n"), nullptr);   // user-IR history
     root.appendChild (ir, nullptr);
 

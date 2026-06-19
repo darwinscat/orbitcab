@@ -225,6 +225,7 @@ private:
     int activeSnapshot = 0;
     juce::ValueTree captureStateTree();
     void applyStateTree (const juce::ValueTree& tree);
+    void writeIRRefs (juce::ValueTree& ir) const;   // the shared per-slot IR-ref properties
 
     // Builds the full state tree (params + IR refs + snapshots + embedded IR pool) shared by
     // getStateInformation (session, keeps paths) and getStateForPreset (portable, paths stripped).
