@@ -87,4 +87,6 @@ private:
                                                  juce::dsp::WindowingFunction<float>::hann };
     std::array<float, 2 * OrbitCabAudioProcessor::fftSize> fftData {};
     std::vector<float> preBins, postBins, specRaw;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumAnalyser)
 };

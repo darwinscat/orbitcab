@@ -601,4 +601,6 @@ private:
     bool  hpfOn = false, lpfOn = false;
     float hpfHz = 80.0f,  hpfMin = 30.0f,   hpfMax = 180.0f;
     float lpfHz = 7000.0f, lpfMin = 4000.0f, lpfMax = 12000.0f;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformDisplay)
 };
