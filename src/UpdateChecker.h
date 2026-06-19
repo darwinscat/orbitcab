@@ -8,17 +8,17 @@
 #include <functional>
 
 //==============================================================================
-// orbitcab::UpdateChecker — opt-in update check. Queries the live
-// version controller ONLY when checkNow() is called from a user
-// click — NEVER silently. The plugin does not compare versions; the server returns
-// `outdated` (bool) and the plugin obeys. Result is persisted in a global
-// PropertiesFile so the "update available" badge survives restarts and is shared
+// orbitcab::UpdateChecker — opt-in update check. Queries GitHub Releases ONLY when
+// checkNow() is called from a user click — NEVER silently. The plugin reads the latest
+// release tag and compares it to the installed version itself. Result is persisted in a
+// global PropertiesFile so the "update available" badge survives restarts and is shared
 // across all instances of the plugin.
 //
-// Contract (prod):
-//   GET https://darwinscat.com/api/latest?product=orbitcab&v=<M.M.P>
-//   200 -> { schema, latest, outdated, url, notes? }   (notes optional)
-//   400 = bad version, 404 = unknown product. Any non-200 / timeout / no network
+// Contract:
+//   GET https://api.github.com/repos/darwinscat/orbitcab/releases/latest
+//   200 -> { tag_name: "vX.Y.Z", html_url, name, ... } — we read tag_name (strip 'v'),
+//          compare it to the installed version, and expose html_url as the download page.
+//   404 = no releases yet, 403 = rate-limited; any non-200 / timeout / no network
 //   => silent no-op (this is an opt-in, non-blocking check).
 //
 // Lives in the adapter layer (host glue: network + storage). The cab:: DSP core is

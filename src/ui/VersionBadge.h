@@ -141,7 +141,7 @@ private:
             }
             if (res.outdated)
                 showUpdate (res.latest, juce::URL (res.url.isNotEmpty() ? res.url
-                                                                        : juce::String ("https://darwinscat.com/download/orbitcab/")));
+                                                                        : juce::String ("https://github.com/darwinscat/orbitcab/releases/latest")));
             else
             {
                 result.setColour (juce::Label::textColourId, juce::Colour (0xff7be29a));   // green
