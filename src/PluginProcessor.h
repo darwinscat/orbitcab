@@ -181,7 +181,7 @@ private:
 
     juce::AudioFormatManager formatManager;
     void loadBundledIR();
-    void loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA);
+    bool loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA);   // true on a successful decode
 
     // The decoded IR + TRIM/HEAD math now live in the core's cab::IRSlot (one per slot);
     // the adapter keeps only the persisted drag position + the loaded flag. Message-thread.

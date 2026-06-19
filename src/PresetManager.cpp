@@ -36,6 +36,10 @@ juce::File PresetManager::saveAs (const juce::String& name)
 
 bool PresetManager::loadFrom (const juce::File& file)
 {
+    // Refuse an absurdly large preset outright (a legit one with embedded IRs is tens of MB)
+    // so a crafted/corrupt file can't be slurped into memory and OOM the host.
+    if (file.getSize() > 256LL * 1024 * 1024)
+        return false;
     juce::MemoryBlock block;
     if (! file.loadFileAsData (block))
         return false;

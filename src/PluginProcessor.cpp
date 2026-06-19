@@ -15,6 +15,10 @@ namespace
     // "don't load big files" guard — longer files are truncated on load.
     constexpr double kMaxIRSeconds = 20.0;
 
+    // Hard ceiling on a single embedded-IR blob when loading a session/preset — a legit
+    // 20 s IR is a few MB, so this just stops a crafted/corrupt file from OOM-ing the host.
+    constexpr size_t kMaxEmbeddedIRBytes = 64u * 1024u * 1024u;   // 64 MB / entry
+
     // Encode a (capped) IR buffer to a 24-bit WAV blob for self-contained sessions.
     bool encodeBufferToWav (const juce::AudioBuffer<float>& buf, double sr, juce::MemoryBlock& out)
     {
@@ -119,14 +123,14 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
         applyTrimAndLoad (false);
 }
 
-void OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)
+bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)
 {
     // Shared IR-load path (bundled + user files, either slot). Decode the whole IR and
     // hand it to the slot's core cab::IRSlot, which keeps it so TRIM can re-truncate
     // without re-decoding. A fresh IR starts untrimmed. Loaded AS-IS (Normalise::no): the
     // live wet->dry match does the leveling. Stereo::yes => mono IR applied to L+R.
     if (reader == nullptr || reader->lengthInSamples <= 0)
-        return;
+        return false;                                 // unreadable / empty — caller leaves the slot untouched
 
     const double srLoaded = reader->sampleRate > 0.0 ? reader->sampleRate : currentSampleRate;
 
@@ -147,6 +151,7 @@ void OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormat
         slotBLoaded.store (true, std::memory_order_relaxed);
 
     applyTrimAndLoad (slotA);
+    return true;
 }
 
 void OrbitCabAudioProcessor::setTrim (float fraction01, bool slotA)
@@ -181,14 +186,19 @@ void OrbitCabAudioProcessor::loadBundledIR()
     if (auto* r = formatManager.createReaderFor (std::make_unique<juce::MemoryInputStream> (
             BinaryData::_01cookiemonster_wav, (size_t) BinaryData::_01cookiemonster_wavSize, false)))
     {
-        loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (r), true);
-        slotRefA = "01-cookie-monster.wav";
-        slotBundledA = true;
-        return;
+        if (loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (r), true))
+        {
+            slotRefA = "01-cookie-monster.wav";
+            slotBundledA = true;
+            return;
+        }
     }
 
     // Fallback: byte-array load with JUCE's own normalisation (via the slot's convolver).
+    // No decoded original here (so TRIM is a no-op), but keep the slot ref consistent.
     engine.slotLoadBytesFallback (0, BinaryData::_01cookiemonster_wav, (size_t) BinaryData::_01cookiemonster_wavSize);
+    slotRefA = "01-cookie-monster.wav";
+    slotBundledA = true;
 }
 
 void OrbitCabAudioProcessor::loadIRFromFile (const juce::File& file, bool slotA)
@@ -196,7 +206,8 @@ void OrbitCabAudioProcessor::loadIRFromFile (const juce::File& file, bool slotA)
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader == nullptr)
         return;                                       // unreadable / missing → leave the slot as-is
-    loadIRFromReader (std::move (reader), slotA);
+    if (! loadIRFromReader (std::move (reader), slotA))
+        return;                                       // decode failed → leave the slot as-is
     const auto path = file.getFullPathName();
     (slotA ? slotRefA : slotRefB) = path;
     (slotA ? slotBundledA : slotBundledB) = false;
@@ -225,13 +236,15 @@ void OrbitCabAudioProcessor::loadIRRef (const juce::String& ref, bool bundled, b
     // Prefer this session's embedded bytes (survives a moved file / another machine).
     if (auto it = embeddedIRs.find (ref); it != embeddedIRs.end() && it->second.getSize() > 0)
     {
-        loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
-            std::make_unique<juce::MemoryInputStream> (it->second.getData(), it->second.getSize(), false))), slotA);
-        (slotA ? slotRefA : slotRefB) = ref;
-        (slotA ? slotBundledA : slotBundledB) = false;
-        return;
+        if (loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
+            std::make_unique<juce::MemoryInputStream> (it->second.getData(), it->second.getSize(), false))), slotA))
+        {
+            (slotA ? slotRefA : slotRefB) = ref;
+            (slotA ? slotBundledA : slotBundledB) = false;
+            return;
+        }
     }
-    loadIRFromFile (juce::File (ref), slotA);          // fall back to disk (also re-caches bytes)
+    loadIRFromFile (juce::File (ref), slotA);          // embedded missing/corrupt → fall back to disk
 }
 
 void OrbitCabAudioProcessor::addUserIR (const juce::File& file)
@@ -250,8 +263,9 @@ void OrbitCabAudioProcessor::loadIRFromMemory (const void* data, size_t sizeInBy
 {
     // Bundled IR: wrap the embedded bytes in a stream and reuse the shared path.
     // `false` => the stream does not own/copy the data (it's a static BinaryData blob).
-    loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
-        std::make_unique<juce::MemoryInputStream> (data, sizeInBytes, false))), slotA);
+    if (! loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
+        std::make_unique<juce::MemoryInputStream> (data, sizeInBytes, false))), slotA))
+        return;                                       // bad bytes → don't claim the slot loaded
     (slotA ? slotRefA : slotRefB) = bundledName;
     (slotA ? slotBundledA : slotBundledB) = true;
 }
@@ -645,8 +659,10 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                 const juce::String b64  = e.getProperty ("wav").toString();
                 if (path.isEmpty() || b64.isEmpty())
                     continue;
+                if ((size_t) b64.getNumBytesAsUTF8() / 4 * 3 > kMaxEmbeddedIRBytes)
+                    continue;                          // oversized blob (crafted/corrupt) → skip, don't OOM
                 juce::MemoryOutputStream mos;
-                if (juce::Base64::convertFromBase64 (mos, b64))
+                if (juce::Base64::convertFromBase64 (mos, b64) && mos.getDataSize() <= kMaxEmbeddedIRBytes)
                     embeddedIRs[path] = juce::MemoryBlock (mos.getData(), mos.getDataSize());
             }
 
