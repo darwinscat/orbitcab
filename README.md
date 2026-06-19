@@ -26,6 +26,7 @@ use without a DAW.
 | VST3   | Windows, macOS, Linux |
 | CLAP   | Windows, macOS, Linux |
 | AU     | macOS |
+| Standalone | Windows, macOS, Linux |
 | AAX (Pro Tools) | Not supported |
 
 > No AAX/Pro Tools build: the AAX SDK needs Avid approval and PACE/iLok signing, which
