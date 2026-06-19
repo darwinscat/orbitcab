@@ -1,0 +1,30 @@
+# OrbitCab house style (JUCE-flavoured) — see docs/CODING-STYLE.md.
+#
+# Editors and a manual `clang-format -i` use this. It is NOT auto-applied in CI yet:
+# reformatting the whole tree is a separate, dedicated pass (one noisy commit, on its
+# own). `ColumnLimit: 0` keeps clang-format from reflowing the carefully hand-aligned
+# lines — it normalises spacing/braces without rewrapping.
+---
+Language:        Cpp
+BasedOnStyle:    LLVM
+Standard:        c++20
+
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+ColumnLimit:     0
+
+BreakBeforeBraces:               Allman      # `{` on its own line for funcs/classes/blocks
+SpaceBeforeParens:               Always      # JUCE: `foo (args)`, `if (x)`
+Cpp11BracedListStyle:            false       # spaces inside braced init: `{ 1.0f }`
+PointerAlignment:                Left        # `float* p`, not `float *p`
+NamespaceIndentation:            None
+AccessModifierOffset:            -4
+AlignAfterOpenBracket:           Align
+
+AllowShortFunctionsOnASingleLine:   Inline   # one-line getters in headers are fine
+AllowShortBlocksOnASingleLine:      Never
+AllowShortIfStatementsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks:   false
+MaxEmptyLinesToKeep:                1
+SortIncludes:                       false    # include order is intentional, don't shuffle

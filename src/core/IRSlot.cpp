@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+
+#include "IRSlot.h"
+
+#include <cmath>
+
+namespace cab
+{
+
+namespace
+{
+    // Leading-silence onset. First sample (any channel) above 0.001 x peak,
+    // minus a ~0.2 ms pre-roll so the transient's leading edge isn't clipped. Returns 0
+    // when nothing meaningful precedes the onset (no useless 1-sample trims).
+    int detectLeadingSilence (const juce::AudioBuffer<float>& buf, double sampleRate)
+    {
+        const int total = buf.getNumSamples();
+        const int nch   = buf.getNumChannels();
+        if (total <= 0 || nch <= 0)
+            return 0;
+
+        float peak = 0.0f;
+        for (int ch = 0; ch < nch; ++ch)
+            peak = juce::jmax (peak, buf.getMagnitude (ch, 0, total));
+        if (peak <= 0.0f)
+            return 0;
+
+        const float thresh = 0.001f * peak;
+        int onset = total;
+        for (int ch = 0; ch < nch && onset > 0; ++ch)
+        {
+            const float* d = buf.getReadPointer (ch);
+            for (int i = 0; i < onset; ++i)
+                if (std::abs (d[i]) > thresh) { onset = i; break; }
+        }
+
+        const int preRoll = (int) (0.0002 * sampleRate);    // ~0.2 ms
+        const int lead    = juce::jmax (0, onset - preRoll);
+        return lead > (int) (0.0005 * sampleRate) ? lead : 0;
+    }
+}
+
+//==============================================================================
+void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
+{
+    conv.prepare (sampleRate, maxBlock, numChannels);
+
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate       = sampleRate;
+    spec.maximumBlockSize = (juce::uint32) maxBlock;
+    spec.numChannels      = (juce::uint32) numChannels;
+
+    hpf.prepare (spec);
+    hpf.setType (juce::dsp::StateVariableTPTFilterType::highpass);
+    hpf.setResonance (0.707f);             // Butterworth, matches the web tool
+    lpf.prepare (spec);
+    lpf.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+    lpf.setResonance (0.707f);
+
+    lastTrimSamples = -1;                   // force a reload after (re)prepare
+    lastHeadStart   = -1;
+}
+
+void IRSlot::reset()
+{
+    conv.reset();
+    hpf.reset();
+    lpf.reset();
+}
+
+//==============================================================================
+void IRSlot::setOriginalIR (const float* const* samples, int numChannels, int numSamples, double irSr)
+{
+    original.setSize (numChannels, numSamples);
+    for (int ch = 0; ch < numChannels; ++ch)
+        juce::FloatVectorOperations::copy (original.getWritePointer (ch), samples[ch], numSamples);
+
+    irSampleRate    = irSr;
+    leadSilence     = detectLeadingSilence (original, irSr);
+    lastTrimSamples = -1;                   // new IR => force reload
+    lastHeadStart   = -1;
+}
+
+void IRSlot::clearOriginal()
+{
+    original.setSize (0, 0);
+    leadSilence     = 0;
+    lastTrimSamples = -1;
+    lastHeadStart   = -1;
+}
+
+double IRSlot::applyTrim (bool trimOn, float trimFraction01, bool headOn)
+{
+    // HEAD trim: skip the detected leading silence so the IR starts at the onset (removes
+    // the cabinet pre-delay). Applied before TRIM.
+    const int start = headOn ? leadSilence : 0;
+    const int total = original.getNumSamples();
+    if (total <= 0 || start >= total)
+        return trimmedLengthSeconds();
+    const int avail = total - start;        // samples from the onset to the end
+
+    // TRIM is a fraction of the post-head length so the two stack naturally.
+    const float frac  = trimOn ? trimFraction01 : 1.0f;
+    const int   minLen = juce::jmax (16, (int) (0.001 * irSampleRate));     // >= ~1 ms
+    const int   n = juce::jlimit (juce::jmin (minLen, avail), avail,
+                                  (int) std::lround ((double) frac * avail));
+    if (n == lastTrimSamples && start == lastHeadStart)   // same onset + length => nothing to do
+        return trimmedLengthSeconds();
+    lastTrimSamples = n;
+    lastHeadStart   = start;
+
+    juce::AudioBuffer<float> ir (original.getNumChannels(), n);
+    for (int ch = 0; ch < ir.getNumChannels(); ++ch)
+        ir.copyFrom (ch, 0, original, ch, start, n);
+
+    // ~2 ms fade-out on the cut so a hard truncation doesn't leave a constant click in
+    // the tail (transient crackle *while* dragging is accepted).
+    const int fade = juce::jmin (n, (int) (0.002 * irSampleRate));
+    if (fade > 1)
+        for (int ch = 0; ch < ir.getNumChannels(); ++ch)
+            ir.applyGainRamp (n - fade, fade, 1.0f, 0.0f);
+
+    conv.loadIR (ir.getArrayOfReadPointers(), ir.getNumChannels(), n, irSampleRate);
+    return (double) n / irSampleRate;
+}
+
+double IRSlot::trimmedLengthSeconds() const
+{
+    return (lastTrimSamples > 0 && irSampleRate > 0.0) ? (double) lastTrimSamples / irSampleRate : 0.0;
+}
+
+//==============================================================================
+void IRSlot::processWet (juce::AudioBuffer<float>& wetDst, const juce::AudioBuffer<float>& src,
+                         int numChannels, int numSamples, bool hpfOn, float hpfHz, bool lpfOn, float lpfHz)
+{
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetDst.copyFrom (ch, 0, src, ch, 0, numSamples);
+
+    hpf.setCutoffFrequency (hpfHz);
+    lpf.setCutoffFrequency (lpfHz);
+
+    juce::dsp::AudioBlock<float> blk (wetDst.getArrayOfWritePointers(), (size_t) numChannels, (size_t) numSamples);
+    juce::dsp::ProcessContextReplacing<float> ctx (blk);
+    if (hpfOn) hpf.process (ctx);
+    if (lpfOn) lpf.process (ctx);
+    conv.process (wetDst.getArrayOfWritePointers(), numChannels, numSamples);
+}
+
+} // namespace cab

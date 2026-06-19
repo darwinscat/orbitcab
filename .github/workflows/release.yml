@@ -1,0 +1,145 @@
+name: release
+
+# Build installers + zips and upload them to the download server.
+#   • macOS  → .pkg (installs VST3 + AU to /Library/Audio/Plug-Ins) + .zip
+#   • Windows → Inno Setup .exe (installs VST3 to Common Files\VST3, app to Program Files) + .zip
+#   • publish → rsync everything to the download server under OrbitCab/<version>/
+#
+# UNSIGNED for now (no certs yet): macOS users right-click→Open + may need to clear
+# quarantine; Windows shows SmartScreen. Signing/notarization is the next step.
+#
+# Required repo secrets/vars (Settings → Secrets and variables → Actions):
+#   secrets: SSH_PRIVATE_KEY, KNOWN_HOSTS, DEPLOY_HOST,
+#            MACOS_APP_IDENTITY, MACOS_INSTALLER_IDENTITY   ·   vars: NOTARY_PROFILE
+#
+# Trigger: push a tag `vX.Y.Z`, or run manually (Actions → release → Run workflow).
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. 0.1.0"
+        required: true
+        default: "0.1.0"
+
+jobs:
+  macos:
+    # Self-hosted macOS runner → universal arm64+x86_64 build. arm64 cross-compiles the
+    # x86_64 (Intel) slice fine; we only build/package, not run it.
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 300         # Apple notarization is slow for NEW developer accounts —
+                                 # first submissions can take several hours (later ones: minutes)
+    steps:
+      - uses: actions/checkout@v6
+      - name: Version
+        id: v
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+      # Sign (Developer ID) + notarize + staple. The signing identities + the notarytool
+      # keychain-profile name come from repo secrets/vars; the Developer ID certs and the
+      # notarytool profile live in the runner's Keychain (xcrun notarytool store-credentials).
+      - name: Sign, package, notarize
+        env:
+          APP_ID:  ${{ secrets.MACOS_APP_IDENTITY }}
+          INST_ID: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+          NOTARY:  ${{ vars.NOTARY_PROFILE }}
+        run: |
+          set -euo pipefail
+          VER="${{ steps.v.outputs.version }}"
+          REL="build/OrbitCab_artefacts/Release"
+          VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"
+          mkdir -p dist
+
+          # 1) sign the shipped bundles (hardened runtime + secure timestamp)
+          for b in "$VST3" "$AU"; do
+            codesign --force --options runtime --timestamp --sign "$APP_ID" "$b"
+            codesign --verify --strict --verbose=1 "$b"
+          done
+
+          # 2) distribution .zip from the signed bundles. (Not separately stapled — their
+          #    cdhashes get notarized via the .pkg below, so Gatekeeper's online check passes.)
+          mkdir -p stage && cp -R "$VST3" "$AU" stage/
+          ditto -c -k stage "dist/OrbitCab-$VER-macOS.zip"
+
+          # 3) build → sign → notarize → staple the .pkg. ONE notarization submission (the
+          #    pkg carries both bundles) — Apple's notary time is unpredictable, so we keep
+          #    round-trips to a minimum. Staple makes the .pkg valid offline.
+          installer/build-pkg.sh "$VER" "$REL" dist
+          productsign --sign "$INST_ID" "dist/OrbitCab-$VER-macOS.pkg" "dist/OrbitCab-$VER-macOS-signed.pkg"
+          mv "dist/OrbitCab-$VER-macOS-signed.pkg" "dist/OrbitCab-$VER-macOS.pkg"
+          xcrun notarytool submit "dist/OrbitCab-$VER-macOS.pkg" --keychain-profile "$NOTARY" --wait
+          xcrun stapler staple "dist/OrbitCab-$VER-macOS.pkg"
+
+          # 4) verify
+          xcrun stapler validate "dist/OrbitCab-$VER-macOS.pkg"
+          spctl -a -vvv -t install "dist/OrbitCab-$VER-macOS.pkg" || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/*
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Version
+        id: v
+        shell: bash
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+      - name: Inno Setup installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+              /DAppVersion=${{ steps.v.outputs.version }} installer\orbitcab.iss
+      - name: Zip
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.v.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "installer\output\*.exe" dist\
+          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows.zip" -Path `
+            "build\OrbitCab_artefacts\Release\VST3\OrbitCab.vst3", `
+            "build\OrbitCab_artefacts\Release\Standalone\OrbitCab.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*
+
+  publish:
+    needs: [ macos, windows ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Upload to download server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${RAW#v}"
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          mkdir -p upload
+          find artifacts -type f -exec cp {} upload/ \;
+          echo "Uploading:"; ls -la upload
+          ssh -p 22 "$DEPLOY_HOST" "mkdir -p OrbitCab/$VERSION"
+          rsync -avz -e "ssh -p 22" upload/ "$DEPLOY_HOST:OrbitCab/$VERSION/"

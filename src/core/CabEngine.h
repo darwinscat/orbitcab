@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+
+#pragma once
+
+#include <juce_dsp/juce_dsp.h>
+#include <atomic>
+#include <cstddef>
+
+#include "Params.h"
+#include "IRSlot.h"
+#include "AutoLeveler.h"
+#include "SpectrumTap.h"
+
+//==============================================================================
+// cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
+//
+//   per slot (A/B):  in → HPF → LPF → Convolution → Phase → Dry/Wet(blend raw input)
+//   then:            MIX crossfades the two slot outputs → Auto-level → Output Gain
+//
+// Two cab::IRSlot instances are the per-slot channels (filters + convolver + the IR
+// buffer + trim math); cab::AutoLeveler is the wet->dry match. No JUCE GUI, no APVTS,
+// no files, no host: the adapter packs a cab::Params each block and calls process().
+// This is the unit-testable core and the WASM/embedded seam.
+//
+// 🔴 Real-time rule: process() and its callees never allocate, lock, do IO, or throw.
+// prepare() does all allocation; IR loads run off-thread via Convolver + atomic swap.
+//==============================================================================
+namespace cab
+{
+
+class CabEngine
+{
+public:
+    // FFT contract for the GUI analyser (mirrors the audio-side tap window).
+    static constexpr int fftOrder = kSpectrumFftOrder;
+    static constexpr int fftSize  = kSpectrumFftSize;
+
+    // Allocate + configure for this stream and seed smoothers from the initial parameter
+    // values (so a restored session doesn't ramp from zero). Not the audio thread.
+    void prepare (double sampleRate, int maxBlock, int numChannels, const Params& initial);
+
+    // Process numChannels planar channels in place. RT-safe. `nonRealtime` true (offline
+    // bounce) skips the spectrum capture. The adapter clears extra output channels and
+    // supplies numChannels = the active channel count.
+    void process (float* const* io, int numChannels, int numSamples,
+                  const Params& p, bool nonRealtime);
+
+    void reset();
+
+    //--- IR lifecycle (message thread) — forwarded to the per-slot IRSlot --------
+    void   setSlotOriginalIR    (int slot, const float* const* samples, int numChannels,
+                                 int numSamples, double irSampleRate);
+    double slotApplyTrim        (int slot, bool trimOn, float trimFraction01, bool headOn);
+    void   slotLoadBytesFallback (int slot, const void* data, size_t size);
+    void   clearSlotOriginal    (int slot);
+    bool   slotHasOriginal      (int slot) const;
+    double slotTrimmedSeconds   (int slot) const;
+    const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
+    double slotOriginalSampleRate (int slot) const;
+
+    //--- cross-thread reads for the GUI ------------------------------------------
+    float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
+    float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
+    void  setSpectrumActive (bool shouldFeed) { spectrumActive.store (shouldFeed, std::memory_order_relaxed); }
+    bool  pullSpectrum (bool pre, float* destFftSize);
+
+    double sampleRate() const { return currentSampleRate; }
+
+private:
+    IRSlot      slot[2];
+    AutoLeveler autoLeveler;
+    juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch
+    juce::AudioBuffer<float> dryBuffer;    // copy of the raw input for the dry/wet blend
+
+    // Smoothed so live tweaks / automation don't zipper. Phase is a sign (+1/-1) ramped
+    // through 0 — a brief dip rather than a hard polarity click.
+    juce::SmoothedValue<float> mixSm[2]   { { 1.0f }, { 1.0f } };
+    juce::SmoothedValue<float> phaseSm[2] { { 1.0f }, { 1.0f } };
+    juce::SmoothedValue<float> mixABSmoothed { 0.0f };
+    juce::SmoothedValue<float> gainSmoothed  { 1.0f };
+    juce::SmoothedValue<float> muteGateSmoothed { 1.0f };
+
+    double currentSampleRate = 44100.0;
+
+    float inputGainPrev = 1.0f;            // block-ramp start for zipper-free input trim
+    std::atomic<float> inLevel  { 0.0f };
+    std::atomic<float> outLevel { 0.0f };
+
+    SpectrumTap preTap, postTap;
+    std::atomic<bool> spectrumActive { false };
+};
+
+} // namespace cab

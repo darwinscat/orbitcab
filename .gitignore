@@ -1,0 +1,48 @@
+# Build output
+/build/
+/cmake-build-*/
+/out/
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.so
+*.dll
+*.exe
+
+# Plugin bundles (built artifacts)
+*.vst3
+*.component
+*.aaxplugin
+
+# JUCE / CMake fetched deps
+/JUCE/
+/_deps/
+/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# IDEs
+.idea/
+.vscode/
+*.xcodeproj/
+*.xcworkspace/
+.cache/
+
+# macOS
+.DS_Store
+
+# Signing / secrets — NEVER commit
+*.p12
+*.cer
+*.provisionprofile
+*.entitlements.local
+notarize-credentials*
+.env
+
+# Local AI-assistant brain — kept private/local, not shipped in the public repo
+CLAUDE.md
+
+# Stray build/tool logs
+*.log

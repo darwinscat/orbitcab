@@ -1,0 +1,62 @@
+# Third-party notices — OrbitCab
+
+OrbitCab itself is licensed under the **GNU Affero General Public License v3.0 or
+later** (see [`LICENSE`](LICENSE)). It links and/or bundles the components below,
+each under its own license. This file collects the notices those licenses require.
+The bundled content (IRs, font) is ledgered in
+[`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md).
+
+---
+
+## Frameworks & SDKs (linked)
+
+### JUCE (audio framework)
+- **License used here:** GNU AGPLv3. JUCE is **dual-licensed** under the commercial
+  JUCE licence *and* the GNU AGPLv3; OrbitCab uses the **AGPLv3** branch (free, no
+  revenue cap). Distributing OrbitCab under the AGPLv3 satisfies JUCE's AGPLv3 terms.
+- **Copyright:** © Raw Material Software Limited.
+- **Source:** https://github.com/juce-framework/JUCE — fetched via CMake
+  `FetchContent` at a pinned tag (see [`CMakeLists.txt`](CMakeLists.txt)); not vendored.
+- JUCE 8 imposes **no "Made with JUCE" splash-screen** requirement on any tier
+  (removed in JUCE 8), so OrbitCab sets `JUCE_DISPLAY_SPLASH_SCREEN=0`.
+
+### Steinberg VST3 SDK
+- **License:** MIT (since SDK 3.8.0, 2025-10-20).
+- **Copyright:** © Steinberg Media Technologies GmbH.
+- **Source:** https://github.com/steinbergmedia/vst3sdk
+- "VST" is a trademark of Steinberg Media Technologies GmbH. OrbitCab is "VST3
+  compatible"; it does not use "VST" in its product or company name.
+
+### Apple AudioUnit SDK
+- **License:** Apache License 2.0.
+- **Copyright:** © Apple Inc.
+- **Source:** https://github.com/apple/AudioUnitSDK
+
+---
+
+## Bundled content (embedded in the binary)
+
+### Impulse responses — Jesters Brutal Pack 1.0 & Jesters Emerald Pack
+- **License:** **CC0 1.0** (public domain dedication) — no attribution required; we
+  credit the source as a courtesy.
+- 21 IRs total: `01–15` Brutal (mod. Behringer BG412S — Celestion V30 / Rockdriver Jr
+  / Eminence DV-77), `16–21` Emerald (Marshall 1960AX — Celestion Greenback G12M).
+- See [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md) for proof of the CC0 grant
+  and full capture details.
+
+### Michroma (font, header wordmark)
+- **License:** SIL Open Font License 1.1.
+- **Copyright:** © The Michroma Project Authors
+  (https://github.com/googlefonts/Michroma-font).
+- OFL text bundled at `resources/fonts/Michroma-OFL.txt`. OFL §1 permits embedding in
+  software (including under a different license such as AGPLv3); the font's own terms
+  remain OFL.
+
+---
+
+## First-party
+
+The **Darwin's Cat** logo (`resources/brand/logo-darwinscat.svg`) and the OrbitCab
+name/marks are © Darwin's Cat / Oleh Tsymaienko & Alisa. The orbit "O" header mark is drawn
+programmatically (no bundled asset). These are **not** covered by the AGPLv3 grant on
+the source code — trademarks and brand assets are reserved.

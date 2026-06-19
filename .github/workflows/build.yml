@@ -1,0 +1,71 @@
+name: build
+
+# Windows-only CI — on purpose. We develop on a Mac, so macOS is built + validated
+# locally; this workflow covers the build we can't make locally: Windows (to hand a
+# tester or cross-check). The universal macOS build happens only in release.yml, on a tag.
+#
+# Runs on demand or on a PR that touches code — not on every commit.
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'resources/**'
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30          # safety cap for a hung build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache JUCE (FetchContent)
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: juce-windows-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # Headless unit tests for the cab:: DSP core (links core/ only). Hard gate —
+      # the runner returns non-zero on any failed UnitTest.
+      - name: Core unit tests (cab)
+        shell: bash
+        run: ./build/OrbitCab_Tests_artefacts/Release/*.exe
+
+      # Offline integration render through the real processor (TRIM/HEAD/SNAPSHOT/
+      # EMBED/UNDO/STATE/LIBRARY). Returns non-zero on any BROKEN result.
+      - name: Integration DSP tests
+        shell: bash
+        run: ./build/orbitcab_dsp_test_artefacts/Release/*.exe
+
+      - name: Validate (pluginval, VST3)
+        continue-on-error: true
+        shell: bash
+        run: |
+          curl -L -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_Windows.zip
+          7z x -y pluginval.zip >/dev/null
+          ./pluginval.exe --strictness-level 10 --validate "build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: OrbitCab-Windows
+          if-no-files-found: ignore
+          path: |
+            build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3
+            build/OrbitCab_artefacts/Release/Standalone
