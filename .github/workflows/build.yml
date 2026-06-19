@@ -1,8 +1,9 @@
 name: build
 
-# Windows-only CI — on purpose. We develop on a Mac, so macOS is built + validated
-# locally; this workflow covers the build we can't make locally: Windows (to hand a
-# tester or cross-check). The universal macOS build happens only in release.yml, on a tag.
+# Windows + Linux CI. We develop on a Mac (macOS built + validated locally); this workflow
+# covers the platforms we can't build locally — Windows and Linux — building each, running
+# the headless unit + DSP tests and pluginval @10. The universal macOS build is in
+# release.yml, on a tag.
 #
 # Runs on demand or on a PR that touches code — not on every commit.
 
@@ -64,6 +65,60 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: OrbitCab-Windows
+          if-no-files-found: ignore
+          path: |
+            build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3
+            build/OrbitCab_artefacts/Release/CLAP/OrbitCab.clap
+            build/OrbitCab_artefacts/Release/Standalone
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      # JUCE Linux deps (no web/curl — JUCE_WEB_BROWSER=0 / JUCE_USE_CURL=0). This exact
+      # set was verified building + testing the plugin on a Debian 13 box; same names on Ubuntu.
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build xvfb \
+            libasound2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libglu1-mesa-dev mesa-common-dev
+
+      - name: Cache JUCE (FetchContent)
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: juce-linux-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Core unit tests (cab)
+        run: ./build/OrbitCab_Tests_artefacts/Release/OrbitCab_Tests
+
+      - name: Integration DSP tests
+        run: ./build/orbitcab_dsp_test_artefacts/Release/orbitcab_dsp_test
+
+      # pluginval opens the editor → needs a display on a headless runner (xvfb).
+      - name: Validate (pluginval, VST3)
+        run: |
+          curl -L -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_Linux.zip
+          unzip -o pluginval.zip >/dev/null
+          chmod +x pluginval
+          xvfb-run --auto-servernum ./pluginval --strictness-level 10 --validate "build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: OrbitCab-Linux
           if-no-files-found: ignore
           path: |
             build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3
