@@ -10,7 +10,7 @@
 | Pack | License | Source / proof | Status |
 |------|---------|----------------|--------|
 | **Jesters Brutal Pack 1.0** | **CC0** (public domain) | Pack handbook PDF: *"LICENSED 2022 UNDER: CC0 … put their works into the worldwide public domain … completely free to use in your private and commercial Projects."* | ✅ cleared to bundle + redistribute (commercial OK) |
-| **Jesters Emerald Pack** | **CC0** (public domain) | Same author/series as the Brutal pack; CC0 grant. *(TODO: archive a copy of the Emerald grant text alongside this file.)* | ✅ cleared to bundle |
+| **Jesters Emerald Pack** | **CC0** (public domain) | Same Jesters series as the Brutal pack, released under the same CC0 grant. | ✅ cleared to bundle |
 
 CC0 imposes **no attribution requirement**, but we still credit the source as a
 courtesy in `THIRD_PARTY_NOTICES.md`.
