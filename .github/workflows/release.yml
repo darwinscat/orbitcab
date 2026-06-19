@@ -157,7 +157,8 @@ jobs:
           REL="build/OrbitCab_artefacts/Release"
           mkdir -p stage dist
           cp -R "$REL/VST3/OrbitCab.vst3" stage/
-          if [ -d "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
+          # -e not -d: a Linux .clap is a single .so-style FILE, not a macOS-style bundle dir.
+          if [ -e "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
           if [ -f "$REL/Standalone/OrbitCab" ];  then cp "$REL/Standalone/OrbitCab" stage/; fi
           tar -C stage -czf "dist/OrbitCab-$VER-Linux.tar.gz" .
       - uses: actions/upload-artifact@v7
