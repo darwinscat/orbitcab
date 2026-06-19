@@ -32,6 +32,17 @@ More is planned later. The signal chain is built modular (`juce::dsp::ProcessorC
 and the saved state is **versioned from day one** so future versions don't break v1
 sessions.
 
+## Build
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+The first configure fetches and builds JUCE (pinned tag); artefacts land in
+`build/OrbitCab_artefacts/`. See [`docs/BUILD.md`](docs/BUILD.md) for validation
+(`auval`, `pluginval`) and cutting a release.
+
 ## Formats
 
 | Format | v1? | License of SDK | Notes |
@@ -58,3 +69,8 @@ and logos are trademarks and are **not** covered by the code license.
 - [`docs/BUILD.md`](docs/BUILD.md) — how to build, validate, and cut a release
 - [`docs/CODING-STYLE.md`](docs/CODING-STYLE.md) — style conventions + `.clang-format`
 - [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md) — per-asset ledger for bundled IRs + test audio
+
+## Contributing
+
+Issues and PRs are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Changes to `main`
+go through a reviewed pull request.
