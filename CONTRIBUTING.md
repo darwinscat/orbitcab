@@ -23,8 +23,7 @@ sending a non-trivial PR** so your work isn't blocked on a policy we haven't wri
   GPL-incompatible or stricter-copyleft code.
 - **🔴 Real-time audio rule:** nothing in `processBlock` / `process()` (or anything
   they call) may allocate, lock, do I/O, or throw. Preallocate in `prepare*`; cross
-  threads with atomics / lock-free FIFOs. See
-  [`docs/CPP-REFRESHER.md`](docs/CPP-REFRESHER.md).
+  threads with atomics / lock-free FIFOs.
 - **State is versioned and back-compatible** — don't break existing DAW sessions
   (`stateVersion`, frozen param IDs; see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
 - Match the surrounding style ([`docs/CODING-STYLE.md`](docs/CODING-STYLE.md) /

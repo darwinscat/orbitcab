@@ -1,7 +1,7 @@
 # Build
 
-> macOS + Windows both build in CI (`.github/workflows/build.yml`). The commands below
-> are for local macOS dev (Apple clang 21, CMake 4.x); Windows is built on the CI runner.
+> Windows builds in CI (`.github/workflows/build.yml`); macOS is built + validated
+> locally. The commands below are for local macOS dev (Apple clang, CMake 4.x).
 > Releases (signed later) are cut by `.github/workflows/release.yml` on a `vX.Y.Z` tag.
 
 ## Toolchain

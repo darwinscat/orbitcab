@@ -22,7 +22,7 @@
 // Only the IR itself (TRIM / IR-switch) reloads. See docs/IR-LOADER-DESIGN.md.
 //
 // 🔴 Real-time rule: processBlock and anything it calls must not allocate,
-// lock, do IO, or throw. Preallocate in prepareToPlay. (CLAUDE.md / CPP-REFRESHER)
+// lock, do IO, or throw. Preallocate in prepareToPlay.
 //==============================================================================
 class OrbitCabAudioProcessor final : public juce::AudioProcessor,
                                  private juce::AudioProcessorValueTreeState::Listener,
