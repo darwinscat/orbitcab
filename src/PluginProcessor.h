@@ -64,6 +64,11 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // Portable preset export: like getStateInformation, but external-IR file paths are
+    // stripped (content-hash keys + a display name, no recent-files list) so a shared
+    // .orbitcab doesn't leak the sharer's folders. The session state above keeps the paths.
+    void getStateForPreset (juce::MemoryBlock& destData);
+
     //==========================================================================
     // Parameter tree — public so the editor can attach controls. The layout is
     // built by orbitcab::createParameterLayout() in Parameters.cpp (one source of truth).
@@ -104,6 +109,7 @@ public:
     // Slot IR reference for persistence + editor sync. `bundled` => `ref` is a
     // BinaryData filename; otherwise `ref` is an absolute file path. Empty ref = none.
     juce::String getSlotRef    (bool slotA) const { return slotA ? slotRefA : slotRefB; }
+    juce::String getSlotName   (bool slotA) const { return slotA ? slotNameA : slotNameB; }   // display override (a portable preset sets it; else empty)
     bool         isSlotBundled (bool slotA) const { return slotA ? slotBundledA : slotBundledB; }
     float        getTrim       (bool slotA) const { return slotA ? trimFractionA : trimFractionB; }
 
@@ -193,6 +199,7 @@ private:
 
     // IR reference per slot (for state/preset save). Message-thread only.
     juce::String slotRefA, slotRefB;
+    juce::String slotNameA, slotNameB;          // display name (a portable preset carries one; empty = derive from ref)
     bool slotBundledA = false, slotBundledB = false;
     juce::StringArray userIRPaths;             // recent user-opened IRs
     static constexpr int kMaxUserIRs = 50;
@@ -218,6 +225,10 @@ private:
     int activeSnapshot = 0;
     juce::ValueTree captureStateTree();
     void applyStateTree (const juce::ValueTree& tree);
+
+    // Builds the full state tree (params + IR refs + snapshots + embedded IR pool) shared by
+    // getStateInformation (session, keeps paths) and getStateForPreset (portable, paths stripped).
+    juce::ValueTree buildStateTree();
 
     // Undo/redo state (message-thread only). Snapshots are ref-only (no embedded bytes —
     // those live in embeddedIRs for the instance), so the stacks stay tiny.

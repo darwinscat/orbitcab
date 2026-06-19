@@ -298,8 +298,9 @@ void SlotComponent::syncFromProcessor()
     else if (ref.isNotEmpty())
     {
         const juce::File f (ref);
-        name.setButtonText (f.getFileName());
-        if (auto* mb = proc.embeddedIRBytes (ref)) wave.setFromMemory (mb->getData(), mb->getSize(), f.getFileName());
+        const juce::String disp = proc.getSlotName (a).isNotEmpty() ? proc.getSlotName (a) : f.getFileName();
+        name.setButtonText (disp);
+        if (auto* mb = proc.embeddedIRBytes (ref)) wave.setFromMemory (mb->getData(), mb->getSize(), disp);
         else if (f.existsAsFile())                 wave.setFromFile (f);
         else                                       wave.clearIR();
     }

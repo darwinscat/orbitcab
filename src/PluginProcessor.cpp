@@ -142,6 +142,7 @@ void OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormat
     engine.setSlotOriginalIR (slotA ? 0 : 1, decoded.getArrayOfReadPointers(),
                               decoded.getNumChannels(), n, srLoaded);
     (slotA ? trimFractionA : trimFractionB) = 1.0f;             // new IR => full length
+    (slotA ? slotNameA : slotNameB).clear();                   // display name derives from the ref/file unless restore overrides it
     if (! slotA)
         slotBLoaded.store (true, std::memory_order_relaxed);
 
@@ -293,6 +294,7 @@ void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
     if (aRef.isNotEmpty())
     {
         loadIRRef (aRef, (bool) ir.getProperty ("aBundled", true), true);
+        slotNameA = ir.getProperty ("aName", {}).toString();   // portable-preset display name (empty in sessions)
         setTrim ((float) ir.getProperty ("aTrim", 1.0f), true);
     }
 
@@ -303,6 +305,7 @@ void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
         if (bRef.isNotEmpty())
         {
             loadIRRef (bRef, (bool) ir.getProperty ("bBundled", true), false);
+            slotNameB = ir.getProperty ("bName", {}).toString();
             setTrim ((float) ir.getProperty ("bTrim", 1.0f), false);
         }
     }
@@ -494,7 +497,45 @@ juce::AudioProcessorEditor* OrbitCabAudioProcessor::createEditor()
 }
 
 //==============================================================================
-void OrbitCabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+// Strip external-IR file paths for portable preset export: re-key the IRPool + the slot
+// refs by content hash, attach a display name, and drop the recent-files list.
+static void makePortable (juce::ValueTree& root)
+{
+    std::map<juce::String, juce::String> pathToHash;
+    if (auto pool = root.getChildWithName ("IRPool"); pool.isValid())
+        for (auto e : pool)
+        {
+            const auto wav  = e.getProperty ("wav").toString();
+            const auto hash = "ir-" + juce::String::toHexString (wav.hashCode64());   // content-derived, path-free key
+            pathToHash[e.getProperty ("path").toString()] = hash;
+            e.setProperty ("path", hash, nullptr);
+        }
+
+    auto portIR = [&] (juce::ValueTree ir)
+    {
+        if (! ir.isValid()) return;
+        ir.removeProperty ("userIRs", nullptr);                          // recents leak the folder tree
+        for (const char* side : { "a", "b" })
+        {
+            if ((bool) ir.getProperty (juce::String (side) + "Bundled", true)) continue;   // bundled = no path
+            const juce::String refK (juce::String (side) + "Ref");
+            const auto ref = ir.getProperty (refK).toString();
+            if (ref.isEmpty()) continue;
+            ir.setProperty (juce::String (side) + "Name", juce::File (ref).getFileName(), nullptr);   // display name
+            if (auto it = pathToHash.find (ref); it != pathToHash.end())
+                ir.setProperty (refK, it->second, nullptr);              // absolute path -> content hash
+        }
+    };
+
+    portIR (root.getChildWithName ("IR"));
+    if (auto snaps = root.getChildWithName ("Snapshots"); snaps.isValid())
+        for (auto s : snaps)
+            if (auto snap = s.getChild (0); snap.isValid())              // S > Snap > IR
+                portIR (snap.getChildWithName ("IR"));
+}
+
+//==============================================================================
+juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
 {
     // Wrap the parameter tree + per-slot IR references in one root so a saved
     // DAW session (or a preset) restores both the params and which IRs were loaded. Each
@@ -563,6 +604,21 @@ void OrbitCabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         root.appendChild (pool, nullptr);
     }
 
+    return root;
+}
+
+//==============================================================================
+void OrbitCabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    if (auto xml = buildStateTree().createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void OrbitCabAudioProcessor::getStateForPreset (juce::MemoryBlock& destData)
+{
+    // Strip external-IR paths so a shared preset can't reveal the sharer's folder layout.
+    auto root = buildStateTree();
+    makePortable (root);
     if (auto xml = root.createXml())
         copyXmlToBinary (*xml, destData);
 }

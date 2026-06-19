@@ -29,7 +29,7 @@ juce::File PresetManager::saveAs (const juce::String& name)
     dir.createDirectory();
     auto file = dir.getChildFile (juce::File::createLegalFileName (name) + ".orbitcab");
     juce::MemoryBlock block;
-    proc.getStateInformation (block);
+    proc.getStateForPreset (block);
     file.replaceWithData (block.getData(), block.getSize());
     return file;
 }
@@ -50,7 +50,7 @@ bool PresetManager::writeTo (juce::File file)
     if (! file.hasFileExtension ("orbitcab"))
         file = file.withFileExtension ("orbitcab");
     juce::MemoryBlock block;
-    proc.getStateInformation (block);   // embeds external IRs → self-contained preset
+    proc.getStateForPreset (block);     // embeds external IRs + strips paths → portable preset
     return file.replaceWithData (block.getData(), block.getSize());
 }
 
