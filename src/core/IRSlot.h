@@ -54,6 +54,7 @@ public:
 private:
     Convolver conv;
     juce::dsp::StateVariableTPTFilter<float> hpf, lpf;
+    bool prevHpfOn = false, prevLpfOn = false;   // last processWet on-state — reset a filter on re-enable
 
     juce::AudioBuffer<float> original;     // full decoded IR (message-thread only)
     double irSampleRate   = 44100.0;

@@ -60,6 +60,7 @@ void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
 
     lastTrimSamples = -1;                   // force a reload after (re)prepare
     lastHeadStart   = -1;
+    prevHpfOn = prevLpfOn = false;
 }
 
 void IRSlot::reset()
@@ -67,6 +68,7 @@ void IRSlot::reset()
     conv.reset();
     hpf.reset();
     lpf.reset();
+    prevHpfOn = prevLpfOn = false;
 }
 
 //==============================================================================
@@ -139,6 +141,13 @@ void IRSlot::processWet (juce::AudioBuffer<float>& wetDst, const juce::AudioBuff
 
     hpf.setCutoffFrequency (hpfHz);
     lpf.setCutoffFrequency (lpfHz);
+
+    // Re-enabling a filter after it was bypassed: clear its stale internal state so it
+    // doesn't emit a transient built from the old samples.
+    if (hpfOn && ! prevHpfOn) hpf.reset();
+    if (lpfOn && ! prevLpfOn) lpf.reset();
+    prevHpfOn = hpfOn;
+    prevLpfOn = lpfOn;
 
     juce::dsp::AudioBlock<float> blk (wetDst.getArrayOfWritePointers(), (size_t) numChannels, (size_t) numSamples);
     juce::dsp::ProcessContextReplacing<float> ctx (blk);
