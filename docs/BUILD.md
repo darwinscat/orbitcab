@@ -85,8 +85,8 @@ the fresh binary, so it's the quickest sanity check.
 ## Signing / notarization / CI
 
 **Wired:** `build.yml` (on-demand /
-code-PR, mac+win + pluginval, no secrets) and `release.yml` (tag `vX.Y.Z` → `.pkg` + Inno
-`.exe` + zips → rsync to the download server, secrets `SSH_PRIVATE_KEY`/`KNOWN_HOSTS`).
-**Still unsigned** — Developer ID signing + notarization (macOS) and Windows code
-signing are the beta gates; until then macOS needs right-click→Open + dequarantine
-and Windows shows SmartScreen. See `installer/README.md`.
+code-PR, Windows + Linux + pluginval, no secrets) and `release.yml` (tag `vX.Y.Z` → signed
+`.pkg` + Inno `.exe` + zips/tarball, attached to a **GitHub Release** — GitHub hosts the
+binaries, no own server; a manual run with `dry_run=true` builds without publishing).
+**macOS** is Developer-ID-signed + notarized in `release.yml`; **Windows is still unsigned**
+(SmartScreen → *Run anyway*) until a cert is added. See `installer/README.md`.
