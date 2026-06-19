@@ -94,7 +94,18 @@ jobs:
           path: dist/*
 
   windows:
-    runs-on: windows-latest
+    # Native x64 + arm64. windows-11-arm is a free hosted runner for public repos.
+    # By mid-2026 the DAWs (Reaper, Cubase, …) ship native ARM64 Windows builds while
+    # most plugins are still x64-only — a native arm64 plugin fills a real, underserved gap.
+    # x64 also gets the Inno installer; arm64 is zip-only (ISCC is x86 + the audience is
+    # technical), which sidesteps running the installer toolchain under ARM.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, arch: x64,   plat: x64,   installer: true  }
+          - { runner: windows-11-arm, arch: arm64, plat: ARM64, installer: false }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
@@ -106,9 +117,10 @@ jobs:
           echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
       - name: Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -A ${{ matrix.plat }} -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
       - name: Inno Setup installer
+        if: ${{ matrix.installer }}
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
@@ -119,14 +131,14 @@ jobs:
         run: |
           $ver = "${{ steps.v.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "installer\output\*.exe" dist\
+          if (Test-Path "installer\output\*.exe") { Copy-Item "installer\output\*.exe" dist\ }
           $rel = "build\OrbitCab_artefacts\Release"
           $items = @("$rel\VST3\OrbitCab.vst3", "$rel\Standalone\OrbitCab.exe")
           if (Test-Path "$rel\CLAP\OrbitCab.clap") { $items += "$rel\CLAP\OrbitCab.clap" }
-          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows.zip" -Path $items
+          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows-${{ matrix.arch }}.zip" -Path $items
       - uses: actions/upload-artifact@v7
         with:
-          name: windows
+          name: windows-${{ matrix.arch }}
           path: dist/*
 
   linux:
