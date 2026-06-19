@@ -54,8 +54,18 @@ jobs:
           APP_ID:  ${{ secrets.MACOS_APP_IDENTITY }}
           INST_ID: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
           NOTARY:  ${{ vars.NOTARY_PROFILE }}
+          KCH_PWD: ${{ secrets.KCH_PWD }}
         run: |
           set -euo pipefail
+
+          # Let codesign/productsign use the signing keys without a GUI prompt — required
+          # when the runner has no interactive login session (service mode / SSH). Without
+          # this, codesign fails with errSecInternalComponent. Unlock + (re)set the key
+          # partition list each run (idempotent).
+          KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KCH_PWD" "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCH_PWD" "$KEYCHAIN" >/dev/null
+
           VER="${{ steps.v.outputs.version }}"
           REL="build/OrbitCab_artefacts/Release"
           VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"; CLAP="$REL/CLAP/OrbitCab.clap"
