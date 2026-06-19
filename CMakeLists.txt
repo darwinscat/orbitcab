@@ -36,6 +36,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(juce)
 
+# CLAP format via the MIT clap-juce-extensions wrapper (native CLAP is slated for JUCE 9).
+# Pinned like JUCE — bump ORBITCAB_CLAP_EXT_TAG deliberately.
+set(ORBITCAB_CLAP_EXT_TAG "main" CACHE STRING "clap-juce-extensions git tag to build against")
+FetchContent_Declare(
+    clap-juce-extensions
+    GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+    GIT_TAG        ${ORBITCAB_CLAP_EXT_TAG}
+)
+FetchContent_MakeAvailable(clap-juce-extensions)
+
 # ----------------------------------------------------------------------------
 # The plugin target.
 #
@@ -60,6 +70,11 @@ juce_add_plugin(OrbitCab
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD     TRUE   # auto-install to the user plug-in folders during dev
 )
+
+# Wrap the same JUCE plugin as a CLAP (.clap) — one extra format, no source changes.
+clap_juce_extensions_plugin(TARGET OrbitCab
+    CLAP_ID       "com.darwinscat.orbitcab"
+    CLAP_FEATURES audio-effect "guitar" "cabinet")
 
 target_sources(OrbitCab PRIVATE
     src/PluginProcessor.cpp

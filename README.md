@@ -1,7 +1,7 @@
 # OrbitCab — IR Cabinet Loader
 
 A small, free **impulse-response (IR) cabinet loader** audio plugin — *"a cabinet on orbit."*
-C++ / [JUCE](https://juce.com). Ships as **VST3 + AU** (CLAP later).
+C++ / [JUCE](https://juce.com). Ships as **VST3 + AU + CLAP**.
 
 **OrbitCab** is part of the **Felitronics** plugin line, by **Darwin's Cat** — the
 sound-utils ecosystem (`darwinscat.com/sound-utils/cabinet-ir-utility` → IR capture →
@@ -49,7 +49,7 @@ The first configure fetches and builds JUCE (pinned tag); artefacts land in
 |--------|-----|----------------|-------|
 | **VST3** | ✅ | MIT (since SDK 3.8, Oct 2025) | all DAWs, Win/Mac/Linux |
 | **AU**   | ✅ | Apple, Apache-2.0 SDK | macOS only (Logic/GarageBand) |
-| **CLAP** | later | MIT (`clap-juce-extensions`, unofficial; native in JUCE 9) | Reaper/Bitwig/FL/Studio One |
+| **CLAP** | ✅ | MIT (`clap-juce-extensions`; native in JUCE 9 later) | Reaper/Bitwig/FL/Studio One/Ardour |
 | **AAX**  | not planned | Avid + PACE + iLok | Pro Tools only |
 
 ## License
