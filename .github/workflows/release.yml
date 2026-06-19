@@ -1,18 +1,16 @@
 name: release
 
-# Build installers + zips and upload them to the download server.
-#   • macOS  → .pkg (installs VST3 + AU to /Library/Audio/Plug-Ins) + .zip
-#   • Windows → Inno Setup .exe (installs VST3 to Common Files\VST3, app to Program Files) + .zip
-#   • publish → rsync everything to the download server under OrbitCab/<version>/
+# Build the bundles/installers on a version tag (vX.Y.Z) and attach them to a GitHub
+# Release — GitHub hosts the binaries, no own download server. A manual run
+# (workflow_dispatch) builds the SAME artifacts but does NOT create a release unless
+# dry_run=false, so you can download + test installers from the run page without publishing.
 #
-# UNSIGNED for now (no certs yet): macOS users right-click→Open + may need to clear
-# quarantine; Windows shows SmartScreen. Signing/notarization is the next step.
+#   • macOS  → signed + notarized .pkg + .zip (VST3 + AU + CLAP)   [self-hosted runner]
+#   • Windows → Inno Setup .exe + .zip (VST3 + CLAP + Standalone)
+#   • Linux  → .tar.gz (VST3 + CLAP + Standalone)
 #
-# Required repo secrets/vars (Settings → Secrets and variables → Actions):
-#   secrets: SSH_PRIVATE_KEY, KNOWN_HOSTS, DEPLOY_HOST,
-#            MACOS_APP_IDENTITY, MACOS_INSTALLER_IDENTITY   ·   vars: NOTARY_PROFILE
-#
-# Trigger: push a tag `vX.Y.Z`, or run manually (Actions → release → Run workflow).
+# Required (signing only): secrets MACOS_APP_IDENTITY, MACOS_INSTALLER_IDENTITY; var
+# NOTARY_PROFILE. The GitHub Release is published with the built-in GITHUB_TOKEN.
 
 on:
   push:
@@ -20,17 +18,23 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, e.g. 0.1.0"
+        description: "Version, e.g. 1.0.0 (manual runs)"
         required: true
-        default: "0.1.0"
+        default: "1.0.0"
+      dry_run:
+        description: "Build only — do NOT create a GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # create the GitHub Release + upload assets
 
 jobs:
   macos:
     # Self-hosted macOS runner → universal arm64+x86_64 build. arm64 cross-compiles the
     # x86_64 (Intel) slice fine; we only build/package, not run it.
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 300         # Apple notarization is slow for NEW developer accounts —
-                                 # first submissions can take several hours (later ones: minutes)
+    timeout-minutes: 300         # Apple notarization is slow for new accounts (later: minutes)
     steps:
       - uses: actions/checkout@v6
       - name: Version
@@ -42,9 +46,9 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
-      # Sign (Developer ID) + notarize + staple. The signing identities + the notarytool
-      # keychain-profile name come from repo secrets/vars; the Developer ID certs and the
-      # notarytool profile live in the runner's Keychain (xcrun notarytool store-credentials).
+      # Sign (Developer ID) + notarize + staple. Signing identities + the notarytool
+      # keychain-profile name come from repo secrets/vars; the certs + profile live in the
+      # runner's Keychain. The .zip carries signed bundles; the .pkg is the notarized installer.
       - name: Sign, package, notarize
         env:
           APP_ID:  ${{ secrets.MACOS_APP_IDENTITY }}
@@ -54,30 +58,24 @@ jobs:
           set -euo pipefail
           VER="${{ steps.v.outputs.version }}"
           REL="build/OrbitCab_artefacts/Release"
-          VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"
-          mkdir -p dist
+          VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"; CLAP="$REL/CLAP/OrbitCab.clap"
+          mkdir -p dist stage
 
-          # 1) sign the shipped bundles (hardened runtime + secure timestamp)
-          for b in "$VST3" "$AU"; do
+          BUNDLES=("$VST3" "$AU")
+          if [ -d "$CLAP" ]; then BUNDLES+=("$CLAP"); fi
+          for b in "${BUNDLES[@]}"; do
             codesign --force --options runtime --timestamp --sign "$APP_ID" "$b"
             codesign --verify --strict --verbose=1 "$b"
+            cp -R "$b" stage/
           done
-
-          # 2) distribution .zip from the signed bundles. (Not separately stapled — their
-          #    cdhashes get notarized via the .pkg below, so Gatekeeper's online check passes.)
-          mkdir -p stage && cp -R "$VST3" "$AU" stage/
           ditto -c -k stage "dist/OrbitCab-$VER-macOS.zip"
 
-          # 3) build → sign → notarize → staple the .pkg. ONE notarization submission (the
-          #    pkg carries both bundles) — Apple's notary time is unpredictable, so we keep
-          #    round-trips to a minimum. Staple makes the .pkg valid offline.
+          # build → sign → notarize → staple the .pkg (one submission carries both bundles)
           installer/build-pkg.sh "$VER" "$REL" dist
           productsign --sign "$INST_ID" "dist/OrbitCab-$VER-macOS.pkg" "dist/OrbitCab-$VER-macOS-signed.pkg"
           mv "dist/OrbitCab-$VER-macOS-signed.pkg" "dist/OrbitCab-$VER-macOS.pkg"
           xcrun notarytool submit "dist/OrbitCab-$VER-macOS.pkg" --keychain-profile "$NOTARY" --wait
           xcrun stapler staple "dist/OrbitCab-$VER-macOS.pkg"
-
-          # 4) verify
           xcrun stapler validate "dist/OrbitCab-$VER-macOS.pkg"
           spctl -a -vvv -t install "dist/OrbitCab-$VER-macOS.pkg" || true
       - uses: actions/upload-artifact@v7
@@ -112,34 +110,69 @@ jobs:
           $ver = "${{ steps.v.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "installer\output\*.exe" dist\
-          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows.zip" -Path `
-            "build\OrbitCab_artefacts\Release\VST3\OrbitCab.vst3", `
-            "build\OrbitCab_artefacts\Release\Standalone\OrbitCab.exe"
+          $rel = "build\OrbitCab_artefacts\Release"
+          $items = @("$rel\VST3\OrbitCab.vst3", "$rel\Standalone\OrbitCab.exe")
+          if (Test-Path "$rel\CLAP\OrbitCab.clap") { $items += "$rel\CLAP\OrbitCab.clap" }
+          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows.zip" -Path $items
       - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*
 
-  publish:
-    needs: [ macos, windows ]
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Version
+        id: v
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build \
+            libasound2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libglu1-mesa-dev mesa-common-dev
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Package (.tar.gz)
+        run: |
+          VER="${{ steps.v.outputs.version }}"
+          REL="build/OrbitCab_artefacts/Release"
+          mkdir -p stage dist
+          cp -R "$REL/VST3/OrbitCab.vst3" stage/
+          if [ -d "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
+          if [ -f "$REL/Standalone/OrbitCab" ];  then cp "$REL/Standalone/OrbitCab" stage/; fi
+          tar -C stage -czf "dist/OrbitCab-$VER-Linux.tar.gz" .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/*
+
+  release:
+    needs: [ macos, windows, linux ]
+    # Tag push → publish. Manual run → only if dry_run=false (default true = build-only).
+    if: ${{ github.event_name == 'push' || github.event.inputs.dry_run == 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
-      - name: Upload to download server
+      - name: Create GitHub Release
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           RAW="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${RAW#v}"
-          install -m 700 -d ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
-          mkdir -p upload
-          find artifacts -type f -exec cp {} upload/ \;
-          echo "Uploading:"; ls -la upload
-          ssh -p 22 "$DEPLOY_HOST" "mkdir -p OrbitCab/$VERSION"
-          rsync -avz -e "ssh -p 22" upload/ "$DEPLOY_HOST:OrbitCab/$VERSION/"
+          VER="${RAW#v}"
+          gh release create "v$VER" \
+            --repo "${{ github.repository }}" \
+            --title "OrbitCab v$VER" \
+            --generate-notes \
+            $(find artifacts -type f)
