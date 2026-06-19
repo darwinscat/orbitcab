@@ -147,4 +147,6 @@ private:
     const juce::String kWord   = "OrbitCab";           // full word; orbit mark sits left as an icon
     const juce::String kSub    = "Cabinet IR Loader";  // loads cabinet IRs (correct order)
     const juce::String kByline = juce::String::fromUTF8 ("by Darwin\xe2\x80\x99s Cat");
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HeaderBrand)
 };

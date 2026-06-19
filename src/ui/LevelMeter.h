@@ -95,4 +95,6 @@ private:
     float level         = 0.0f;
     float peakHold      = 0.0f;
     int   peakHoldTicks = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LevelMeter)
 };
