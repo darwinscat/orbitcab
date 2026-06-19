@@ -2,44 +2,12 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "IRSlot.h"
+#include "IRMath.h"
 
 #include <cmath>
 
 namespace cab
 {
-
-namespace
-{
-    // Leading-silence onset. First sample (any channel) above 0.001 x peak,
-    // minus a ~0.2 ms pre-roll so the transient's leading edge isn't clipped. Returns 0
-    // when nothing meaningful precedes the onset (no useless 1-sample trims).
-    int detectLeadingSilence (const juce::AudioBuffer<float>& buf, double sampleRate)
-    {
-        const int total = buf.getNumSamples();
-        const int nch   = buf.getNumChannels();
-        if (total <= 0 || nch <= 0)
-            return 0;
-
-        float peak = 0.0f;
-        for (int ch = 0; ch < nch; ++ch)
-            peak = juce::jmax (peak, buf.getMagnitude (ch, 0, total));
-        if (peak <= 0.0f)
-            return 0;
-
-        const float thresh = 0.001f * peak;
-        int onset = total;
-        for (int ch = 0; ch < nch && onset > 0; ++ch)
-        {
-            const float* d = buf.getReadPointer (ch);
-            for (int i = 0; i < onset; ++i)
-                if (std::abs (d[i]) > thresh) { onset = i; break; }
-        }
-
-        const int preRoll = (int) (0.0002 * sampleRate);    // ~0.2 ms
-        const int lead    = juce::jmax (0, onset - preRoll);
-        return lead > (int) (0.0005 * sampleRate) ? lead : 0;
-    }
-}
 
 //==============================================================================
 void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
@@ -79,7 +47,7 @@ void IRSlot::setOriginalIR (const float* const* samples, int numChannels, int nu
         juce::FloatVectorOperations::copy (original.getWritePointer (ch), samples[ch], numSamples);
 
     irSampleRate    = irSr;
-    leadSilence     = detectLeadingSilence (original, irSr);
+    leadSilence     = detectLeadingSilence (original, original.getNumSamples(), irSr);
     lastTrimSamples = -1;                   // new IR => force reload
     lastHeadStart   = -1;
 }
