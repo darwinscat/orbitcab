@@ -218,8 +218,9 @@ void SlotComponent::showIRMenu()
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (name),
-                        [this] (int result)
+                        [this, safe = juce::Component::SafePointer<SlotComponent> (this)] (int result)
                         {
+                            if (safe == nullptr) return;   // editor closed before the menu was dismissed
                             if (result == clearId) { proc.clearUserIRs(); if (onUserIRsChanged) onUserIRsChanged(); }
                             else if (result > 0)   selectIR (result - 1);
                         });
@@ -232,8 +233,9 @@ void SlotComponent::chooseIR()
     chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectDirectories,
-        [this] (const juce::FileChooser& fc)
+        [this, safe = juce::Component::SafePointer<SlotComponent> (this)] (const juce::FileChooser& fc)
         {
+            if (safe == nullptr) return;   // editor closed before the chooser returned
             const auto chosen = fc.getResult();
             if (chosen == juce::File())
                 return;

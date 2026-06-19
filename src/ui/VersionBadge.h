@@ -55,7 +55,7 @@ private:
     struct Panel final : public juce::Component
     {
         explicit Panel (orbitcab::UpdateChecker& uc, VersionBadge& ownerBadge)
-            : checker (uc), owner (ownerBadge)
+            : checker (uc), owner (&ownerBadge)
         {
             title.setText ("OrbitCab", juce::dontSendNotification);
             title.setFont (juce::FontOptions (15.0f, juce::Font::bold));
@@ -131,7 +131,7 @@ private:
         void onResult (const orbitcab::UpdateChecker::Result& res)
         {
             check.setEnabled (true);
-            owner.repaint();   // badge dot may have appeared/cleared
+            if (owner != nullptr) owner->repaint();   // badge dot may have appeared/cleared (badge may be gone)
 
             if (! res.ok)
             {
@@ -158,7 +158,7 @@ private:
         }
 
         orbitcab::UpdateChecker& checker;
-        VersionBadge&            owner;
+        juce::Component::SafePointer<VersionBadge> owner;   // the badge may outlive-die before an async check returns
         juce::Label          title, version, result, note;
         juce::HyperlinkButton link, download;
         juce::TextButton     check;

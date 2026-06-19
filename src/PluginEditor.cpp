@@ -334,8 +334,9 @@ void OrbitCabAudioProcessorEditor::promptSavePreset()
     saveDialog->addButton ("Save",   1, juce::KeyPress (juce::KeyPress::returnKey));
     saveDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     saveDialog->enterModalState (true, juce::ModalCallbackFunction::create (
-        [this] (int result)
+        [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (int result)
         {
+            if (safe == nullptr) return;   // editor gone before the dialog closed
             if (result == 1)
             {
                 const auto name = saveDialog->getTextEditorContents ("name").trim();
