@@ -1,0 +1,26 @@
+OrbitCab — IR Cabinet Loader audio plugin
+Copyright (C) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+The full, verbatim text of the GNU Affero General Public License, version 3, is
+in the LICENSE file alongside this one.
+
+OrbitCab links the JUCE framework under JUCE's AGPLv3 option — JUCE is dual-licensed
+under the commercial JUCE licence AND the GNU AGPLv3, and this project uses the
+AGPLv3 branch (free, no revenue cap). Notices for the other third-party SDKs (VST3,
+Apple AudioUnit), the Michroma font, and the bundled impulse responses are collected
+in THIRD_PARTY_NOTICES.md.
+
+Trademarks — the "OrbitCab" and "Darwin's Cat" names and logos are reserved and are
+not licensed under the GNU AGPL that covers the source code.
