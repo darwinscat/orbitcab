@@ -1,38 +1,38 @@
-# OrbitCab — IR Cabinet Loader
+# OrbitCab — Free Open-Source IR Cabinet Loader (VST3 / AU / CLAP)
 
-A small, free **impulse-response (IR) cabinet loader** audio plugin — *"a cabinet on orbit."*
-C++ / [JUCE](https://juce.com). Ships as **VST3 + AU + CLAP**.
+Load a guitar or bass cabinet impulse response (`.wav`) and hear your DI through it,
+in any DAW. Free and open-source — no account, no trial, no lock-in. Zero-latency
+convolution; VST3 · AU · CLAP, for Windows, macOS, and Linux. *A cabinet on orbit.*
 
-**OrbitCab** is part of the **Felitronics** plugin line, by **Darwin's Cat** — the
-sound-utils ecosystem (`darwinscat.com/sound-utils/cabinet-ir-utility` → IR capture →
-**this plugin in your DAW**).
-
-> **Status:** v1 IR Loader is **built** — VST3 + AU + Standalone, validated (auval +
-> pluginval @10).
+**OrbitCab** is part of the **Felitronics** plugin line by **Darwin's Cat** — the
+sound-utils ecosystem ([darwinscat.com/orbitcab](https://darwinscat.com/orbitcab)).
 
 ---
 
 ## What it is
 
-Load a guitar/bass cabinet impulse response (`.wav`) and hear your DI through it,
-in any DAW. The DSP heavy-lifting is `juce::dsp::Convolution` (zero-latency
-partitioned convolution, auto-resamples the IR to the host sample rate) — so the
-"make a convolver" part is essentially free; the project is really about UI,
-packaging, and distribution.
+Drop in a cabinet impulse response and OrbitCab plays your signal through it — the
+software version of micing a real cab. Run two IRs at once and blend between them,
+shape each with HPF / LPF / trim / phase / dry-wet, A/B your settings, and save it all
+in your DAW session. Bundled cabinet packs get you started; drag and drop your own
+anytime.
 
 ## Features
 
-**v1 — IR Loader** (built):
-load IR (file/folder browser + drag-drop) + bundled Brutal/Emerald packs · two IR
-boxes (I/II) with per-box HPF/LPF/TRIM/HEAD/phase/dry-wet · A↔B blend · A/B/C/D
-snapshots · auto-level · live spectrum · undo/redo · presets (export/import with the
-IR embedded) · state saved in the DAW session.
+- Load IRs by file/folder browser or drag-and-drop, plus bundled cabinet packs
+- Two IR slots (I / II), each with HPF · LPF · trim · phase · dry/wet
+- A↔B blend between the two slots
+- A/B/C/D snapshots, undo/redo, auto-level, live spectrum
+- Presets that export/import with the IR embedded
+- State saved in the DAW session, and versioned so updates don't break old sessions
 
-More is planned later. The signal chain is built modular (`juce::dsp::ProcessorChain`)
-and the saved state is **versioned from day one** so future versions don't break v1
-sessions.
+## Download
 
-## Build
+Get the VST3, AU, CLAP, and standalone builds for Windows, macOS, and Linux from the
+[**Releases**](https://github.com/darwinscat/orbitcab/releases/latest) page, then drop
+the plugin into your system plugin folder and rescan in your DAW.
+
+## Build from source
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -45,12 +45,12 @@ The first configure fetches and builds JUCE (pinned tag); artefacts land in
 
 ## Formats
 
-| Format | v1? | License of SDK | Notes |
-|--------|-----|----------------|-------|
-| **VST3** | ✅ | MIT (since SDK 3.8, Oct 2025) | all DAWs, Win/Mac/Linux |
-| **AU**   | ✅ | Apple, Apache-2.0 SDK | macOS only (Logic/GarageBand) |
-| **CLAP** | ✅ | MIT (`clap-juce-extensions`; native in JUCE 9 later) | Reaper/Bitwig/FL/Studio One/Ardour |
-| **AAX**  | not planned | Avid + PACE + iLok | Pro Tools only |
+| Format | Platforms | SDK license |
+|--------|-----------|-------------|
+| **VST3** | Windows · macOS · Linux — all DAWs | MIT |
+| **AU**   | macOS — Logic / GarageBand | Apple, Apache-2.0 SDK |
+| **CLAP** | Windows · macOS · Linux — Reaper / Bitwig / FL / Studio One / Ardour | MIT (`clap-juce-extensions`) |
+| **Standalone** | Windows · macOS · Linux — no DAW needed | — |
 
 ## License
 
@@ -65,7 +65,7 @@ and logos are trademarks and are **not** covered by the code license.
 ## Docs
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — signal chain, state model, code layout
-- [`docs/IR-LOADER-DESIGN.md`](docs/IR-LOADER-DESIGN.md) — v1 IR loader design
+- [`docs/IR-LOADER-DESIGN.md`](docs/IR-LOADER-DESIGN.md) — IR loader design
 - [`docs/BUILD.md`](docs/BUILD.md) — how to build, validate, and cut a release
 - [`docs/CODING-STYLE.md`](docs/CODING-STYLE.md) — style conventions + `.clang-format`
 - [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md) — per-asset ledger for bundled IRs + test audio
