@@ -9,6 +9,8 @@ sound-utils ecosystem ([darwinscat.com/orbitcab](https://darwinscat.com/orbitcab
 
 ---
 
+<!-- TODO @release: add a UI screenshot/GIF at the top here, e.g. ![OrbitCab](docs/screenshot.png) -->
+
 ## What it is
 
 Drop in a cabinet impulse response and OrbitCab plays your signal through it — the
@@ -16,6 +18,10 @@ software version of micing a real cab. Run two IRs at once and blend between the
 shape each with HPF / LPF / trim / phase / dry-wet, A/B your settings, and save it all
 in your DAW session. Bundled cabinet packs get you started; drag and drop your own
 anytime.
+
+OrbitCab is the cabinet, not the amp — place it **after** your amp sim, preamp, or
+Neural Amp Modeler (NAM) amp-head capture. NAM gives you the amp; OrbitCab gives you
+the cabinet.
 
 ## Features
 
