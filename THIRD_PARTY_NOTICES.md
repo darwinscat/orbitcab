@@ -32,6 +32,13 @@ The bundled content (IRs, font) is ledgered in
 - **Copyright:** © Apple Inc.
 - **Source:** https://github.com/apple/AudioUnitSDK
 
+### CLAP format — clap-juce-extensions + the CLAP SDK
+- **License:** MIT (both).
+- **Copyright:** © the clap-juce-extensions authors; © the CLAP / free-audio authors.
+- **Source:** https://github.com/free-audio/clap-juce-extensions (wraps the JUCE plugin as
+  a CLAP) which pulls in https://github.com/free-audio/clap (the CLAP SDK). Fetched via
+  CMake `FetchContent` at a pinned tag; not vendored.
+
 ---
 
 ## Bundled content (embedded in the binary)

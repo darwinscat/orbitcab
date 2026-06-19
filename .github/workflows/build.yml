@@ -67,4 +67,5 @@ jobs:
           if-no-files-found: ignore
           path: |
             build/OrbitCab_artefacts/Release/VST3/OrbitCab.vst3
+            build/OrbitCab_artefacts/Release/CLAP/OrbitCab.clap
             build/OrbitCab_artefacts/Release/Standalone
