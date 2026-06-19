@@ -152,7 +152,7 @@ private:
     orbitcab::UpdateChecker updateCheckerInstance;   // version + opt-in update check
 
     double currentSampleRate = 44100.0;           // IR-load sample-rate fallback (message thread)
-    double irLengthSeconds   = 1.0;               // longest loaded IR tail (for the host)
+    std::atomic<double> irLengthSeconds { 1.0 }; // longest loaded IR tail; getTailLengthSeconds() reads it from the host thread
 
     // Input trim + bypass parameter pointers (packed into cab::Params each block).
     std::atomic<float>* inputGainParam = nullptr;
