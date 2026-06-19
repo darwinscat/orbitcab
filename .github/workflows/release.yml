@@ -54,8 +54,18 @@ jobs:
           APP_ID:  ${{ secrets.MACOS_APP_IDENTITY }}
           INST_ID: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
           NOTARY:  ${{ vars.NOTARY_PROFILE }}
+          KCH_PWD: ${{ secrets.KCH_PWD }}
         run: |
           set -euo pipefail
+
+          # Let codesign/productsign use the signing keys without a GUI prompt — required
+          # when the runner has no interactive login session (service mode / SSH). Without
+          # this, codesign fails with errSecInternalComponent. Unlock + (re)set the key
+          # partition list each run (idempotent).
+          KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KCH_PWD" "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCH_PWD" "$KEYCHAIN" >/dev/null
+
           VER="${{ steps.v.outputs.version }}"
           REL="build/OrbitCab_artefacts/Release"
           VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"; CLAP="$REL/CLAP/OrbitCab.clap"
@@ -84,7 +94,18 @@ jobs:
           path: dist/*
 
   windows:
-    runs-on: windows-latest
+    # Native x64 + arm64. windows-11-arm is a free hosted runner for public repos.
+    # By mid-2026 the DAWs (Reaper, Cubase, …) ship native ARM64 Windows builds while
+    # most plugins are still x64-only — a native arm64 plugin fills a real, underserved gap.
+    # x64 also gets the Inno installer; arm64 is zip-only (ISCC is x86 + the audience is
+    # technical), which sidesteps running the installer toolchain under ARM.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, arch: x64,   plat: x64,   installer: true  }
+          - { runner: windows-11-arm, arch: arm64, plat: ARM64, installer: false }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
@@ -96,9 +117,10 @@ jobs:
           echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
       - name: Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -A ${{ matrix.plat }} -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
       - name: Inno Setup installer
+        if: ${{ matrix.installer }}
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
@@ -109,18 +131,26 @@ jobs:
         run: |
           $ver = "${{ steps.v.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "installer\output\*.exe" dist\
+          if (Test-Path "installer\output\*.exe") { Copy-Item "installer\output\*.exe" dist\ }
           $rel = "build\OrbitCab_artefacts\Release"
           $items = @("$rel\VST3\OrbitCab.vst3", "$rel\Standalone\OrbitCab.exe")
           if (Test-Path "$rel\CLAP\OrbitCab.clap") { $items += "$rel\CLAP\OrbitCab.clap" }
-          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows.zip" -Path $items
+          Compress-Archive -Force -DestinationPath "dist\OrbitCab-$ver-Windows-${{ matrix.arch }}.zip" -Path $items
       - uses: actions/upload-artifact@v7
         with:
-          name: windows
+          name: windows-${{ matrix.arch }}
           path: dist/*
 
   linux:
-    runs-on: ubuntu-latest
+    # Native x86_64 + arm64 — both are free hosted runners for public repos, so it's a
+    # real native build on each arch (no cross-compile, no QEMU).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,    arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64  }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
@@ -147,12 +177,13 @@ jobs:
           REL="build/OrbitCab_artefacts/Release"
           mkdir -p stage dist
           cp -R "$REL/VST3/OrbitCab.vst3" stage/
-          if [ -d "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
+          # -e not -d: a Linux .clap is a single .so-style FILE, not a macOS-style bundle dir.
+          if [ -e "$REL/CLAP/OrbitCab.clap" ]; then cp -R "$REL/CLAP/OrbitCab.clap" stage/; fi
           if [ -f "$REL/Standalone/OrbitCab" ];  then cp "$REL/Standalone/OrbitCab" stage/; fi
-          tar -C stage -czf "dist/OrbitCab-$VER-Linux.tar.gz" .
+          tar -C stage -czf "dist/OrbitCab-$VER-Linux-${{ matrix.arch }}.tar.gz" .
       - uses: actions/upload-artifact@v7
         with:
-          name: linux
+          name: linux-${{ matrix.arch }}
           path: dist/*
 
   release:
