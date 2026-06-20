@@ -56,6 +56,37 @@ void CabEngine::reset()
     autoLeveler.reset();
 }
 
+void CabEngine::seedAutoLevel()
+{
+    // Estimate the convolution's broadband (white-noise) RMS gain from the loaded IR and
+    // seed the leveler's makeup to ~1/gain, so the first audio starts at the converged level
+    // instead of kicking while the follower crawls in (#48). The convolver is Normalise::no,
+    // so that gain ≈ ‖ir‖₂ at the processing rate ≈ sqrt(SRhost / SRir) · ‖ir_native‖₂.
+    auto slotGain = [this] (int s) -> double
+    {
+        if (! slot[s].hasOriginal())
+            return 0.0;
+        const auto& ir = slot[s].originalBuffer();
+        const int n = ir.getNumSamples();
+        if (n <= 0)
+            return 0.0;
+        double e = 0.0;
+        for (int c = 0; c < ir.getNumChannels(); ++c)
+        {
+            const float* d = ir.getReadPointer (c);
+            for (int i = 0; i < n; ++i)
+                e += (double) d[i] * d[i];
+        }
+        e /= juce::jmax (1, ir.getNumChannels());            // per-channel energy
+        const double srRatio = currentSampleRate / juce::jmax (1.0, slot[s].originalSampleRate());
+        return std::sqrt (e * srRatio);
+    };
+
+    const double g = slotGain (0);                           // slot A — the ballpark
+    if (g > 1.0e-6)
+        autoLeveler.seed ((float) (1.0 / g));
+}
+
 //==============================================================================
 void CabEngine::process (float* const* io, int numChannels, int numSamples,
                          const Params& p, bool nonRealtime)

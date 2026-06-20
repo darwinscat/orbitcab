@@ -48,6 +48,11 @@ public:
 
     void reset();
 
+    // Seed the auto-leveler's makeup from the loaded IR(s)' energy so the first audio after
+    // prepare starts at ~the converged level (no startup kick, #48). Message thread — call
+    // after the IRs are (re)applied in prepareToPlay.
+    void seedAutoLevel();
+
     //--- IR lifecycle (message thread) — forwarded to the per-slot IRSlot --------
     void   setSlotOriginalIR    (int slot, const float* const* samples, int numChannels,
                                  int numSamples, double irSampleRate);
