@@ -83,6 +83,7 @@ target_sources(OrbitCab PRIVATE
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
 )
@@ -156,6 +157,7 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
 )
@@ -184,6 +186,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/CabEngineTests.cpp
     tests/IRSlotTests.cpp
     tests/AutoLevelerTests.cpp
+    tests/WaveformMathTests.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
 )
