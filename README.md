@@ -3,8 +3,6 @@
 Free, open-source impulse-response (IR) cabinet loader for electric guitar and bass.
 Load a cabinet IR and hear your DI through it — in any DAW.
 
-![OrbitCab](docs/screenshot.png)
-
 ## Features
 
 - Two IR slots with A↔B blend
