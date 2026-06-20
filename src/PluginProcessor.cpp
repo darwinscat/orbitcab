@@ -74,29 +74,38 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     apvts.addParameterListener ("trimOnB", this);
     apvts.addParameterListener ("headOnA", this);
     apvts.addParameterListener ("headOnB", this);
+
+    // Poll the reload flags on the message thread. The processor is constructed (and
+    // destroyed) on the message thread, so start/stop the Timer here + in the destructor —
+    // never from the audio or prepare/release path, whose thread is host-defined.
+    startTimerHz (30);
 }
 
 OrbitCabAudioProcessor::~OrbitCabAudioProcessor()
 {
+    stopTimer();   // no poll callback may run while *this is being torn down
     apvts.removeParameterListener ("trimOnA", this);
     apvts.removeParameterListener ("trimOnB", this);
     apvts.removeParameterListener ("headOnA", this);
     apvts.removeParameterListener ("headOnB", this);
-    cancelPendingUpdate();
 }
 
 void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
 {
-    // TRIM-enable and HEAD-trim both reshape the loaded IR; applyTrimAndLoad rebuilds
-    // from current state, so either toggle just needs a "reload this slot" request.
+    // This can run on the audio thread (host automation of the toggle), so do the absolute
+    // minimum: flag the slot dirty. The 30 Hz timer below does the heavy rebuild off the
+    // audio thread. An atomic store is the only hard-RT-safe primitive used on this path.
     if      (id == "trimOnA" || id == "headOnA") pendingTrimReloadA.store (true, std::memory_order_relaxed);
     else if (id == "trimOnB" || id == "headOnB") pendingTrimReloadB.store (true, std::memory_order_relaxed);
-    else return;
-    triggerAsyncUpdate();                     // safe from any thread; reload on message thread
 }
 
-void OrbitCabAudioProcessor::handleAsyncUpdate()
+void OrbitCabAudioProcessor::timerCallback()
 {
+    // Message thread. Coalesces rapid toggles/drags (many flag stores between ticks → one
+    // reload). Gated on enginePrepared so a flag set before prepareToPlay / after
+    // releaseResources never rebuilds onto an engine with no convolvers.
+    if (! enginePrepared.load (std::memory_order_acquire))
+        return;
     if (pendingTrimReloadA.exchange (false)) applyTrimAndLoad (true);
     if (pendingTrimReloadB.exchange (false)) applyTrimAndLoad (false);
 }
@@ -121,6 +130,8 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
         applyTrimAndLoad (true);
     if (slotBLoaded.load() && engine.slotHasOriginal (1))
         applyTrimAndLoad (false);
+
+    enginePrepared.store (true, std::memory_order_release);   // arm the reload poll timer
 }
 
 bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)
@@ -156,12 +167,11 @@ bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormat
 
 void OrbitCabAudioProcessor::setTrim (float fraction01, bool slotA)
 {
-    // Coalesce rapid drags: store the latest fraction and reload once on the
-    // message thread via AsyncUpdater, instead of calling loadImpulseResponse on every
-    // micro-move (which floods the convolver's loader so the final position never lands).
+    // Store the latest fraction + flag the slot dirty; the 30 Hz poll timer coalesces rapid
+    // drags into one reload (calling the loader on every micro-move floods it so the final
+    // position never lands). Called from the editor's waveform drag — message thread.
     (slotA ? trimFractionA : trimFractionB) = juce::jlimit (0.0f, 1.0f, fraction01);
     (slotA ? pendingTrimReloadA : pendingTrimReloadB).store (true, std::memory_order_relaxed);
-    triggerAsyncUpdate();
 }
 
 void OrbitCabAudioProcessor::applyTrimAndLoad (bool slotA)
@@ -448,8 +458,10 @@ const juce::MemoryBlock* OrbitCabAudioProcessor::embeddedIRBytes (const juce::St
 
 void OrbitCabAudioProcessor::releaseResources()
 {
-    // Drop the engine's transient DSP state (filter/convolver/follower) when the host
-    // stops; prepareToPlay re-seeds everything + re-applies the IRs before audio resumes.
+    // Disarm the reload poll timer before tearing down DSP state, so timerCallback can't
+    // rebuild onto a reset engine. Then drop the engine's transient state (filter/convolver/
+    // follower); prepareToPlay re-seeds everything + re-applies the IRs before audio resumes.
+    enginePrepared.store (false, std::memory_order_release);
     engine.reset();
 }
 

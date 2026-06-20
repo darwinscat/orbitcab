@@ -26,7 +26,7 @@
 //==============================================================================
 class OrbitCabAudioProcessor final : public juce::AudioProcessor,
                                  private juce::AudioProcessorValueTreeState::Listener,
-                                 private juce::AsyncUpdater
+                                 private juce::Timer
 {
 public:
     OrbitCabAudioProcessor();
@@ -189,13 +189,16 @@ private:
     std::atomic<bool> slotBLoaded { false };
     void applyTrimAndLoad (bool slotA);
 
-    // TRIM enable is a param that changes the IR length, so toggling it must re-trim —
-    // but the change can arrive on the audio thread (host automation). Defer the reload
-    // to the message thread via AsyncUpdater (RT-safe).
+    // TRIM/HEAD enable are params that reshape the IR, so toggling them must re-trim — but
+    // the change can arrive on the audio thread (host automation). parameterChanged does
+    // ONLY an atomic flag store (hard-RT-safe); a 30 Hz message-thread Timer polls the flag
+    // and runs the actual reload off the audio thread. enginePrepared gates the poller so it
+    // never rebuilds onto an un-prepared / released engine.
     void parameterChanged (const juce::String& id, float newValue) override;
-    void handleAsyncUpdate() override;
+    void timerCallback() override;
     std::atomic<bool> pendingTrimReloadA { false };
     std::atomic<bool> pendingTrimReloadB { false };
+    std::atomic<bool> enginePrepared     { false };
 
     // IR reference per slot (for state/preset save). Message-thread only.
     juce::String slotRefA, slotRefB;
