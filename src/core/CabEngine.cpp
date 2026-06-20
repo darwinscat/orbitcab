@@ -131,15 +131,15 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             const float phA = phaseSm[0].getNextValue(), mA = mixSm[0].getNextValue();
             const float phB = phaseSm[1].getNextValue(), mB = mixSm[1].getNextValue();
             const float ab   = mixABSmoothed.getNextValue();
-            const float gate = muteGateSmoothed.getNextValue();
             for (int ch = 0; ch < numCh; ++ch)
             {
-                const float d     = dry[ch][n];
-                const float sA    = d * (1.0f - mA) + wa[ch][n] * phA * mA;
-                const float sB    = bLoaded ? d * (1.0f - mB) + wb[ch][n] * phB * mB : sA;
-                const float mixed = bLoaded ? (sA * (1.0f - ab) + sB * ab) : sA;
-                // both slots muted => pass the dry signal through (bypass), not silence
-                out[ch][n] = mixed * gate + d * (1.0f - gate);
+                const float d  = dry[ch][n];
+                const float sA = d * (1.0f - mA) + wa[ch][n] * phA * mA;
+                const float sB = bLoaded ? d * (1.0f - mB) + wb[ch][n] * phB * mB : sA;
+                // MUTE gate is applied AFTER auto-level (#45) so the leveler measures the
+                // *ungated* wet — its makeup stays put through a toggle instead of lagging
+                // ~1 s behind the gate (that lag caused the mute dip + un-mute overshoot).
+                out[ch][n] = bLoaded ? (sA * (1.0f - ab) + sB * ab) : sA;
             }
         }
     }
@@ -159,15 +159,20 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         autoLeveler.processBlock (dMS / chs, mMS / chs, p.autoLevel, numSamples);
     }
 
-    // --- auto-level makeup * master (mix volume) gain ---
+    // --- auto-level makeup (wet only), then the MUTE gate (→ dry), then master gain ---
+    // The leveler measured the ungated wet above, so its makeup is steady across a mute.
+    // Here the wet is leveled and crossfaded to the raw (un-leveled) dry by the gate: the
+    // dry passes clean (like bypass) and the leveled wet is already matched → no dip / poof.
     {
-        auto* const* out = buffer.getArrayOfWritePointers();
+        const auto* const* dry = dryBuffer.getArrayOfReadPointers();
+        auto* const*       out = buffer.getArrayOfWritePointers();
         for (int n = 0; n < numSamples; ++n)
         {
-            const float g  = gainSmoothed.getNextValue();
-            const float mg = autoLeveler.getNextGain();
+            const float g    = gainSmoothed.getNextValue();
+            const float mg   = autoLeveler.getNextGain();
+            const float gate = muteGateSmoothed.getNextValue();
             for (int ch = 0; ch < numCh; ++ch)
-                out[ch][n] *= mg * g;
+                out[ch][n] = (out[ch][n] * mg * gate + dry[ch][n] * (1.0f - gate)) * g;
         }
     }
 

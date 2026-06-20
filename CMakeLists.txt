@@ -176,6 +176,37 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
 )
 
 # ----------------------------------------------------------------------------
+# Fade/auto-level envelope probe (#45) — prints output RMS across a MUTE toggle so the
+# mute<->auto-level interaction is measured, not ear-guessed. Dev tool; not a CI gate.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_fade_measure PRODUCT_NAME "OrbitCabFadeMeasure")
+target_sources(orbitcab_fade_measure PRIVATE
+    tools/dsp-test/measure_fades.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+)
+target_compile_definitions(orbitcab_fade_measure PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_fade_measure PRIVATE
+    OrbitCabData
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
 # Headless unit tests for the cab:: DSP core (JUCE UnitTest). Links core/ ONLY —
 # no GUI, no juce_audio_processors, no host — which is the whole point of the
 # core/adapter split. Run it as a CI gate (returns non-zero on any failure).

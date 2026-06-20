@@ -52,6 +52,12 @@ jobs:
         shell: bash
         run: ./build/orbitcab_dsp_test_artefacts/Release/*.exe
 
+      # Channel-mute / auto-level envelope (#45): asserts the output stays flat through a
+      # mute toggle (no dip, no overshoot). Non-zero if the regression returns.
+      - name: Mute/auto-level envelope gate
+        shell: bash
+        run: ./build/orbitcab_fade_measure_artefacts/Release/*.exe
+
       - name: Validate (pluginval, VST3)
         shell: bash
         run: |
