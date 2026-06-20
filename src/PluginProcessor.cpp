@@ -131,13 +131,19 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
     if (slotBLoaded.load() && engine.slotHasOriginal (1))
         applyTrimAndLoad (false);
 
+    // Seed the auto-leveler from the loaded IR's energy so the makeup starts ~converged —
+    // removes most of the startup kick at the root (#48); the soft-start below is now just
+    // a short safety net for the convolver warm-up residue.
+    engine.seedAutoLevel();
+
     enginePrepared.store (true, std::memory_order_release);   // arm the reload poll timer
 
-    // Arm the one-shot startup fade (#48): ramp the output in over ~150 ms on the first
-    // non-silent block, masking the engine's auto-level + convolver warm-up transient.
+    // One-shot startup fade (#48): a short ramp from silence on the first non-silent block,
+    // covering the convolver warm-up the auto-level seed can't (the IR loads async). With the
+    // seed doing the heavy lifting this is now ~imperceptible (was 150 ms before the seed).
     softStartArmed = true;
     softStart      = 1.0f;
-    softStartStep  = (float) (1.0 / (0.15 * sampleRate));
+    softStartStep  = (float) (1.0 / (0.03 * sampleRate));     // 30 ms
 }
 
 bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)

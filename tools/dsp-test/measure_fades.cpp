@@ -35,9 +35,8 @@ int main()
     juce::AudioBuffer<float> buf (2, block);
     juce::MidiBuffer midi;
 
-    double ph = 0.0;
-    const double w = juce::MathConstants<double>::twoPi * 220.0 / sr;
-    auto fill = [&] { for (int i = 0; i < block; ++i) { const float s = (float) (0.5 * std::sin (ph)); ph += w; buf.setSample (0, i, s); buf.setSample (1, i, s); } };
+    juce::Random rng (1234);   // deterministic broadband (white-noise) test signal ≈ a real DI
+    auto fill = [&] { for (int i = 0; i < block; ++i) { const float s = 0.3f * (rng.nextFloat() * 2.0f - 1.0f); buf.setSample (0, i, s); buf.setSample (1, i, s); } };
     auto rms  = [&] { double a = 0.0; for (int i = 0; i < block; ++i) { const double v = buf.getSample (0, i); a += v * v; } return std::sqrt (a / block); };
 
     auto run = [&] (int blocks, std::vector<double>& dst, const char* tag)

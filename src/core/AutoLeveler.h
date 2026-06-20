@@ -36,6 +36,18 @@ public:
         matchSmoothed.setCurrentAndTargetValue (1.0f);
     }
 
+    // Seed the makeup + followers to a known gain (estimated from the loaded IR's energy)
+    // so the first audio after prepare starts at ~the converged value — no startup boost
+    // while the followers crawl up from zero (#48). The followers are set to a consistent
+    // (dry, mix) pair so the slow follower doesn't yank the makeup during convolver warm-up.
+    void seed (float makeupGain)
+    {
+        const float g = juce::jlimit (kMatchMinGain, kMatchMaxGain, makeupGain);
+        matchSmoothed.setCurrentAndTargetValue (g);
+        dryMeanSq = 1.0;
+        mixMeanSq = 1.0 / ((double) g * g);     // sqrt(dryMeanSq / mixMeanSq) == g
+    }
+
     // Advance the followers with this block's dry / mixed mean-square energy and set the
     // smoothed makeup target. `enabled` false => aim for unity (the followers keep
     // running, so re-enabling snaps back instantly). Below the silence floor the target
