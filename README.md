@@ -1,5 +1,7 @@
 # OrbitCab
 
+![OrbitCab — free guitar & bass cabinet IR loader (VST3 · AU · CLAP, Windows · macOS · Linux)](docs/banner.jpg)
+
 Free, open-source impulse-response (IR) cabinet loader for electric guitar and bass.
 Load a cabinet IR and hear your DI through it — in any DAW.
 
