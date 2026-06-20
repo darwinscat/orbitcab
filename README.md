@@ -3,6 +3,10 @@
 Free, open-source impulse-response (IR) cabinet loader for electric guitar and bass.
 Load a cabinet IR and hear your DI through it — in any DAW.
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/darwinscat/orbitcab)](https://github.com/darwinscat/orbitcab/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/darwinscat/orbitcab/total)](https://github.com/darwinscat/orbitcab/releases)
+
 ## Features
 
 - Two IR slots with A↔B blend
@@ -14,10 +18,22 @@ Load a cabinet IR and hear your DI through it — in any DAW.
 
 ## Install
 
-Download the latest build for Windows, macOS, or Linux from the
-[Releases](https://github.com/darwinscat/orbitcab/releases/latest) page, copy the plugin
-into your system plugin folder, and rescan in your DAW. A standalone app is included for
-use without a DAW.
+Grab the latest build from the
+[Releases](https://github.com/darwinscat/orbitcab/releases/latest) page:
+
+- **macOS** — open `OrbitCab-<ver>-macOS.pkg` (signed + notarized — installs cleanly, no
+  Gatekeeper prompt). Or take the `.zip` and copy the bundles into
+  `~/Library/Audio/Plug-Ins/` (`VST3/`, `Components/`, `CLAP/`).
+- **Windows** — run `OrbitCab-<ver>-Windows-Setup.exe` (x64). It isn't code-signed yet, so
+  SmartScreen warns — click **More info → Run anyway**. On Arm (Snapdragon) machines use
+  `OrbitCab-<ver>-Windows-arm64.zip` and copy the plugins into your VST3 / CLAP folders.
+- **Linux** — extract `OrbitCab-<ver>-Linux-<arch>.tar.gz` and copy `OrbitCab.vst3` /
+  `OrbitCab.clap` into `~/.vst3` / `~/.clap`.
+
+Then rescan in your DAW. A **standalone** app is included for use without a DAW.
+
+Verify a download against [`SHA256SUMS`](https://github.com/darwinscat/orbitcab/releases/latest)
+(attached to each release): `shasum -a 256 -c SHA256SUMS` (macOS) or `sha256sum -c SHA256SUMS` (Linux).
 
 | Format | Platforms |
 |--------|-----------|
