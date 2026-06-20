@@ -200,6 +200,14 @@ private:
     std::atomic<bool> pendingTrimReloadB { false };
     std::atomic<bool> enginePrepared     { false };
 
+    // One-shot startup fade (#48) — a host-side cosmetic that ramps the output up from
+    // silence on the first non-silent block after prepare/release, masking the engine's
+    // auto-level + convolver warm-up. Audio-thread only (set in prepare/release, read in
+    // processBlock), so plain members suffice.
+    bool  softStartArmed = true;
+    float softStart      = 1.0f;
+    float softStartStep  = 0.0f;
+
     // IR reference per slot (for state/preset save). Message-thread only.
     juce::String slotRefA, slotRefB;
     juce::String slotNameA, slotNameB;          // display name (a portable preset carries one; empty = derive from ref)

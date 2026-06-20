@@ -132,6 +132,12 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
         applyTrimAndLoad (false);
 
     enginePrepared.store (true, std::memory_order_release);   // arm the reload poll timer
+
+    // Arm the one-shot startup fade (#48): ramp the output in over ~150 ms on the first
+    // non-silent block, masking the engine's auto-level + convolver warm-up transient.
+    softStartArmed = true;
+    softStart      = 1.0f;
+    softStartStep  = (float) (1.0 / (0.15 * sampleRate));
 }
 
 bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)
@@ -463,6 +469,8 @@ void OrbitCabAudioProcessor::releaseResources()
     // follower); prepareToPlay re-seeds everything + re-applies the IRs before audio resumes.
     enginePrepared.store (false, std::memory_order_release);
     engine.reset();
+    softStartArmed = true;          // re-arm the startup fade for the next play (#48)
+    softStart      = 1.0f;
 }
 
 bool OrbitCabAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -496,6 +504,26 @@ void OrbitCabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // current parameters (RT-safe atomic loads) and hand it the planar channels in
     // place; `isNonRealtime()` lets it skip the spectrum capture during a bounce.
     engine.process (buffer.getArrayOfWritePointers(), numCh, numSamples, packParams(), isNonRealtime());
+
+    // One-shot soft-start: fade the output up from silence on the first non-silent block
+    // after prepareToPlay / releaseResources, to mask the engine's auto-level + convolver
+    // warm-up transient (#48). A host-side cosmetic — kept out of the pure DSP core.
+    if (softStartArmed && buffer.getMagnitude (0, numSamples) > 1.0e-5f)
+    {
+        softStartArmed = false;
+        softStart      = 0.0f;
+    }
+    if (softStart < 1.0f)
+    {
+        const int chs = buffer.getNumChannels();
+        for (int n = 0; n < numSamples; ++n)
+        {
+            const float ss = softStart;
+            for (int ch = 0; ch < chs; ++ch)
+                buffer.getWritePointer (ch)[n] *= ss;
+            softStart = juce::jmin (1.0f, softStart + softStartStep);
+        }
+    }
 }
 
 //==============================================================================
