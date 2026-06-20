@@ -167,7 +167,16 @@ private:
     void showPopup()
     {
         auto panel = std::make_unique<Panel> (checker, *this);
-        juce::CallOutBox::launchAsynchronously (std::move (panel), getScreenBounds(), nullptr);
+
+        // Parent the call-out to the editor, NOT the desktop (the nullptr overload). A
+        // desktop call-out outlives the editor: close the plugin window with it open and it
+        // orphans on screen with no way to dismiss it. As a child of the top-level editor it
+        // is destroyed with the window. `areaToPointTo` must be in the parent's coordinates.
+        if (auto* top = getTopLevelComponent())
+            juce::CallOutBox::launchAsynchronously (std::move (panel),
+                                                    top->getLocalArea (this, getLocalBounds()), top);
+        else
+            juce::CallOutBox::launchAsynchronously (std::move (panel), getScreenBounds(), nullptr);
     }
 
     orbitcab::UpdateChecker& checker;
