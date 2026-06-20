@@ -202,8 +202,12 @@ jobs:
         run: |
           RAW="${{ github.event.inputs.version || github.ref_name }}"
           VER="${RAW#v}"
+          # Flatten every artifact into one dir, add a SHA256SUMS over them, upload all.
+          mkdir -p out
+          find artifacts -type f -exec cp {} out/ \;
+          ( cd out && sha256sum OrbitCab-* > SHA256SUMS )
           gh release create "v$VER" \
             --repo "${{ github.repository }}" \
             --title "OrbitCab v$VER" \
             --generate-notes \
-            $(find artifacts -type f)
+            out/*
