@@ -94,7 +94,7 @@ private:
             // If an update is already known from a previous check, show it up front.
             if (checker.updateAvailable())
                 showUpdate (checker.storedLatest(),
-                            juce::URL ("https://darwinscat.com/download/orbitcab/"));
+                            juce::URL ("https://github.com/darwinscat/orbitcab/releases/latest"));
 
             setSize (250, 156);
         }
