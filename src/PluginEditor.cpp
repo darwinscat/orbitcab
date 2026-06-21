@@ -72,6 +72,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     // Delete the current preset (to the Trash). Enabled only for a user preset — a factory
     // preset (Default) or an external one is read-only; updatePresetDisplay keeps this in sync.
+    // Framed (bordered) so it groups with the Save / Save As actions, not the file icons.
+    trashBtn.framed = true;
     trashBtn.setTooltip ("Delete the current preset");
     trashBtn.onClick = [this] { deleteCurrentPreset(); };
     addAndMakeVisible (trashBtn);
@@ -679,12 +681,12 @@ void OrbitCabAudioProcessorEditor::resized()
     auto header = r.removeFromTop (50);
     constexpr int kCtlBand = 44;
 
-    auto headerRight = header.removeFromRight (410 + 64 + 34 + 124);  // save+saveAs+trash+export+import+≈ + A/B/C/D
+    auto headerRight = header.removeFromRight (410 + 64 + 40 + 124);  // save+saveAs+trash+export+import+≈ + A/B/C/D
     auto rightBar    = headerRight.withSizeKeepingCentre (headerRight.getWidth(), kCtlBand);
     settingsBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
     importBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     exportBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
-    trashBtn.setBounds    (rightBar.removeFromRight (34).reduced (5, 7));
+    trashBtn.setBounds    (rightBar.removeFromRight (40).reduced (4, 7));   // framed → grouped with Save/Save As
     saveAsBtn.setBounds   (rightBar.removeFromRight (64).reduced (4, 7));
     saveBtn.setBounds     (rightBar.removeFromRight (54).reduced (4, 7));
     // A/B/C/D compare cluster sits just left of the preset combo (between it and the title)
