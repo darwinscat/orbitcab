@@ -77,6 +77,13 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     apvts.addParameterListener ("trimOnA", this);
     apvts.addParameterListener ("trimOnB", this);
 
+    // Preset-centric first start: the live state IS a preset, and that preset is the factory
+    // "Default" (bundled IR #16 + HPF) — not an ad-hoc bootstrap. Establishing it here (decode
+    // + store the original IR) mirrors the supported setStateInformation-before-prepareToPlay
+    // path; prepareToPlay re-applies it onto the prepared engine. A host that restores a
+    // session right after construction simply overwrites this in setStateInformation.
+    applyFactoryDefault();
+
     // Poll the reload flags on the message thread. The processor is constructed (and
     // destroyed) on the message thread, so start/stop the Timer here + in the destructor —
     // never from the audio or prepare/release path, whose thread is host-defined.
@@ -620,6 +627,8 @@ static void makePortable (juce::ValueTree& root)
             if (! r.bundled && r.fallback.isNotEmpty())
                 r.fallback = juce::File (r.fallback).getFileName();      // absolute path -> bare filename
         m.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
+        m.removeProperty ("baselineHash", nullptr);                     // session dirty-baseline — not shareable
+        m.setProperty ("factory", false, nullptr);                     // a shared/exported preset is never the Default
     }
 }
 
@@ -654,6 +663,52 @@ std::vector<orbitcab::IrRef> OrbitCabAudioProcessor::currentIrRefs() const
 }
 
 //==============================================================================
+// Preset-centric model: the factory Default + dirty tracking.
+//==============================================================================
+void OrbitCabAudioProcessor::loadFactoryDefaultIR()
+{
+    // The factory Default's cabinet: bundled Emerald IR #16. By filename PREFIX (not a
+    // hardcoded full name) so a later rename of the bundled tree doesn't silently fall
+    // through to the cookie-monster fallback.
+    for (const auto& b : orbitcab::bundledIRs())
+        if (b.name.startsWith ("16"))
+        {
+            loadIRFromMemory (b.data, (size_t) b.size, true, b.name);
+            return;
+        }
+    loadBundledIR();   // fallback (shouldn't happen): the original bootstrap IR
+}
+
+void OrbitCabAudioProcessor::applyFactoryDefault()
+{
+    // The factory starting point (preset-centric first start + the editor's "Default" item):
+    // a clean single-box sound — bundled IR #16 with the HPF engaged. Reset every parameter
+    // to its default first so the result is reproducible regardless of the current state,
+    // then load the IR + arm the HPF + stamp the read-only "Default" identity. Message-thread.
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            rp->setValueNotifyingHost (rp->getDefaultValue());
+
+    clearSlotB();                                   // box II empty (single IR)
+    loadFactoryDefaultIR();                          // box I → IR #16
+    if (auto* q = apvts.getParameter ("hpfOnA"))
+        q->setValueNotifyingHost (1.0f);             // HPF on (default 80 Hz)
+
+    currentMeta      = orbitcab::PresetMeta();
+    currentMeta.name = "Default";
+    presetIsFactory  = true;
+    captureBaseline();                               // a fresh Default is clean (not dirty)
+}
+
+juce::String OrbitCabAudioProcessor::stateFingerprint()
+{
+    // A cheap, stable hash of the preset-defining state (params incl. headTrim + IR refs —
+    // the same tree the snapshots/undo capture). Excludes <meta>, view-prefs, snapshots and
+    // undo, so only sound-affecting edits flip it. Drives the dirty indicator.
+    return juce::String (captureStateTree().toXmlString().hashCode64());
+}
+
+//==============================================================================
 juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
 {
     // Wrap the parameter tree + per-slot IR references in one root so a saved
@@ -677,6 +732,11 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
         meta.modifiedAt = orbitcab::nowIso8601();
         juce::ValueTree metaTree ("meta");
         metaTree.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
+        // Preset-centric session bookkeeping (NOT part of the shareable JSON): the dirty
+        // baseline + the factory flag, so a dirty "Default *" and "this is the read-only
+        // Default" both survive a DAW session reload. makePortable strips these for export.
+        metaTree.setProperty ("baselineHash", presetBaselineFingerprint, nullptr);
+        metaTree.setProperty ("factory",      presetIsFactory,           nullptr);
         root.appendChild (metaTree, nullptr);
     }
 
@@ -764,10 +824,20 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     {
         // Preset <meta> (v3). Absent in v2 / param-only states → reset to a clean default so
         // a stale name can't linger; the name then derives from the file (listWithMeta / editor).
+        // baselineHash/factory are session bookkeeping: a session restores its dirty baseline +
+        // factory flag; a portable preset (stripped) lands clean (PresetManager re-baselines it).
         if (auto m = root.getChildWithName ("meta"); m.isValid())
+        {
             currentMeta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m.getProperty ("json").toString()));
+            presetBaselineFingerprint = m.getProperty ("baselineHash", {}).toString();
+            presetIsFactory = (bool) m.getProperty ("factory", false);
+        }
         else
+        {
             currentMeta = orbitcab::PresetMeta();
+            presetBaselineFingerprint.clear();
+            presetIsFactory = false;
+        }
 
         if (auto params = root.getChildWithName (apvts.state.getType()); params.isValid())
             apvts.replaceState (params);
@@ -805,6 +875,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     {
         // Backward-compat: earlier sessions stored just the PARAMS tree (no <meta>).
         currentMeta = orbitcab::PresetMeta();
+        presetBaselineFingerprint.clear();
+        presetIsFactory = false;
         apvts.replaceState (root);
     }
 

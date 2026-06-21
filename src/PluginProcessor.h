@@ -80,6 +80,21 @@ public:
     const orbitcab::PresetMeta& presetMeta() const     { return currentMeta; }
     void setPresetMeta (const orbitcab::PresetMeta& m) { currentMeta = m; }
 
+    // Preset-centric model (no ad-hoc state): the live state IS the current preset, and
+    // editing it dirties the preset until Save writes it back. The factory "Default" is the
+    // read-only first-start preset — editing it + Save forks (Save As) instead of overwriting.
+    //
+    // Dirty is a cheap fingerprint of the preset-defining state (params incl. headTrim + IR
+    // refs — the same tree snapshots/undo use), so only sound-affecting edits flip it; the
+    // baseline is stamped on load/save and persisted in <meta> so a dirty "Default *" survives
+    // a DAW session reload. All message-thread (editor / state restore).
+    void applyFactoryDefault();                            // establish the factory Default (params + IR #16 + HPF)
+    void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); }
+    bool isPresetDirty()          { return presetBaselineFingerprint.isNotEmpty() && stateFingerprint() != presetBaselineFingerprint; }
+    void ensureBaselineCaptured() { if (presetBaselineFingerprint.isEmpty()) captureBaseline(); }
+    bool isPresetFactory() const  { return presetIsFactory; }
+    void setPresetFactory (bool f) { presetIsFactory = f; }
+
     //==========================================================================
     // Parameter tree — public so the editor can attach controls. The layout is
     // built by orbitcab::createParameterLayout() in Parameters.cpp (one source of truth).
@@ -272,6 +287,14 @@ private:
     // it; the resolve path's id branch stays dormant until then). Message-thread only.
     orbitcab::PresetMeta currentMeta;
     std::vector<orbitcab::IrRef> currentIrRefs() const;
+
+    // Preset-centric tracking (message-thread). presetIsFactory => the current preset is the
+    // read-only factory Default (Save forks). presetBaselineFingerprint = the hash of the
+    // preset content at the last load/save; isPresetDirty() compares the live fingerprint.
+    bool         presetIsFactory = true;
+    juce::String presetBaselineFingerprint;
+    juce::String stateFingerprint();           // hash of captureStateTree() — cheap dirty probe
+    void         loadFactoryDefaultIR();        // bundled IR #16 into slot A (the factory Default cab)
 
     // Undo/redo state (message-thread only). Snapshots are ref-only (no embedded bytes —
     // those live in embeddedIRs for the instance), so the stacks stay tiny.

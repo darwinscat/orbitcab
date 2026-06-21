@@ -50,9 +50,17 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         if      (id == 2)                                  applyDefaultPreset();      // factory
         else if (id >= 3 && id - 3 < presetFiles.size())   loadPresetFile (presetFiles[id - 3]);
     };
-    saveBtn.onClick = [this] { promptSavePreset(); };
-    saveBtn.setTooltip ("Save preset to the library");
+    saveBtn.onClick = [this] { saveCurrentPreset(); };
+    saveBtn.setTooltip ("Save changes to the current preset (a factory preset saves as a copy)");
     addAndMakeVisible (saveBtn);
+    saveAsBtn.onClick = [this] { promptSavePreset(); };
+    saveAsBtn.setTooltip ("Save as a new preset in the library");
+    addAndMakeVisible (saveAsBtn);
+
+    // Preset-centric: make sure a dirty baseline exists for the live state, so edits to the
+    // first-start Default immediately read as "Default *". (The processor already captured one
+    // on construction; this is a no-op safety net.)
+    processorRef.ensureBaselineCaptured();
 
     // Export / Import a .orbitcab preset file (IR embedded). Icon-only buttons, right of Save.
     exportBtn.setTooltip ("Export preset to a .orbitcab file (IR included)");
@@ -225,6 +233,8 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     processorRef.undoTick();                       // coalesce edits into undo steps
     undoBtn.setEnabled (processorRef.canUndo());
     redoBtn.setEnabled (processorRef.canRedo());
+
+    updatePresetDisplay();                         // live dirty marker ("Default *") as knobs move
 }
 
 void OrbitCabAudioProcessorEditor::updateEnablement()
@@ -387,7 +397,8 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
         presetFiles.add (f);
         presetBox.addItem (f.getFileNameWithoutExtension(), id++);
     }
-    presetBox.setSelectedId (1, juce::dontSendNotification);
+    presetShownId = -1;                                 // force a re-apply after the rebuild
+    updatePresetDisplay();                              // select the current preset by name (+ dirty)
 }
 
 void OrbitCabAudioProcessorEditor::promptSavePreset()
@@ -406,11 +417,8 @@ void OrbitCabAudioProcessorEditor::promptSavePreset()
                 const auto name = saveDialog->getTextEditorContents ("name").trim();
                 if (name.isNotEmpty())
                 {
-                    const auto file = presets.saveAs (name);
-                    refreshPresets();
-                    for (int i = 0; i < presetFiles.size(); ++i)
-                        if (presetFiles[i] == file)
-                            presetBox.setSelectedId (i + 3, juce::dontSendNotification);
+                    presets.saveAs (name);     // stamps <meta> name + re-baselines (clean, non-factory)
+                    refreshPresets();          // rebuild list; updatePresetDisplay selects it by name
                 }
             }
             saveDialog.reset();
@@ -419,7 +427,7 @@ void OrbitCabAudioProcessorEditor::promptSavePreset()
 
 void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
 {
-    if (! presets.loadFrom (file))
+    if (! presets.loadFrom (file))                 // applies state + re-baselines (clean, non-factory)
         return;
     slots[0].rebuildList();                        // restored user-IR history may differ
     slots[1].rebuildList();
@@ -427,6 +435,7 @@ void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
     slots[1].syncFromProcessor();
     pushFiltersToWave();
     updateSnapshotButtons();
+    updatePresetDisplay();                         // reflect the loaded preset's name (+ clean)
 }
 
 void OrbitCabAudioProcessorEditor::exportPreset()
@@ -449,8 +458,7 @@ void OrbitCabAudioProcessorEditor::importPreset()
             const auto file = fc.getResult();
             if (! file.existsAsFile())
                 return;
-            loadPresetFile (file);
-            presetBox.setSelectedId (1, juce::dontSendNotification);   // external → "(Custom)"
+            loadPresetFile (file);     // updatePresetDisplay reflects the imported preset's name
         });
 }
 
@@ -467,33 +475,86 @@ void OrbitCabAudioProcessorEditor::filesDropped (const juce::StringArray& files,
     for (const auto& f : files)
         if (f.endsWithIgnoreCase (".orbitcab"))
         {
-            loadPresetFile (juce::File (f));
-            presetBox.setSelectedId (1, juce::dontSendNotification);   // external → "(Custom)"
+            loadPresetFile (juce::File (f));   // updatePresetDisplay reflects the dropped preset's name
             break;
         }
 }
 
 void OrbitCabAudioProcessorEditor::applyDefaultPreset()
 {
-    // Factory starting point: a clean single-box sound — Emerald IR #16 in box I with
-    // the HPF engaged. Reset every parameter to its default first so the result is
-    // reproducible regardless of the current state, then load the IR + arm the HPF.
-    auto& ap = processorRef.apvts;
-    for (auto* p : processorRef.getParameters())
-        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            rp->setValueNotifyingHost (rp->getDefaultValue());
-
-    processorRef.clearSlotB();                          // box II empty (single IR)
-
-    slots[0].selectBundledStartingWith ("16");          // box I → 16-*.wav (factory default)
-
-    if (auto* q = ap.getParameter ("hpfOnA"))
-        q->setValueNotifyingHost (1.0f);                // HPF on (default 80 Hz)
-
+    // The factory "Default" is defined once in the processor (preset-centric: it's also the
+    // first-start preset — Emerald IR #16 + HPF, single box, read-only). Apply it there, then
+    // re-sync the editor to the new IR/params and mark the combo Default (clean).
+    processorRef.applyFactoryDefault();
     slots[0].syncFromProcessor();
     slots[1].syncFromProcessor();
     pushFiltersToWave();
     updateSnapshotButtons();
+    updatePresetDisplay();
+}
+
+void OrbitCabAudioProcessorEditor::saveCurrentPreset()
+{
+    // Save = write back to the current user preset. A factory preset (Default) is read-only,
+    // and a current preset with no backing library file (freshly imported / dropped) has
+    // nowhere to write back to — both fall through to Save As (fork a named copy).
+    const auto file = currentPresetFile();
+    if (processorRef.isPresetFactory() || file == juce::File())
+    {
+        promptSavePreset();
+        return;
+    }
+    presets.writeTo (file);            // re-serialise the (portable) preset over its file
+    processorRef.captureBaseline();    // saved → clean again
+    updatePresetDisplay();
+}
+
+juce::File OrbitCabAudioProcessorEditor::currentPresetFile() const
+{
+    // The library file backing the current preset, matched by name. A factory preset (Default)
+    // or an external one not in the library has none → Save As territory.
+    if (processorRef.isPresetFactory())
+        return {};
+    const auto name = processorRef.presetMeta().name;
+    for (const auto& f : presetFiles)
+        if (f.getFileNameWithoutExtension() == name)
+            return f;
+    return {};
+}
+
+void OrbitCabAudioProcessorEditor::updatePresetDisplay()
+{
+    // Reflect the current preset in the combo: select the matching item (Default / a library
+    // file / "(Custom)" for an external one) and append " *" when the live state is dirty.
+    // Cached so the 30 Hz timer only touches the combo when something actually changed.
+    const auto name  = processorRef.presetMeta().name;
+    const bool dirty = processorRef.isPresetDirty();
+
+    int          id   = 1;                                   // 1 = (Custom)
+    juce::String base = name.isNotEmpty() ? name : "(Custom)";
+    if (processorRef.isPresetFactory() || name == "Default")
+    {
+        id = 2;
+        base = "Default";
+    }
+    else
+    {
+        for (int i = 0; i < presetFiles.size(); ++i)
+            if (presetFiles[i].getFileNameWithoutExtension() == name)
+            {
+                id = i + 3;
+                break;
+            }
+    }
+
+    const juce::String label = base + (dirty ? " *" : "");
+    if (id == presetShownId && label == presetShownLabel)
+        return;
+    presetShownId    = id;
+    presetShownLabel = label;
+
+    presetBox.changeItemText (id, label);
+    presetBox.setSelectedId  (id, juce::dontSendNotification);
 }
 
 //==============================================================================
@@ -562,12 +623,13 @@ void OrbitCabAudioProcessorEditor::resized()
     auto header = r.removeFromTop (50);
     constexpr int kCtlBand = 44;
 
-    auto headerRight = header.removeFromRight (410 + 124);      // save+export+import+≈ + A/B/C/D cluster
+    auto headerRight = header.removeFromRight (410 + 64 + 124);  // save+saveAs+export+import+≈ + A/B/C/D cluster
     auto rightBar    = headerRight.withSizeKeepingCentre (headerRight.getWidth(), kCtlBand);
     settingsBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
     importBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     exportBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
-    saveBtn.setBounds     (rightBar.removeFromRight (60).reduced (7));
+    saveAsBtn.setBounds   (rightBar.removeFromRight (64).reduced (4, 7));
+    saveBtn.setBounds     (rightBar.removeFromRight (54).reduced (4, 7));
     // A/B/C/D compare cluster sits just left of the preset combo (between it and the title)
     auto snapArea = rightBar.removeFromLeft (124).reduced (6, 8);
     const int sw = snapArea.getWidth() / OrbitCabAudioProcessor::kNumSnapshots;

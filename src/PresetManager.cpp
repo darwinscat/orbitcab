@@ -52,9 +52,13 @@ juce::File PresetManager::saveAs (const juce::String& name)
     auto dir = directory();
     dir.createDirectory();
     auto file = dir.getChildFile (juce::File::createLegalFileName (name) + ".orbitcab");
+    proc.setPresetName (name);                       // stamp the preset's <meta> name first
     juce::MemoryBlock block;
     proc.getStateForPreset (block);
     file.replaceWithData (block.getData(), block.getSize());
+    // The saved preset is now the current one: a clean, editable (non-factory) user preset.
+    proc.setPresetFactory (false);
+    proc.captureBaseline();
     return file;
 }
 
@@ -68,6 +72,11 @@ bool PresetManager::loadFrom (const juce::File& file)
     if (! file.loadFileAsData (block))
         return false;
     proc.setStateInformation (block.getData(), (int) block.getSize());
+    // A loaded preset file is a clean, editable (non-factory) user preset: re-baseline so
+    // it reads as not-dirty, then dirties only when the user edits it. (A portable preset has
+    // no embedded baseline; a session is restored by the host directly, not via loadFrom.)
+    proc.setPresetFactory (false);
+    proc.captureBaseline();
     return true;
 }
 

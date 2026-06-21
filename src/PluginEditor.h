@@ -53,13 +53,17 @@ private:
     void snapMixToCentre();                   // MIX param -> centre (B's first IR load hook)
     void styleLabel (juce::Label&, const juce::String&);
 
-    // presets
+    // presets (preset-centric: the live state IS the current preset; the combo shows its
+    // name with a " *" dirty marker, Save writes back to a user preset / forks a factory one)
     void refreshPresets();
-    void promptSavePreset();
+    void promptSavePreset();            // Save As: prompt a name → fork a new user preset
+    void saveCurrentPreset();           // Save: write back to the current user preset, else Save As
     void loadPresetFile (const juce::File&);
-    void applyDefaultPreset();          // factory "Default": IR 16 + HPF, single box
+    void applyDefaultPreset();          // factory "Default": IR 16 + HPF, single box (read-only)
     void exportPreset();                // → .orbitcab at a chosen location (IR embedded)
     void importPreset();                // ← .orbitcab from disk
+    void updatePresetDisplay();         // reflect the current preset's name + dirty in the combo
+    juce::File currentPresetFile() const;   // the library file backing the current preset, or {} (factory/external)
 
     OrbitCabAudioProcessor& processorRef;
     OrbitCabLookAndFeel     lnf;
@@ -67,7 +71,8 @@ private:
     SlotComponent slots[2] { { processorRef, 0 }, { processorRef, 1 } };
 
     // header
-    juce::TextButton      saveBtn { "Save" };
+    juce::TextButton      saveBtn   { "Save" };
+    juce::TextButton      saveAsBtn { "Save As" };
     IconButton            exportBtn { IconButton::Kind::exportFile };   // ↑ export .orbitcab (IR inside)
     IconButton            importBtn { IconButton::Kind::importFile };   // ↓ import .orbitcab
     IconButton            undoBtn   { IconButton::Kind::undo };
@@ -137,6 +142,9 @@ private:
     juce::Array<juce::File> presetFiles;                 // combo id -> file (3+); UI mapping
     std::unique_ptr<juce::AlertWindow> saveDialog;
     std::unique_ptr<juce::FileChooser> chooser;
+    // Cache so the 30 Hz timer only re-touches the combo when the shown preset / dirty changes.
+    int          presetShownId    = -1;
+    juce::String presetShownLabel;
 
     // Hosts the hover hints for every control (without this, setTooltip does nothing).
     juce::TooltipWindow tooltipWindow { this, 600 };
