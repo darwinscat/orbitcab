@@ -609,6 +609,48 @@ static void makePortable (juce::ValueTree& root)
         for (auto s : snaps)
             if (auto snap = s.getChild (0); snap.isValid())              // S > Snap > IR
                 portIR (snap.getChildWithName ("IR"));
+
+    // <meta> is descriptive JSON; strip any absolute path in its irRefs[].fallback so a
+    // shared preset can't reveal the sharer's folder layout (mirrors the <IR> path-strip
+    // above). Round-trips through fromVar/toVar, so unknown keys are preserved.
+    if (auto m = root.getChildWithName ("meta"); m.isValid())
+    {
+        auto meta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m.getProperty ("json").toString()));
+        for (auto& r : meta.irRefs)
+            if (! r.bundled && r.fallback.isNotEmpty())
+                r.fallback = juce::File (r.fallback).getFileName();      // absolute path -> bare filename
+        m.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
+    }
+}
+
+//==============================================================================
+std::vector<orbitcab::IrRef> OrbitCabAudioProcessor::currentIrRefs() const
+{
+    // Display-layer references for the preset <meta>: which IR each slot uses, so a browser
+    // can show them without decoding audio or applying state. The functional load still goes
+    // through <IR> + the embedded-bytes pool. `id` (content hash) is left empty — the
+    // IR-hashing / library milestone fills it; the resolve path's id branch is dormant today.
+    auto baseName = [] (const juce::String& ref, bool bundled)
+    {
+        return bundled ? ref.upToLastOccurrenceOf (".", false, false)      // "16-nacho-guacamole"
+                       : juce::File (ref).getFileNameWithoutExtension();
+    };
+    auto make = [&] (const juce::String& ref, bool bundled, const char* slot)
+    {
+        orbitcab::IrRef r;
+        r.slot     = slot;
+        r.bundled  = bundled;
+        r.fallback = ref;
+        r.name     = baseName (ref, bundled);
+        return r;                                  // r.id intentionally empty (reserved)
+    };
+
+    std::vector<orbitcab::IrRef> refs;
+    if (slotRefA.isNotEmpty())
+        refs.push_back (make (slotRefA, slotBundledA, "A"));
+    if (slotBLoaded.load() && slotRefB.isNotEmpty())
+        refs.push_back (make (slotRefB, slotBundledB, "B"));
+    return refs;
 }
 
 //==============================================================================
@@ -621,7 +663,23 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
     // self-contained — survives a moved file / another machine. Bundled IRs are
     // never embedded (their bytes live in the plugin binary).
     juce::ValueTree root ("OrbitCabState");
-    root.setProperty ("stateVersion", 2, nullptr);   // 2 = embeds external IR audio
+    root.setProperty ("stateVersion", 3, nullptr);   // 3 = + preset <meta> (descriptive identity)
+
+    // Preset identity (preset-centric model): the descriptive metadata + which IRs the live
+    // state uses, as JSON in a <meta> child. Built into a LOCAL copy so serialising never
+    // mutates the live member (some hosts call getStateInformation off the message thread),
+    // and stamped with the build version + a modified timestamp. The functional load stays
+    // in <IR>/<IRPool>; this is the cheap descriptive layer a browser reads on its own.
+    {
+        orbitcab::PresetMeta meta = currentMeta;
+        meta.irRefs     = currentIrRefs();
+        meta.appVersion = JucePlugin_VersionString;
+        meta.modifiedAt = orbitcab::nowIso8601();
+        juce::ValueTree metaTree ("meta");
+        metaTree.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
+        root.appendChild (metaTree, nullptr);
+    }
+
     root.appendChild (apvts.copyState(), nullptr);
 
     juce::ValueTree ir ("IR");
@@ -704,6 +762,13 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
     if (root.hasType ("OrbitCabState"))
     {
+        // Preset <meta> (v3). Absent in v2 / param-only states → reset to a clean default so
+        // a stale name can't linger; the name then derives from the file (listWithMeta / editor).
+        if (auto m = root.getChildWithName ("meta"); m.isValid())
+            currentMeta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m.getProperty ("json").toString()));
+        else
+            currentMeta = orbitcab::PresetMeta();
+
         if (auto params = root.getChildWithName (apvts.state.getType()); params.isValid())
             apvts.replaceState (params);
 
@@ -738,7 +803,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     }
     else if (xml->hasTagName (apvts.state.getType()))
     {
-        // Backward-compat: earlier sessions stored just the PARAMS tree.
+        // Backward-compat: earlier sessions stored just the PARAMS tree (no <meta>).
+        currentMeta = orbitcab::PresetMeta();
         apvts.replaceState (root);
     }
 

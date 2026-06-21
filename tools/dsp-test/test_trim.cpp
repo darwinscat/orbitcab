@@ -225,6 +225,7 @@ int main()
         auto sa = [&] (const char* id, float v) { if (auto* q = a.apvts.getParameter (id)) q->setValueNotifyingHost (v); };
         sa ("gain", 0.70f); sa ("hpfOnA", 1.0f); sa ("autoLevel", 0.0f);
         a.setTrim (0.40f, true);
+        a.setPresetName ("Crunch Test");                 // preset <meta> name (v3) must ride the state
         pump (200);
         juce::MemoryBlock state; a.getStateInformation (state);
 
@@ -237,11 +238,19 @@ int main()
         const bool hpfOk  = raw (b, "hpfOnA") > 0.5f;
         const bool trimOk = std::abs (b.getTrim (true) - 0.40f) < 0.05f;
         const bool refOk  = b.getSlotRef (true) == a.getSlotRef (true) && b.isSlotBundled (true);
-        const bool stOk = gainOk && hpfOk && trimOk && refOk;
+
+        // <meta> (v3): the descriptive name + the per-slot IR refs (display-layer) round-trip,
+        // with the reserved id still empty and the fallback mirroring the functional ref.
+        const auto& refs = b.presetMeta().irRefs;
+        const bool metaNameOk = b.presetMeta().name == "Crunch Test";
+        const bool metaRefOk  = ! refs.empty() && refs[0].slot == "A" && refs[0].bundled
+                                && refs[0].id.isEmpty() && refs[0].fallback == a.getSlotRef (true);
+
+        const bool stOk = gainOk && hpfOk && trimOk && refOk && metaNameOk && metaRefOk;
         allPass &= stOk;
-        std::printf ("STATE TEST: gain=%d hpf=%d trim=%d ref=%d (refA=\"%s\")\n",
-                     gainOk, hpfOk, trimOk, refOk, b.getSlotRef (true).toRawUTF8());
-        std::printf ("RESULT: %s\n", stOk ? "STATE ROUND-TRIP WORKS (params+refs+trim)"
+        std::printf ("STATE TEST: gain=%d hpf=%d trim=%d ref=%d meta(name=%d ref=%d) (refA=\"%s\")\n",
+                     gainOk, hpfOk, trimOk, refOk, metaNameOk, metaRefOk, b.getSlotRef (true).toRawUTF8());
+        std::printf ("RESULT: %s\n", stOk ? "STATE ROUND-TRIP WORKS (params+refs+trim+meta)"
                                           : "STATE ROUND-TRIP BROKEN");
     }
 

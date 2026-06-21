@@ -218,10 +218,11 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/IRSlotTests.cpp
     tests/AutoLevelerTests.cpp
     tests/WaveformMathTests.cpp
+    tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
 )
-target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..."
+target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
 )
