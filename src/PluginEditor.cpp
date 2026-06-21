@@ -51,7 +51,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         else if (id >= 3 && id - 3 < presetFiles.size())   loadPresetFile (presetFiles[id - 3]);
     };
     saveBtn.onClick = [this] { saveCurrentPreset(); };
-    saveBtn.setTooltip ("Save changes to the current preset (a factory preset saves as a copy)");
+    saveBtn.setTooltip ("Save changes to the current preset (disabled for the factory Default — use Save As)");
     addAndMakeVisible (saveBtn);
     saveAsBtn.onClick = [this] { promptSavePreset(); };
     saveAsBtn.setTooltip ("Save as a new preset in the library");
@@ -69,6 +69,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     importBtn.setTooltip ("Import a .orbitcab preset");
     importBtn.onClick = [this] { importPreset(); };
     addAndMakeVisible (importBtn);
+
+    // Delete the current preset (to the Trash). Enabled only for a user preset — a factory
+    // preset (Default) or an external one is read-only; updatePresetDisplay keeps this in sync.
+    trashBtn.setTooltip ("Delete the current preset");
+    trashBtn.onClick = [this] { deleteCurrentPreset(); };
+    addAndMakeVisible (trashBtn);
 
     // Undo / redo (full-state snapshot stack — the processor owns it). Framed like the
     // A/B/C/D buttons; start disabled (nothing to undo/redo yet) — the 30 Hz timer keeps
@@ -388,11 +394,11 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
 {
     presetFiles.clear();
     presetBox.clear (juce::dontSendNotification);
-    presetBox.addItem ("(Custom)", 1);
-    presetBox.addItem ("Default",  2);                 // factory starting point (IR 16 + HPF)
-
+    presetBox.addItem ("Default", 2);                  // FACTORY section (read-only)
+    presetBox.addSeparator();                          // factory ──────── user
+    presetBox.addItem ("(Custom)", 1);                 // the current unsaved / external preset
     int id = 3;                                         // 1 = (Custom), 2 = Default, 3+ = user files
-    for (const auto& f : presets.list())
+    for (const auto& f : presets.list())               // USER section
     {
         presetFiles.add (f);
         presetBox.addItem (f.getFileNameWithoutExtension(), id++);
@@ -401,27 +407,47 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
     updatePresetDisplay();                              // select the current preset by name (+ dirty)
 }
 
-void OrbitCabAudioProcessorEditor::promptSavePreset()
+void OrbitCabAudioProcessorEditor::promptSavePreset (const juce::String& initialName)
 {
     saveDialog = std::make_unique<juce::AlertWindow> ("Save preset", "Preset name:",
                                                       juce::MessageBoxIconType::NoIcon);
-    saveDialog->addTextEditor ("name", "My Preset");
+    saveDialog->addTextEditor ("name", initialName.isNotEmpty() ? initialName : juce::String ("My Preset"));
     saveDialog->addButton ("Save",   1, juce::KeyPress (juce::KeyPress::returnKey));
     saveDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     saveDialog->enterModalState (true, juce::ModalCallbackFunction::create (
         [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (int result)
         {
             if (safe == nullptr) return;   // editor gone before the dialog closed
-            if (result == 1)
-            {
-                const auto name = saveDialog->getTextEditorContents ("name").trim();
-                if (name.isNotEmpty())
-                {
-                    presets.saveAs (name);     // stamps <meta> name + re-baselines (clean, non-factory)
-                    refreshPresets();          // rebuild list; updatePresetDisplay selects it by name
-                }
-            }
+            const auto name = saveDialog->getTextEditorContents ("name").trim();
             saveDialog.reset();
+            if (result != 1 || name.isEmpty())
+                return;
+
+            // Never shadow the factory name, and never silently overwrite an existing preset:
+            // show an error and re-prompt (prefilled) so the user picks a different name.
+            const bool reserved = name.equalsIgnoreCase ("Default");
+            const auto target   = orbitcab::PresetManager::directory()
+                                      .getChildFile (juce::File::createLegalFileName (name) + ".orbitcab");
+            if (reserved || target.existsAsFile())
+            {
+                const juce::String msg = (reserved ? juce::String ("\"Default\" is the factory preset name.")
+                                                   : "A preset named \"" + name + "\" already exists.")
+                                         + "\nChoose a different name.";
+                saveDialog = std::make_unique<juce::AlertWindow> ("Name already in use", msg,
+                                                                  juce::MessageBoxIconType::WarningIcon);
+                saveDialog->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+                saveDialog->enterModalState (true, juce::ModalCallbackFunction::create (
+                    [this, name, safe2 = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (int)
+                    {
+                        if (safe2 == nullptr) return;
+                        saveDialog.reset();
+                        promptSavePreset (name);   // re-prompt, prefilled, so they can tweak it
+                    }), false);
+                return;
+            }
+
+            presets.saveAs (name);     // stamps <meta> name + re-baselines (clean, non-factory)
+            refreshPresets();          // rebuild list; updatePresetDisplay selects it by name
         }), false);
 }
 
@@ -495,18 +521,42 @@ void OrbitCabAudioProcessorEditor::applyDefaultPreset()
 
 void OrbitCabAudioProcessorEditor::saveCurrentPreset()
 {
-    // Save = write back to the current user preset. A factory preset (Default) is read-only,
-    // and a current preset with no backing library file (freshly imported / dropped) has
-    // nowhere to write back to — both fall through to Save As (fork a named copy).
+    // Save = write back to the current user preset. The button is disabled for a factory
+    // preset (Default) or an external one (no backing file) — Save As is the path there — but
+    // guard anyway so a stray call is a no-op rather than an overwrite.
     const auto file = currentPresetFile();
     if (processorRef.isPresetFactory() || file == juce::File())
-    {
-        promptSavePreset();
         return;
-    }
     presets.writeTo (file);            // re-serialise the (portable) preset over its file
     processorRef.captureBaseline();    // saved → clean again
     updatePresetDisplay();
+}
+
+void OrbitCabAudioProcessorEditor::deleteCurrentPreset()
+{
+    // Only a user preset with a backing file can be deleted; factory Default + external presets
+    // are read-only (the button is disabled for them anyway). Confirm, then move it to the Trash.
+    const auto file = currentPresetFile();
+    if (processorRef.isPresetFactory() || file == juce::File())
+        return;
+
+    const auto name = processorRef.presetMeta().name;
+    saveDialog = std::make_unique<juce::AlertWindow> ("Delete preset",
+                     "Delete \"" + name + "\"?  It will be moved to the Trash.",
+                     juce::MessageBoxIconType::WarningIcon);
+    saveDialog->addButton ("Delete", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    saveDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    saveDialog->enterModalState (true, juce::ModalCallbackFunction::create (
+        [this, file, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (int result)
+        {
+            if (safe == nullptr) return;          // editor gone before the dialog closed
+            if (result == 1 && presets.deleteFile (file))
+            {
+                applyDefaultPreset();             // the current preset is gone → fall back to Default
+                refreshPresets();                 // drop it from the list (selection lands on Default)
+            }
+            saveDialog.reset();
+        }), false);
 }
 
 juce::File OrbitCabAudioProcessorEditor::currentPresetFile() const
@@ -529,6 +579,12 @@ void OrbitCabAudioProcessorEditor::updatePresetDisplay()
     // Cached so the 30 Hz timer only touches the combo when something actually changed.
     const auto name  = processorRef.presetMeta().name;
     const bool dirty = processorRef.isPresetDirty();
+
+    // Save (write-back) + Delete are for a user preset only — a factory preset (Default) and an
+    // external one have no backing library file. Save As is the path to persist those (fork).
+    const bool canWriteBack = ! processorRef.isPresetFactory() && currentPresetFile() != juce::File();
+    saveBtn.setEnabled  (canWriteBack);
+    trashBtn.setEnabled (canWriteBack);
 
     int          id   = 1;                                   // 1 = (Custom)
     juce::String base = name.isNotEmpty() ? name : "(Custom)";
@@ -623,11 +679,12 @@ void OrbitCabAudioProcessorEditor::resized()
     auto header = r.removeFromTop (50);
     constexpr int kCtlBand = 44;
 
-    auto headerRight = header.removeFromRight (410 + 64 + 124);  // save+saveAs+export+import+≈ + A/B/C/D cluster
+    auto headerRight = header.removeFromRight (410 + 64 + 34 + 124);  // save+saveAs+trash+export+import+≈ + A/B/C/D
     auto rightBar    = headerRight.withSizeKeepingCentre (headerRight.getWidth(), kCtlBand);
     settingsBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
     importBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     exportBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
+    trashBtn.setBounds    (rightBar.removeFromRight (34).reduced (5, 7));
     saveAsBtn.setBounds   (rightBar.removeFromRight (64).reduced (4, 7));
     saveBtn.setBounds     (rightBar.removeFromRight (54).reduced (4, 7));
     // A/B/C/D compare cluster sits just left of the preset combo (between it and the title)

@@ -56,12 +56,13 @@ private:
     // presets (preset-centric: the live state IS the current preset; the combo shows its
     // name with a " *" dirty marker, Save writes back to a user preset / forks a factory one)
     void refreshPresets();
-    void promptSavePreset();            // Save As: prompt a name → fork a new user preset
+    void promptSavePreset (const juce::String& initialName = {});   // Save As: prompt a name → fork (re-prompts on a name clash)
     void saveCurrentPreset();           // Save: write back to the current user preset, else Save As
     void loadPresetFile (const juce::File&);
     void applyDefaultPreset();          // factory "Default": IR 16 + HPF, single box (read-only)
     void exportPreset();                // → .orbitcab at a chosen location (IR embedded)
     void importPreset();                // ← .orbitcab from disk
+    void deleteCurrentPreset();         // move the current user preset to the Trash (factory/none: no-op)
     void updatePresetDisplay();         // reflect the current preset's name + dirty in the combo
     juce::File currentPresetFile() const;   // the library file backing the current preset, or {} (factory/external)
 
@@ -75,6 +76,7 @@ private:
     juce::TextButton      saveAsBtn { "Save As" };
     IconButton            exportBtn { IconButton::Kind::exportFile };   // ↑ export .orbitcab (IR inside)
     IconButton            importBtn { IconButton::Kind::importFile };   // ↓ import .orbitcab
+    IconButton            trashBtn  { IconButton::Kind::trash };        // delete current user preset (factory: disabled)
     IconButton            undoBtn   { IconButton::Kind::undo };
     IconButton            redoBtn   { IconButton::Kind::redo };
     IconButton            settingsBtn { IconButton::Kind::settings };       // gear → settings pop-over

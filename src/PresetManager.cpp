@@ -80,6 +80,16 @@ bool PresetManager::loadFrom (const juce::File& file)
     return true;
 }
 
+bool PresetManager::deleteFile (const juce::File& file)
+{
+    // Move a USER preset to the Trash (recoverable). Guarded: must be a .orbitcab inside our
+    // own preset dir, so a stray call can never delete an arbitrary file. Factory presets aren't
+    // files (no folder copy), so they can't be reached here — the editor also gates the button.
+    if (! file.existsAsFile() || ! file.hasFileExtension ("orbitcab") || ! file.isAChildOf (directory()))
+        return false;
+    return file.moveToTrash();
+}
+
 bool PresetManager::writeTo (juce::File file)
 {
     if (file == juce::File())
