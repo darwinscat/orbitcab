@@ -690,14 +690,23 @@ void OrbitCabAudioProcessor::applyFactoryDefault()
             rp->setValueNotifyingHost (rp->getDefaultValue());
 
     clearSlotB();                                   // box II empty (single IR)
-    loadFactoryDefaultIR();                          // box I → IR #16
+    trimFractionB = 1.0f;                            // ...and its trim back to full (deterministic baseline)
+    loadFactoryDefaultIR();                          // box I → IR #16 (resets slot A trim to full)
     if (auto* q = apvts.getParameter ("hpfOnA"))
         q->setValueNotifyingHost (1.0f);             // HPF on (default 80 Hz)
+    setHeadTrim (true);                              // factory HEAD-trim on (a state property, not a param)
 
     currentMeta      = orbitcab::PresetMeta();
     currentMeta.name = "Default";
     presetIsFactory  = true;
     captureBaseline();                               // a fresh Default is clean (not dirty)
+}
+
+void OrbitCabAudioProcessor::markPresetModified()
+{
+    if (currentMeta.createdAt.isEmpty())
+        currentMeta.createdAt = orbitcab::nowIso8601();
+    currentMeta.modifiedAt = orbitcab::nowIso8601();
 }
 
 juce::String OrbitCabAudioProcessor::stateFingerprint()
@@ -727,9 +736,16 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
     // in <IR>/<IRPool>; this is the cheap descriptive layer a browser reads on its own.
     {
         orbitcab::PresetMeta meta = currentMeta;
-        meta.irRefs     = currentIrRefs();
+        // Refresh the descriptive IR refs from the live slots, but carry over any unknown
+        // per-IR fields (extra) the loaded preset had for the same slot — forward-compat.
+        auto fresh = currentIrRefs();
+        for (auto& r : fresh)
+            for (const auto& old : currentMeta.irRefs)
+                if (old.slot == r.slot) { r.extra = old.extra; break; }
+        meta.irRefs     = std::move (fresh);
         meta.appVersion = JucePlugin_VersionString;
-        meta.modifiedAt = orbitcab::nowIso8601();
+        // modifiedAt is stamped only on an explicit Save (markPresetModified), never here —
+        // serialisation must be deterministic so a host doesn't see "changed" state on poll.
         juce::ValueTree metaTree ("meta");
         metaTree.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
         // Preset-centric session bookkeeping (NOT part of the shareable JSON): the dirty

@@ -397,14 +397,29 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
     presetFiles.clear();
     presetBox.clear (juce::dontSendNotification);
     presetBox.addItem ("Default", 2);                  // FACTORY section (read-only)
-    presetBox.addSeparator();                          // factory ──────── user
-    presetBox.addItem ("(Custom)", 1);                 // the current unsaved / external preset
-    int id = 3;                                         // 1 = (Custom), 2 = Default, 3+ = user files
-    for (const auto& f : presets.list())               // USER section
+
+    auto files = presets.list();                       // USER section
+    if (! files.isEmpty())
     {
-        presetFiles.add (f);
-        presetBox.addItem (f.getFileNameWithoutExtension(), id++);
+        presetBox.addSeparator();                      // factory ──────── user
+        int id = 3;                                    // 1 = current-external, 2 = Default, 3+ = user files
+        for (const auto& f : files)
+        {
+            presetFiles.add (f);
+            presetBox.addItem (f.getFileNameWithoutExtension(), id++);
+        }
     }
+
+    // Only when the current preset is "external" (imported/dropped, or a pre-v3 session — not
+    // Default and not a library file) do we add a slot for it (labelled by its name, or
+    // "(Custom)" if unnamed). No permanent ghost entry in the common case.
+    if (! processorRef.isPresetFactory() && currentPresetFile() == juce::File())
+    {
+        const auto cur = processorRef.presetMeta().name;
+        presetBox.addSeparator();
+        presetBox.addItem (cur.isNotEmpty() ? cur : "(Custom)", 1);
+    }
+
     presetShownId = -1;                                 // force a re-apply after the rebuild
     updatePresetDisplay();                              // select the current preset by name (+ dirty)
 }
@@ -463,7 +478,7 @@ void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
     slots[1].syncFromProcessor();
     pushFiltersToWave();
     updateSnapshotButtons();
-    updatePresetDisplay();                         // reflect the loaded preset's name (+ clean)
+    refreshPresets();                              // rebuild (adds/removes the external slot) + select
 }
 
 void OrbitCabAudioProcessorEditor::exportPreset()
@@ -518,7 +533,7 @@ void OrbitCabAudioProcessorEditor::applyDefaultPreset()
     slots[1].syncFromProcessor();
     pushFiltersToWave();
     updateSnapshotButtons();
-    updatePresetDisplay();
+    refreshPresets();                              // drop any external slot + select Default
 }
 
 void OrbitCabAudioProcessorEditor::saveCurrentPreset()
@@ -529,9 +544,11 @@ void OrbitCabAudioProcessorEditor::saveCurrentPreset()
     const auto file = currentPresetFile();
     if (processorRef.isPresetFactory() || file == juce::File())
         return;
-    presets.writeTo (file);            // re-serialise the (portable) preset over its file
-    processorRef.captureBaseline();    // saved → clean again
-    updatePresetDisplay();
+    if (presets.writeTo (file))        // re-serialise the (portable) preset over its file
+    {
+        processorRef.captureBaseline();    // saved → clean again
+        updatePresetDisplay();
+    }
 }
 
 void OrbitCabAudioProcessorEditor::deleteCurrentPreset()
@@ -553,10 +570,7 @@ void OrbitCabAudioProcessorEditor::deleteCurrentPreset()
         {
             if (safe == nullptr) return;          // editor gone before the dialog closed
             if (result == 1 && presets.deleteFile (file))
-            {
-                applyDefaultPreset();             // the current preset is gone → fall back to Default
-                refreshPresets();                 // drop it from the list (selection lands on Default)
-            }
+                applyDefaultPreset();             // current preset gone → fall back to Default (refreshes the list)
             saveDialog.reset();
         }), false);
 }
@@ -588,9 +602,9 @@ void OrbitCabAudioProcessorEditor::updatePresetDisplay()
     saveBtn.setEnabled  (canWriteBack);
     trashBtn.setEnabled (canWriteBack);
 
-    int          id   = 1;                                   // 1 = (Custom)
+    int          id   = 1;                                   // 1 = current external / "(Custom)"
     juce::String base = name.isNotEmpty() ? name : "(Custom)";
-    if (processorRef.isPresetFactory() || name == "Default")
+    if (processorRef.isPresetFactory())                      // factory is the FLAG, not the name
     {
         id = 2;
         base = "Default";

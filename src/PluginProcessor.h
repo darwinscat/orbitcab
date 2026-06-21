@@ -80,6 +80,11 @@ public:
     const orbitcab::PresetMeta& presetMeta() const     { return currentMeta; }
     void setPresetMeta (const orbitcab::PresetMeta& m) { currentMeta = m; }
 
+    // Stamp the preset's save timestamps. Called ONLY on an explicit Save / Save As — NOT in
+    // buildStateTree — so session serialisation stays byte-deterministic (a host must not see
+    // "changed" state on every getStateInformation poll just from a fresh timestamp).
+    void markPresetModified();
+
     // Preset-centric model (no ad-hoc state): the live state IS the current preset, and
     // editing it dirties the preset until Save writes it back. The factory "Default" is the
     // read-only first-start preset — editing it + Save forks (Save As) instead of overwriting.
