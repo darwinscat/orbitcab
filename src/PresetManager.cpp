@@ -23,6 +23,30 @@ juce::Array<juce::File> PresetManager::list() const
     return files;
 }
 
+juce::Array<PresetManager::PresetEntry> PresetManager::listWithMeta() const
+{
+    juce::Array<PresetEntry> out;
+    for (const auto& file : list())
+    {
+        PresetEntry e;
+        e.file = file;
+
+        // Read <meta> WITHOUT applying state: parse the preset's binary-XML and pull just the
+        // <meta> child's JSON (no setStateInformation, no IR decode). Skip an absurdly large
+        // file (same guard as loadFrom) so a crafted preset can't OOM the listing.
+        juce::MemoryBlock block;
+        if (file.getSize() > 0 && file.getSize() <= 256LL * 1024 * 1024 && file.loadFileAsData (block))
+            if (auto xml = juce::AudioProcessor::getXmlFromBinary (block.getData(), (int) block.getSize()))
+                if (auto* m = xml->getChildByName ("meta"))
+                    e.meta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m->getStringAttribute ("json")));
+
+        if (e.meta.name.isEmpty())                       // pre-v3 / unreadable → name from filename
+            e.meta.name = file.getFileNameWithoutExtension();
+        out.add (e);
+    }
+    return out;
+}
+
 juce::File PresetManager::saveAs (const juce::String& name)
 {
     auto dir = directory();

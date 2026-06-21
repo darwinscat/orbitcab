@@ -9,6 +9,7 @@
 #include "core/CabEngine.h"
 #include "AppPreferences.h"
 #include "UpdateChecker.h"
+#include "Metadata.h"
 
 #include <map>
 #include <vector>
@@ -69,6 +70,15 @@ public:
     // stripped (content-hash keys + a display name, no recent-files list) so a shared
     // .orbitcab doesn't leak the sharer's folders. The session state above keeps the paths.
     void getStateForPreset (juce::MemoryBlock& destData);
+
+    // Preset descriptive identity (preset-centric model). Embedded as a <meta> child of the
+    // saved state (v3) and restored on load; a preset browser reads ONLY <meta> for a cheap
+    // listing (no DSP, no IR decode). The functional IR load still goes through the <IR>
+    // node + the embedded-bytes pool — <meta> is a descriptive *reference*, not the source
+    // of truth. currentIrRefs() builds the per-slot refs (id reserved empty until hashing).
+    void setPresetName (const juce::String& n)         { currentMeta.name = n; }
+    const orbitcab::PresetMeta& presetMeta() const     { return currentMeta; }
+    void setPresetMeta (const orbitcab::PresetMeta& m) { currentMeta = m; }
 
     //==========================================================================
     // Parameter tree — public so the editor can attach controls. The layout is
@@ -255,6 +265,13 @@ private:
     // Builds the full state tree (params + IR refs + snapshots + embedded IR pool) shared by
     // getStateInformation (session, keeps paths) and getStateForPreset (portable, paths stripped).
     juce::ValueTree buildStateTree();
+
+    // Preset identity for the live state (preset-centric model). Embedded as the <meta> child
+    // by buildStateTree, restored in setStateInformation. currentIrRefs() builds the
+    // display-layer refs from the slot state (id left empty — the IR-hashing milestone fills
+    // it; the resolve path's id branch stays dormant until then). Message-thread only.
+    orbitcab::PresetMeta currentMeta;
+    std::vector<orbitcab::IrRef> currentIrRefs() const;
 
     // Undo/redo state (message-thread only). Snapshots are ref-only (no embedded bytes —
     // those live in embeddedIRs for the instance), so the stacks stay tiny.
