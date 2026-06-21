@@ -65,6 +65,7 @@ private:
     void deleteCurrentPreset();         // move the current user preset to the Trash (factory/none: no-op)
     void updatePresetDisplay();         // reflect the current preset's name + dirty in the combo
     juce::File currentPresetFile() const;   // the library file backing the current preset, or {} (factory/external)
+    juce::String nextCopyName (const juce::String& base) const;   // "<base> (copy N)" — first name not already taken
 
     OrbitCabAudioProcessor& processorRef;
     OrbitCabLookAndFeel     lnf;

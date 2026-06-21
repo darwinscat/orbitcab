@@ -53,7 +53,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     saveBtn.onClick = [this] { saveCurrentPreset(); };
     saveBtn.setTooltip ("Save changes to the current preset (disabled for the factory Default — use Save As)");
     addAndMakeVisible (saveBtn);
-    saveAsBtn.onClick = [this] { promptSavePreset(); };
+    saveAsBtn.onClick = [this] { promptSavePreset (nextCopyName (processorRef.presetMeta().name)); };
     saveAsBtn.setTooltip ("Save as a new preset in the library");
     addAndMakeVisible (saveAsBtn);
 
@@ -573,6 +573,32 @@ void OrbitCabAudioProcessorEditor::deleteCurrentPreset()
                 applyDefaultPreset();             // current preset gone → fall back to Default (refreshes the list)
             saveDialog.reset();
         }), false);
+}
+
+juce::String OrbitCabAudioProcessorEditor::nextCopyName (const juce::String& base) const
+{
+    // "<root> (copy N)" with the first N (from 1) whose file doesn't already exist — so the
+    // Save As field is prefilled with a name that won't trip the duplicate-name guard. Strips an
+    // existing " (copy N)" first, so copying a copy gives "X (copy 2)", not "X (copy 1) (copy 1)".
+    juce::String root = base.trim();
+    const int open = root.lastIndexOf (" (copy ");
+    if (open >= 0 && root.endsWithChar (')'))
+    {
+        const auto inner = root.substring (open + 7, root.length() - 1);   // digits between "(copy " and ")"
+        if (inner.isNotEmpty() && inner.containsOnly ("0123456789"))
+            root = root.substring (0, open).trim();
+    }
+    if (root.isEmpty())
+        root = "My Preset";
+
+    for (int n = 1; ; ++n)
+    {
+        const auto cand = root + " (copy " + juce::String (n) + ")";
+        const auto f = orbitcab::PresetManager::directory()
+                           .getChildFile (juce::File::createLegalFileName (cand) + ".orbitcab");
+        if (! f.existsAsFile() && ! cand.equalsIgnoreCase ("Default"))
+            return cand;
+    }
 }
 
 juce::File OrbitCabAudioProcessorEditor::currentPresetFile() const
