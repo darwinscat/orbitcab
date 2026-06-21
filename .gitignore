@@ -44,6 +44,7 @@ notarize-credentials*
 
 # Local AI-assistant brain — kept private/local, not shipped in the public repo
 CLAUDE.md
+.claude/
 
 # Stray build/tool logs
 *.log
