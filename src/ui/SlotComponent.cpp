@@ -75,11 +75,6 @@ SlotComponent::SlotComponent (OrbitCabAudioProcessor& processor, int slotIndex)
     wave.onTrimChanged   = [this] (float frac)        { proc.setTrim (frac, isA()); };
     wave.onHpfChanged    = [this] (bool on, float hz) { setHpfFromCurve (on, hz); };
     wave.onLpfChanged    = [this] (bool on, float hz) { setLpfFromCurve (on, hz); };
-    wave.onDryWetChanged = [this] (float wet)
-    {
-        if (auto* q = proc.apvts.getParameter (juce::String ("mix") + sfx()))
-            q->setValueNotifyingHost (wet);            // mix 0..100 → normalised = wet
-    };
 
     addAndMakeVisible (hpfOn);  hpfOn.setTooltip ("High-pass filter");
     hpfOnAtt  = std::make_unique<BAtt> (proc.apvts, "hpfOn"  + s, hpfOn);
@@ -87,19 +82,29 @@ SlotComponent::SlotComponent (OrbitCabAudioProcessor& processor, int slotIndex)
     lpfOnAtt  = std::make_unique<BAtt> (proc.apvts, "lpfOn"  + s, lpfOn);
     addAndMakeVisible (trimOn); trimOn.setTooltip ("Trim IR tail");
     trimOnAtt = std::make_unique<BAtt> (proc.apvts, "trimOn" + s, trimOn);
-    addAndMakeVisible (headOn); headOn.setTooltip ("Trim leading silence");
-    headOn.onClick = [this] { wave.setHeadEnabled (headOn.getToggleState()); };
-    headOnAtt = std::make_unique<BAtt> (proc.apvts, "headOn" + s, headOn);
-    addAndMakeVisible (dwOn);   dwOn.setTooltip ("Dry / Wet");
-    dwOn.onClick = [this] { wave.setDwEnabled (dwOn.getToggleState()); };
     addAndMakeVisible (phase);  phase.setTooltip ("Invert polarity");
     phaseAtt  = std::make_unique<BAtt> (proc.apvts, "phase"  + s, phase);
+
+    // Dry/Wet slider (hidden until the gear panel enables it; setDryWetVisible drives it).
+    dwLabel.setJustificationType (juce::Justification::centredLeft);
+    dwLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    dwLabel.setColour (juce::Label::textColourId, juce::Colour (0xffb0b0b0));
+    dwLabel.setVisible (false);
+    addChildComponent (dwLabel);
+    dwSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    dwSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+    dwSlider.setTooltip ("Dry / Wet mix");
+    dwSlider.setVisible (false);
+    addChildComponent (dwSlider);
+    dwAtt = std::make_unique<SAtt> (proc.apvts, "mix" + s, dwSlider);
 
     // per-side accent: Slot A violet, Slot B orange (incl. the waveform)
     const juce::Colour accent (isA() ? OrbitCabLookAndFeel::kAccent : OrbitCabLookAndFeel::kAccentB);
     wave.setAccent (accent);
-    for (auto* t : { &hpfOn, &lpfOn, &trimOn, &headOn, &dwOn, &phase })
+    for (auto* t : { &hpfOn, &lpfOn, &trimOn, &phase })
         t->setColour (juce::ToggleButton::tickColourId, accent);
+    dwSlider.setColour (juce::Slider::thumbColourId, accent);
+    dwSlider.setColour (juce::Slider::trackColourId, accent.withAlpha (0.55f));
     for (auto* btn : { &name, &folder, &prev, &next })
         btn->setColour (OrbitCabLookAndFeel::accentBorderColourId, accent);
 }
@@ -308,8 +313,6 @@ void SlotComponent::syncFromProcessor()
     }
 
     wave.setTrimFraction (proc.getTrim (a));
-    dwOn.setToggleState (proc.apvts.getRawParameterValue (juce::String ("mix") + sfx())->load() < 99.5f,
-                         juce::dontSendNotification);
     prev.setEnabled (list.size() > 1);
     next.setEnabled (list.size() > 1);
 }
@@ -326,9 +329,7 @@ void SlotComponent::pushFiltersToWave()
                      ap.getRawParameterValue ("lpfOn" + s)->load() > 0.5f,
                      ap.getRawParameterValue ("lpfFreq" + s)->load(), lr.start, lr.end);
     wave.setTrimEnabled (ap.getRawParameterValue ("trimOn" + s)->load() > 0.5f);
-    wave.setHeadEnabled (ap.getRawParameterValue ("headOn" + s)->load() > 0.5f);
-    wave.setDwEnabled (dwOn.getToggleState());
-    wave.setDryWet (ap.getRawParameterValue ("mix" + s)->load() * 0.01f);
+    wave.setHeadEnabled (proc.getHeadTrim());          // global, on-by-default session setting
 }
 
 void SlotComponent::setHpfFromCurve (bool on, float hz)
@@ -351,11 +352,21 @@ void SlotComponent::setActive (bool on)
 {
     wave.setEnabled (on);                              // wave dims via its own overlay
     const float a = on ? 1.0f : 0.42f;                 // muted/empty controls go dim
-    for (auto* c : { &hpfOn, &lpfOn, &trimOn, &headOn, &dwOn, &phase })
+    for (auto* c : { &hpfOn, &lpfOn, &trimOn, &phase })
     {
         c->setEnabled (on);
         c->setAlpha (a);
     }
+    dwSlider.setEnabled (on);
+    dwSlider.setAlpha (a);
+    dwLabel.setAlpha (a);
+}
+
+void SlotComponent::setDryWetVisible (bool shouldShow)
+{
+    dwLabel.setVisible (shouldShow);
+    dwSlider.setVisible (shouldShow);
+    resized();                                         // wave reclaims the row when hidden
 }
 
 void SlotComponent::selectBundledStartingWith (const juce::String& namePrefix)
@@ -381,13 +392,21 @@ void SlotComponent::resized()
     name.setBounds   (top.reduced (8, 0));
     area.removeFromTop (6);
 
+    // Dry/Wet slider docked under the checkbox row (only when visible — else the wave
+    // reclaims the space). Sits below the checkboxes, so remove it from the bottom first.
+    if (dwSlider.isVisible())
+    {
+        auto dwRow = area.removeFromBottom (24);
+        dwLabel.setBounds  (dwRow.removeFromLeft (58));
+        dwSlider.setBounds (dwRow);
+        area.removeFromBottom (4);
+    }
+
     auto cbRow = area.removeFromBottom (26);
-    const int w = cbRow.getWidth() / 6;
+    const int w = cbRow.getWidth() / 4;
     hpfOn.setBounds  (cbRow.removeFromLeft (w));
     lpfOn.setBounds  (cbRow.removeFromLeft (w));
     trimOn.setBounds (cbRow.removeFromLeft (w));
-    headOn.setBounds (cbRow.removeFromLeft (w));
-    dwOn.setBounds   (cbRow.removeFromLeft (w));
     phase.setBounds  (cbRow);
 
     area.removeFromBottom (6);

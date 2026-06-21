@@ -7,6 +7,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include "core/CabEngine.h"
+#include "AppPreferences.h"
 #include "UpdateChecker.h"
 
 #include <map>
@@ -106,6 +107,14 @@ public:
     // audio thread. `fraction` in [0,1]; 1 = full. The only IR-touching control.
     void setTrim (float fraction01, bool slotA = true);
 
+    // HEAD trim — one global, on-by-default session setting (NOT a per-slot host param):
+    // snap each IR to its onset, dropping the baked-in cabinet pre-delay so dry/wet and
+    // A/B blends stay phase-aligned. Stored as the "headTrim" property on the APVTS state
+    // tree (rides session save/load, snapshots, undo). Toggled from the gear settings panel
+    // on the message thread; both slots rebuild off the audio thread via the reload poll.
+    bool getHeadTrim() const { return (bool) apvts.state.getProperty ("headTrim", true); }
+    void setHeadTrim (bool on);
+
     // Slot IR reference for persistence + editor sync. `bundled` => `ref` is a
     // BinaryData filename; otherwise `ref` is an absolute file path. Empty ref = none.
     juce::String getSlotRef    (bool slotA) const { return slotA ? slotRefA : slotRefB; }
@@ -146,6 +155,9 @@ public:
     // is one per plugin instance; the editor's version badge drives + reads it.
     orbitcab::UpdateChecker& updateChecker() { return updateCheckerInstance; }
 
+    // The single global PropertiesFile owner (per-machine view-prefs: gear-panel toggles).
+    orbitcab::AppPreferences& appPreferences() { return appPreferencesInstance; }
+
 private:
     //==========================================================================
     // The headless DSP core (cab::CabEngine) owns the whole real-time signal path —
@@ -155,7 +167,10 @@ private:
     cab::CabEngine engine;
     cab::Params    packParams() const;            // APVTS atomics -> plain values (RT-safe)
 
-    orbitcab::UpdateChecker updateCheckerInstance;   // version + opt-in update check
+    // appPreferences MUST precede updateCheckerInstance: the checker takes it by reference,
+    // so it has to be constructed first (member init follows declaration order).
+    orbitcab::AppPreferences appPreferencesInstance;   // single global PropertiesFile owner
+    orbitcab::UpdateChecker  updateCheckerInstance;    // version + opt-in update check
 
     double currentSampleRate = 44100.0;           // IR-load sample-rate fallback (message thread)
     std::atomic<double> irLengthSeconds { 1.0 }; // longest loaded IR tail; getTailLengthSeconds() reads it from the host thread
@@ -173,7 +188,6 @@ private:
     std::atomic<float>* phaseP[2]   { nullptr, nullptr };
     std::atomic<float>* mixP[2]     { nullptr, nullptr };
     std::atomic<float>* trimOnP[2]  { nullptr, nullptr };
-    std::atomic<float>* headOnP[2]  { nullptr, nullptr };   // trim leading silence
     std::atomic<float>* muteP[2]    { nullptr, nullptr };
     std::atomic<float>* mixABParam     = nullptr;
     std::atomic<float>* gainParam      = nullptr;

@@ -118,6 +118,13 @@ The convolver is **`juce::dsp::Convolution`**:
 | `phase`  | bool | invert polarity |
 | (IR path)| — | the loaded IR file path / bundled-IR id, stored in state, not a host-automatable param |
 
+> This table is the early shape; the authoritative parameter list lives in
+> `src/Parameters.cpp`. As built: params are **per slot (A/B)** — HPF/LPF each split into
+> an on-toggle + a freq, plus `phase`, `mix` (Dry/Wet), `trimOn`, `mute` — over the global
+> `inputGain`, `gain`, `mixAB` (A↔B), `bypass`, `autoLevel`. **Defaults: helpers on
+> (`autoLevel`); everything that colours/cuts is off.** **HEAD trim is NOT a param** — it's
+> a global session-state property (see the state model below).
+
 ## State model — versioned from day one
 
 The APVTS ValueTree is serialized into the DAW session. We add a top-level
@@ -132,6 +139,15 @@ read stateVersion
 
 Without this, adding PowerAmp params in v2 risks corrupting/zeroing v1 sessions.
 Cheap insurance, written once.
+
+Two non-param settings ride alongside the APVTS params:
+
+- **`headTrim`** — a property on the APVTS state tree (default on). Audio-affecting (it
+  re-trims the IRs), so it travels with the session + A/B/C/D snapshots + undo, but is
+  *not* a host-automatable param. Toggled from the gear settings panel.
+- **Global view prefs** — `dryWetShown`, `spectrumOn` live in an app-wide `PropertiesFile`
+  (owned by `AppPreferences`, one per machine), NOT the session. The update-checker's
+  last-seen release tag shares that same single file.
 
 ## IR loading
 

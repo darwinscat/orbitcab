@@ -14,8 +14,8 @@
 // load — so there's no cross-thread data sharing. It hosts the direct-manipulation
 // controls:
 //   • TRIM  — drag anywhere to truncate the IR; cut region dims + a marker tracks it.
-//   • EQ    — an HPF/LPF response curve with two draggable corner points (Slot A only,
-//             since the filters are global). Drag a point = cutoff; park it past the
+//   • EQ    — an HPF/LPF response curve with two draggable corner points (per slot —
+//             each slot has its own HPF/LPF). Drag a point = cutoff; park it past the
 //             edge = filter off. Curve shape matches the web `drawEqCurve`.
 // Changes are reported via callbacks so the editor can write the parameters.
 //
@@ -31,7 +31,6 @@ public:
     std::function<void (float)>        onTrimChanged;    // fraction to keep, (0,1]
     std::function<void (bool, float)>  onHpfChanged;     // (on, Hz)
     std::function<void (bool, float)>  onLpfChanged;     // (on, Hz)
-    std::function<void (float)>        onDryWetChanged;  // wet 0..1 (D/W edge fader)
 
     void setFromMemory (const void* data, size_t size, const juce::String& displayName);
     void setFromFile (const juce::File& file);
@@ -45,11 +44,6 @@ public:
 
     // The TRIM handle (and trimming) only show/work when the slot's TRIM is enabled.
     void setTrimEnabled (bool shouldBeEnabled);
-
-    // D/W edge fader (docked to the right gutter): only shown/grabbable when enabled.
-    // wet 0..1 — top of the wave = 1 (full effect), bottom = 0 (dry).
-    void setDwEnabled (bool shouldBeEnabled) { dwEnabled = shouldBeEnabled; repaint(); }
-    void setDryWet    (float wet01)          { dryWet = juce::jlimit (0.0f, 1.0f, wet01); repaint(); }
 
     // HEAD trim: when on, the detected leading-silence region reads as "cut".
     // The waveform always shows the full IR; this only changes the indicator's look.
@@ -77,15 +71,15 @@ public:
     void mouseExit (const juce::MouseEvent& e) override;
 
 private:
-    enum class Drag { none, trim, hpf, lpf, dwet };
+    enum class Drag { none, trim, hpf, lpf };
 
     static constexpr float kMinTrim  = 0.02f;
     static constexpr float kFMin     = 20.0f;
     static constexpr float kFMax     = 20000.0f;
     static constexpr float kGrabPx   = 14.0f;
-    static constexpr int   kDwGutter = 18;     // right strip reserved for the D/W fader
 
-    // Content (impulse / trim / EQ / spectrum) lives left of the D/W gutter when D/W is on.
+    // The drawable/interactive content area (the D/W fader no longer lives here —
+    // it's a horizontal slider under the slot's checkbox row now).
     juce::Rectangle<int> contentBounds() const;
 
     // --- thin wrappers over core/WaveformMath.h, feeding in the current rectangle ---
@@ -96,7 +90,6 @@ private:
 
     void drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r);
     void drawHeadIndicator (juce::Graphics& g, juce::Rectangle<float> r);
-    void drawDwFader (juce::Graphics& g);
     void drawDbGrid (juce::Graphics& g, juce::Rectangle<float> r, float mid, float amp);
     void drawEq (juce::Graphics& g, juce::Rectangle<float> r);
     void drawHandle (juce::Graphics& g, juce::Rectangle<float> r, float f, bool on);
@@ -117,8 +110,6 @@ private:
     float                    trimFraction    = 1.0f;
     bool                     trimInteractive = false;
     bool                     trimEnabled     = false;
-    float                    dryWet          = 1.0f;    // wet amount (D/W edge fader)
-    bool                     dwEnabled       = false;
     float                    leadFraction    = 0.0f;    // leading-silence width (0..1 of IR)
     double                   leadMs          = 0.0;     // leading-silence duration (ms)
     bool                     headEnabled     = false;   // HEAD trim on → region reads as cut

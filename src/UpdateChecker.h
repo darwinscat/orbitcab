@@ -4,7 +4,8 @@
 #pragma once
 
 #include <juce_events/juce_events.h>                    // MessageManager (callAsync)
-#include <juce_data_structures/juce_data_structures.h>  // ApplicationProperties / PropertiesFile (pulls juce_core: URL, WebInputStream, JSON, Thread)
+#include <juce_data_structures/juce_data_structures.h>  // PropertiesFile (pulls juce_core: URL, WebInputStream, JSON, Thread)
+#include "AppPreferences.h"                             // the shared global PropertiesFile owner
 #include <functional>
 
 //==============================================================================
@@ -31,7 +32,7 @@ namespace orbitcab
 class UpdateChecker
 {
 public:
-    explicit UpdateChecker (juce::String currentVersion);   // e.g. JucePlugin_VersionString
+    UpdateChecker (juce::String currentVersion, AppPreferences& prefs);   // e.g. JucePlugin_VersionString
 
     struct Result
     {
@@ -53,14 +54,13 @@ public:
     juce::String storedLatest()    const;
 
 private:
-    juce::PropertiesFile* settings();
     void storeOutdated (const juce::String& latest);
     void clearStored();
     static Result fetch (const juce::String& version);      // blocking, no instance state — background thread only
     static bool isNewer (const juce::String& latest, const juce::String& current);
 
     juce::String current;
-    juce::ApplicationProperties props;
+    AppPreferences& prefs;                                  // the shared global PropertiesFile owner
 
     // The network reply lands on the message thread via callAsync; if this checker (i.e.
     // the plugin instance) was destroyed meanwhile, the weak ref makes the callback a no-op.

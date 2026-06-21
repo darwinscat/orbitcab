@@ -76,22 +76,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     redoBtn.onClick = [this] { if (processorRef.redo()) afterUndoRedo(); };
     addAndMakeVisible (redoBtn);
 
-    spectrumBtn.setClickingTogglesState (true);
-    spectrumBtn.setToggleState (true, juce::dontSendNotification);
-    spectrumBtn.setTooltip ("Spectrum analyser on/off");
-    spectrumBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-    spectrumBtn.onClick = [this]
-    {
-        processorRef.setSpectrumActive (spectrumBtn.getToggleState());   // stop the audio-thread feed when off
-        if (! spectrumBtn.getToggleState())          // turning off → clear both displays
-        {
-            spectrum.clear();
-            slots[0].setSpectrum (spectrum.pre(), spectrum.post());
-            slots[1].setSpectrum (spectrum.pre(), spectrum.post());
-        }
-    };
-    addAndMakeVisible (spectrumBtn);
-    processorRef.setSpectrumActive (spectrumBtn.getToggleState());       // editor open + analyser on
+    settingsBtn.setTooltip ("Settings");
+    settingsBtn.colour = juce::Colour (0xffc0c0c8);
+    settingsBtn.onClick = [this] { openSettings(); };
+    addAndMakeVisible (settingsBtn);
+    spectrumEnabled = processorRef.appPreferences().getFlag ("spectrumOn", true);   // global view pref
+    processorRef.setSpectrumActive (spectrumEnabled);                    // editor open + analyser on
 
     // ---- A/B/C/D compare (snapshot registers) ----
     // Distinct from the violet/orange IR-slot badges (I/II): a neutral toggle group in
@@ -204,6 +194,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     slots[1].rebuildList();
     slots[0].syncFromProcessor();
     slots[1].syncFromProcessor();
+    dryWetPref = processorRef.appPreferences().getFlag ("dryWetShown", false);   // global view pref
+    refreshDryWetVisibility();   // applies the pref, or force-shows if a loaded blend has mix ≠ 100%
     pushFiltersToWave();
     refreshPresets();
 
@@ -224,6 +216,7 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     outMeter.setLevel (processorRef.getOutputLevel());
     pushFiltersToWave();
     updateEnablement();
+    refreshDryWetVisibility();                     // catch a blend (mix ≠ 100%) loaded by the host
     updateSpectrum();
 
     processorRef.undoTick();                       // coalesce edits into undo steps
@@ -258,14 +251,64 @@ void OrbitCabAudioProcessorEditor::updateEnablement()
     }
 }
 
+void OrbitCabAudioProcessorEditor::refreshDryWetVisibility()
+{
+    // A Dry/Wet mix below 100% means raw input is actually blended in — never let that hide
+    // behind the gear pref as an invisible "ghost knob". Effective visibility = the user's
+    // pref OR an active blend on either slot, so a hidden pref only holds while both sit at
+    // full wet. The mix step is 0.1, so < 99.95 cleanly excludes the 100% default.
+    auto& ap = processorRef.apvts;
+    const bool blendActive = ap.getRawParameterValue ("mixA")->load() < 99.95f
+                          || ap.getRawParameterValue ("mixB")->load() < 99.95f;
+    const bool show = dryWetPref || blendActive;
+    if (show == dryWetShownCache)
+        return;                                    // only re-lay-out on change
+    dryWetShownCache = show;
+    slots[0].setDryWetVisible (show);
+    slots[1].setDryWetVisible (show);
+}
+
 void OrbitCabAudioProcessorEditor::updateSpectrum()
 {
-    if (! spectrumBtn.getToggleState())              // analyser off
+    if (! spectrumEnabled)                           // analyser off
         return;
 
     spectrum.update (processorRef);
     slots[0].setSpectrum (spectrum.pre(), spectrum.post());
     slots[1].setSpectrum (spectrum.pre(), spectrum.post());
+}
+
+void OrbitCabAudioProcessorEditor::openSettings()
+{
+    auto panel = std::make_unique<SettingsPanel> (
+        processorRef.getHeadTrim(), dryWetPref, spectrumEnabled,
+        [this] (bool on)                                   // HEAD: persisted session setting
+        {
+            processorRef.setHeadTrim (on);
+            pushFiltersToWave();                           // refresh the waveform head overlay
+        },
+        [this] (bool on)                                   // Dry/Wet sliders: global view preference
+        {
+            dryWetPref = on;
+            processorRef.appPreferences().setFlag ("dryWetShown", on);   // persist across sessions
+            refreshDryWetVisibility();   // a hidden pref only sticks while both slots sit at 100% wet
+        },
+        [this] (bool on)                                   // Spectrum: global view preference
+        {
+            spectrumEnabled = on;
+            processorRef.appPreferences().setFlag ("spectrumOn", on);   // persist across sessions
+            processorRef.setSpectrumActive (on);           // stop the audio-thread feed when off
+            if (! on)                                      // turning off → clear both displays
+            {
+                spectrum.clear();
+                slots[0].setSpectrum (spectrum.pre(), spectrum.post());
+                slots[1].setSpectrum (spectrum.pre(), spectrum.post());
+            }
+        });
+
+    // Parent the pop-over to the editor (not the desktop) so it can't outlive the window
+    // (the version call-out orphan bug, #52). areaToPointTo is in the editor's coords.
+    juce::CallOutBox::launchAsynchronously (std::move (panel), settingsBtn.getBounds(), this);
 }
 
 //==============================================================================
@@ -500,7 +543,7 @@ void OrbitCabAudioProcessorEditor::resized()
 
     auto headerRight = header.removeFromRight (410 + 124);      // save+export+import+≈ + A/B/C/D cluster
     auto rightBar    = headerRight.withSizeKeepingCentre (headerRight.getWidth(), kCtlBand);
-    spectrumBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
+    settingsBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
     importBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     exportBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     saveBtn.setBounds     (rightBar.removeFromRight (60).reduced (7));

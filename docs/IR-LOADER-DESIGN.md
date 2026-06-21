@@ -40,11 +40,30 @@ in → HPF → LPF → Convolution(IR) → Auto-level → Phase → Mix(dry/wet)
 
 | Param | Range / default | Notes |
 |---|---|---|
-| HPF (on + freq) | 30–180 Hz, def **80** | `juce::dsp::IIR` 2nd-order, Q=0.707 (Butterworth, 12 dB/oct) |
-| LPF (on + freq) | 4–12 kHz, def **7k** | same biquad |
-| Phase | invert on/off | polarity flip on the **wet** branch, *before* Mix — must invert only the convolved signal, never the dry, or it does nothing to the blend. Fixes cancellation / comb / thinness when blending dry+wet or stacking with a DI / 2nd mic |
-| Mix (dry/wet) | 0–100 % wet, def **100** | blends the chain output (wet, post-Phase) with a **dry tap of the raw input** (taken *before* HPF). Recover attack/level. Plugin-specific — the web tool has no mix |
+| HPF (on + freq) | 30–400 Hz, freq def **80**, enable **off** | `juce::dsp::IIR` 2nd-order, Q=0.707 (Butterworth, 12 dB/oct). **Per slot.** |
+| LPF (on + freq) | 2–12 kHz, freq def **7k**, enable **off** | same biquad. **Per slot.** |
+| Phase | invert on/off, def **off** | polarity flip on the **wet** branch, *before* Mix — must invert only the convolved signal, never the dry, or it does nothing to the blend. Fixes cancellation / comb / thinness when blending dry+wet or stacking with a DI / 2nd mic |
+| Mix (dry/wet) | 0–100 % wet, def **100** (= full wet, no blend) | blends the chain output (wet, post-Phase) with a **dry tap of the raw input** (taken *before* HPF). Recover attack/level. Per-slot **slider, hidden by default** (gear panel reveals it; auto-shown if a loaded state has mix ≠ 100 %). Plugin-specific — the web tool has no mix |
 | Output Gain | −24…+24 dB, def **0** | final user trim *on top of* the Auto-level (below). |
+
+### Defaults & where each control lives
+
+**Defaults policy — *helpers on, shapers & view off*:** load an IR and you hear the
+pure cab at matched loudness with nothing coloured.
+
+- **On by default (invisible helpers):** Auto-level (`autoLevel`), HEAD trim (`headTrim`).
+- **Off / opt-in (shapers + view):** HPF, LPF, Phase, TRIM, the Dry/Wet blend.
+
+**HEAD trim is NOT a per-slot host param** — it's one **global, on-by-default session
+setting**, the `headTrim` property on the APVTS state tree (rides save/load + A/B/C/D
+snapshots + undo; not host-automatable). Toggled in the gear settings panel; flagging it
+re-trims both slots off the audio thread (same reload path as TRIM). It snaps each IR to
+its onset so dry/wet and A/B blends stay phase-aligned.
+
+**View preferences are global, not per-session** — stored in the app-wide `PropertiesFile`
+(per machine, every instance), owned by `AppPreferences`: `dryWetShown` (reveal the
+Dry/Wet sliders, default **off**) and `spectrumOn` (the faint analyser, default **on**).
+The gear panel captions these as *"this computer"* vs the session-scoped HEAD trim.
 
 ## Auto-level — wet→dry loudness match
 

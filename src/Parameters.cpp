@@ -61,7 +61,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                             NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
                                                             AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
         layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "trimOn" + s, kParamVersion }, "Trim " + s, false));
-        layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "headOn" + s, kParamVersion }, "Head Trim " + s, false));
+        // HEAD (trim leading silence) is NOT a per-slot param: it's a single global, on-by-default
+        // session setting (the "headTrim" property on the APVTS state tree, toggled in the gear
+        // settings panel) — not host-automatable. See PluginProcessor::setHeadTrim.
         layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "mute" + s,   kParamVersion }, "Mute " + s, false));
     };
     addSlot ("A");

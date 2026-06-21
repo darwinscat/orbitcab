@@ -98,7 +98,7 @@ int main()
     auto onsetMs = [&] (bool head) -> double
     {
         setP ("trimOnA", 0.0f);
-        setP ("headOnA", head ? 1.0f : 0.0f);
+        proc.setHeadTrim (head);                   // global session setting (no longer a param)
         pump (500);
         for (int b = 0; b < 12; ++b) { buf.clear(); proc.processBlock (buf, midi); }   // settle
 
@@ -243,6 +243,36 @@ int main()
                      gainOk, hpfOk, trimOk, refOk, b.getSlotRef (true).toRawUTF8());
         std::printf ("RESULT: %s\n", stOk ? "STATE ROUND-TRIP WORKS (params+refs+trim)"
                                           : "STATE ROUND-TRIP BROKEN");
+    }
+
+    // ---- headTrim is a state property (NOT a host param): rides save/load + undo/redo ----
+    // Default is ON. Flip OFF, prove it round-trips into a fresh instance, and that undo
+    // restores it — captureStateTree() snapshots apvts.copyState(), which carries the
+    // property, so both the snapshot-based undo and the serialized session pick it up.
+    {
+        OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+        a.setHeadTrim (false);                          // non-default (default is on)
+        pump (60);
+        juce::MemoryBlock state; a.getStateInformation (state);
+
+        OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);   // fresh → headTrim defaults ON
+        b.setStateInformation (state.getData(), (int) state.getSize());
+        pump (60);
+        const bool saveLoadOk = ! b.getHeadTrim();      // OFF rode the state into a fresh instance
+
+        OrbitCabAudioProcessor u; u.prepareToPlay (sr, block);
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) u.undoTick(); };
+        ticks (20);                                     // baseline (headTrim on) settles
+        u.setHeadTrim (false);                          // on→off commits one undo step
+        ticks (20);
+        const bool didUndo = u.undo();   const bool undoOk = didUndo && u.getHeadTrim();     // → on
+        const bool didRedo = u.redo();   const bool redoOk = didRedo && ! u.getHeadTrim();   // → off
+
+        const bool htOk = saveLoadOk && undoOk && redoOk;
+        allPass &= htOk;
+        std::printf ("HEADTRIM STATE TEST: save/load=%d undo=%d redo=%d\n", saveLoadOk, undoOk, redoOk);
+        std::printf ("RESULT: %s\n", htOk ? "HEADTRIM RIDES STATE (save/load + undo/redo)"
+                                          : "HEADTRIM STATE BROKEN");
     }
 
     // ---- IRLibrary: the shared bundled-IR enumeration (de-dup) ----
