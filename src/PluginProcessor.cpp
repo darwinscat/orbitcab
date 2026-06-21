@@ -742,6 +742,15 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
         apvts.replaceState (root);
     }
 
+    // Migration: HEAD trim was per-slot params (headOnA/B, default off) through 1.0.x; it's
+    // now the global `headTrim` property (default on). A session saved before 1.1 carries no
+    // such property — fall back to the OLD default (off) so opening an old project doesn't
+    // silently start head-trimming the IRs. Post-1.1 sessions carry the property and keep
+    // their value, so property-absence IS the version marker (no stateVersion bump needed).
+    // The IR re-trim is deferred to the reload poll, which reads getHeadTrim() after this returns.
+    if (! apvts.state.hasProperty ("headTrim"))
+        apvts.state.setProperty ("headTrim", false, nullptr);
+
     // A loaded session/preset is a fresh starting point — drop undo history and re-seed
     // the baseline (lazily, on the next undoTick) so you can't undo past the load.
     undoStack.clear();

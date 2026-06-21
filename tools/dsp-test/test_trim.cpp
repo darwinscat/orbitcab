@@ -275,6 +275,34 @@ int main()
                                           : "HEADTRIM STATE BROKEN");
     }
 
+    // ---- migration: a pre-1.1 session (no headTrim property) loads with HEAD off ----
+    // HEAD used to be per-slot params (default off); now it's the global `headTrim` property
+    // (default on). Stripping the property mimics a 1.0.x save — setStateInformation must fall
+    // back to off (the old default), while a normal save keeps whatever was stored.
+    {
+        OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+        a.apvts.state.removeProperty ("headTrim", nullptr);   // simulate a 1.0.x save (never had it)
+        juce::MemoryBlock oldState; a.getStateInformation (oldState);
+
+        OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);   // fresh defaults headTrim ON
+        b.setStateInformation (oldState.getData(), (int) oldState.getSize());
+        pump (60);
+        const bool migOk = ! b.getHeadTrim();                 // absent on load → migrated to OFF
+
+        OrbitCabAudioProcessor c; c.prepareToPlay (sr, block); c.setHeadTrim (true);
+        juce::MemoryBlock newState; c.getStateInformation (newState);
+        OrbitCabAudioProcessor d; d.prepareToPlay (sr, block);
+        d.setStateInformation (newState.getData(), (int) newState.getSize());
+        pump (60);
+        const bool keepOk = d.getHeadTrim();                  // present → preserved ON
+
+        const bool migrateOk = migOk && keepOk;
+        allPass &= migrateOk;
+        std::printf ("MIGRATION TEST: old(no headTrim)->off=%d  new(on)->on=%d\n", migOk, keepOk);
+        std::printf ("RESULT: %s\n", migrateOk ? "HEADTRIM MIGRATION WORKS (absent -> off, present -> kept)"
+                                               : "HEADTRIM MIGRATION BROKEN");
+    }
+
     // ---- IRLibrary: the shared bundled-IR enumeration (de-dup) ----
     {
         const auto bundled = orbitcab::bundledIRs();
