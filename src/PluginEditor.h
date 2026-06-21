@@ -122,6 +122,12 @@ private:
     bool dryWetShownCache = false;   // last applied effective visibility (so we re-lay-out only on change)
     void refreshDryWetVisibility();
 
+    // Waveform amplitude scale (gear panel, global view prefs): log (dB) vs linear + dB floor.
+    // Persisted under "waveLog" / "waveFloor"; default log on, −48 dB. Seeded in the ctor.
+    bool waveLogPref   = true;
+    int  waveFloorPref = -48;
+    void applyWaveformScale();   // push the pref to both slots' waveforms
+
     // enablement caches (so we only re-dim on change) + MIX strip bounds for its gradient
     bool slotOnCache[2] { true, true };   // per-slot active-state cache (drives SlotComponent::setActive)
     bool mixOnCache = true;

@@ -131,12 +131,14 @@ void WaveformDisplay::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x14ffffff));
     g.drawHorizontalLine ((int) mid, r.getX(), r.getRight());
     drawDbGrid (g, r, mid, amp);
+    drawTimeGrid (g, r);                  // 20/50/100/200/500 ms verticals (TRIM magnetises to them)
     drawSpectrum (g, r);                  // faint pre/post analyser, behind the impulse
 
     for (int i = 0; i < n; ++i)
     {
         const float x = r.getX() + r.getWidth() * (float) i / (float) n;
-        const float h = peaks[(size_t) i] * amp;
+        const float h = (ampLog ? cab::dbHeightFactor (peaks[(size_t) i], dbFloor)
+                                : peaks[(size_t) i]) * amp;             // log-Y (dB) or linear
         g.setColour (x <= trimX ? accent.withAlpha (0.85f)      // kept (per-side accent)
                                 : juce::Colour (0x33ffffff));    // trimmed (faint)
         g.drawLine (x, mid - h, x, mid + h, 1.0f);
@@ -267,12 +269,14 @@ void WaveformDisplay::drawHeadIndicator (juce::Graphics& g, juce::Rectangle<floa
     g.drawText (text, box, juce::Justification::centred, false);
 }
 
+namespace { constexpr double kTimeMarksMs[] = { 20.0, 50.0, 100.0, 200.0, 500.0 }; }
+
 void WaveformDisplay::drawDbGrid (juce::Graphics& g, juce::Rectangle<float> r, float mid, float amp)
 {
-    // Faint dBFS amplitude rules (relative to the IR's normalised peak) + tiny labels.
-    for (const int db : { -6, -12, -18 })
+    // dB amplitude rules on the SAME scale as the impulse (relative to its peak): the log
+    // scale uses the dB floor, the linear scale the original ratio positions.
+    auto rule = [&] (int db, float dy)
     {
-        const float dy = amp * juce::Decibels::decibelsToGain ((float) db);
         g.setColour (juce::Colour (0x12ffffff));
         g.drawHorizontalLine ((int) (mid - dy), r.getX(), r.getRight());
         g.drawHorizontalLine ((int) (mid + dy), r.getX(), r.getRight());
@@ -280,6 +284,31 @@ void WaveformDisplay::drawDbGrid (juce::Graphics& g, juce::Rectangle<float> r, f
         g.setFont (juce::FontOptions (9.0f));
         g.drawText (juce::String (db), juce::Rectangle<float> (r.getRight() - 26.0f, mid - dy - 6.0f, 24.0f, 12.0f),
                     juce::Justification::centredRight, false);
+    };
+    if (ampLog)
+        for (const int db : { -12, -24, -36 })
+            rule (db, amp * cab::dbHeightFactor (juce::Decibels::decibelsToGain ((float) db), dbFloor));
+    else
+        for (const int db : { -6, -12, -18 })
+            rule (db, amp * juce::Decibels::decibelsToGain ((float) db));
+}
+
+void WaveformDisplay::drawTimeGrid (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    if (irMs <= 0.0)
+        return;
+    for (const double ms : kTimeMarksMs)
+    {
+        if (ms >= irMs)
+            break;                                       // mark is past the displayed IR length
+        const bool  key = (ms == 50.0 || ms == 100.0);   // dry / wet-combo references — emphasised
+        const float x   = r.getX() + r.getWidth() * (float) (ms / irMs);
+        g.setColour (juce::Colour ((juce::uint32) (key ? 0x30ffffff : 0x12ffffff)));
+        g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
+        g.setColour (juce::Colour ((juce::uint32) (key ? 0xaab2b2ba : 0x66808088)));
+        g.setFont (juce::FontOptions (key ? 9.5f : 8.5f, key ? juce::Font::bold : juce::Font::plain));
+        g.drawText (juce::String ((int) ms), juce::Rectangle<float> (x + 2.0f, r.getY() + 1.0f, 32.0f, 11.0f),
+                    juce::Justification::topLeft, false);
     }
 }
 
@@ -431,7 +460,25 @@ void WaveformDisplay::setTrimFromMouse (float x)
     if (! trimInteractive || peaks.empty())
         return;
     const float w = (float) juce::jmax (1, contentBounds().getWidth());
-    const float f = juce::jlimit (kMinTrim, 1.0f, x / w);
+    float f = juce::jlimit (kMinTrim, 1.0f, x / w);
+
+    // magnetise to the ms marks (hold ⌘ to bypass for a fine trim)
+    if (irMs > 0.0 && ! juce::ModifierKeys::getCurrentModifiers().isCommandDown())
+    {
+        float best = kSnapPx;
+        for (const double ms : kTimeMarksMs)
+        {
+            if (ms >= irMs)
+                break;
+            const float mx = w * (float) (ms / irMs);
+            if (std::abs (x - mx) < best)
+            {
+                best = std::abs (x - mx);
+                f    = juce::jlimit (kMinTrim, 1.0f, (float) (ms / irMs));
+            }
+        }
+    }
+
     if (std::abs (f - trimFraction) < 1.0e-4f)
         return;
     trimFraction = f;

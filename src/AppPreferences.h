@@ -43,6 +43,18 @@ public:
         if (auto* s = file()) { s->setValue (key, value); s->saveIfNeeded(); }
     }
 
+    // Same, for small integer view-prefs (e.g. the waveform dB floor).
+    int getInt (juce::StringRef key, int defaultValue) const
+    {
+        if (auto* s = file()) return s->getIntValue (key, defaultValue);
+        return defaultValue;
+    }
+
+    void setInt (juce::StringRef key, int value)
+    {
+        if (auto* s = file()) { s->setValue (key, value); s->saveIfNeeded(); }
+    }
+
     // Raw PropertiesFile access for richer needs (the UpdateChecker's string tag +
     // epoch + removeValue). Logically const — getUserSettings() is non-const in JUCE.
     juce::PropertiesFile* file() const

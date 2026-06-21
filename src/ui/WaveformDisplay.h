@@ -58,6 +58,10 @@ public:
     // spectrum and trim handle (left-violet, right-orange).
     void setAccent (juce::Colour c) { accent = c; repaint(); }
 
+    // Amplitude scale (global view pref from the gear panel): log (dB, with a floor) vs
+    // linear. Default = log, −48 dB. Log lifts a cab IR's decay tail into view.
+    void setAmplitudeScale (bool log, float floorDb) { ampLog = log; dbFloor = floorDb; repaint(); }
+
     // Pushed from the editor (params or host automation) so the curve stays in sync.
     void setFilters (bool hOn, float hHz, float hMin, float hMax,
                      bool lOn, float lHz, float lMin, float lMax);
@@ -77,6 +81,7 @@ private:
     static constexpr float kFMin     = 20.0f;
     static constexpr float kFMax     = 20000.0f;
     static constexpr float kGrabPx   = 14.0f;
+    static constexpr float kSnapPx   = 7.0f;     // TRIM magnet radius (px) to the ms marks
 
     // The drawable/interactive content area (the D/W fader no longer lives here —
     // it's a horizontal slider under the slot's checkbox row now).
@@ -91,6 +96,7 @@ private:
     void drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r);
     void drawHeadIndicator (juce::Graphics& g, juce::Rectangle<float> r);
     void drawDbGrid (juce::Graphics& g, juce::Rectangle<float> r, float mid, float amp);
+    void drawTimeGrid (juce::Graphics& g, juce::Rectangle<float> r);   // 20/50/100/200/500 ms verticals
     void drawEq (juce::Graphics& g, juce::Rectangle<float> r);
     void drawHandle (juce::Graphics& g, juce::Rectangle<float> r, float f, bool on);
     void drawReadout (juce::Graphics& g, juce::Rectangle<float> r);
@@ -108,6 +114,8 @@ private:
     juce::Colour             accent { 0xff7c4dff };   // per-side tint (set by the editor)
     juce::String             metrics;
     float                    trimFraction    = 1.0f;
+    bool                     ampLog          = true;     // log-Y (dB) vs linear amplitude
+    float                    dbFloor         = -48.0f;   // dB floor when ampLog (default −48)
     bool                     trimInteractive = false;
     bool                     trimEnabled     = false;
     float                    leadFraction    = 0.0f;    // leading-silence width (0..1 of IR)
