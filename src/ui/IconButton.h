@@ -16,7 +16,7 @@
 class IconButton final : public juce::Button
 {
 public:
-    enum class Kind { exportFile, importFile, undo, redo, settings };
+    enum class Kind { exportFile, importFile, undo, redo, settings, trash };
 
     explicit IconButton (Kind k) : juce::Button ("icon"), kind (k)
     {
@@ -73,6 +73,12 @@ public:
             buildGear (gear);
             g.fillPath (gear, t);                           // filled cog, centre hole punched
         }
+        else if (kind == Kind::trash)
+        {
+            juce::Path p;
+            buildTrash (p);
+            g.strokePath (p, stroke, t);
+        }
         else
         {
             juce::Path p;
@@ -97,6 +103,19 @@ private:
             p.startNewSubPath (12.0f, 4.0f);  p.lineTo (12.0f, 16.0f);
             p.startNewSubPath (8.0f, 12.0f);  p.lineTo (12.0f, 16.0f); p.lineTo (16.0f, 12.0f);
         }
+    }
+
+    static void buildTrash (juce::Path& p)
+    {
+        // Lid line + small handle, a tapered open-top bin, and three ribs.
+        p.startNewSubPath (4.0f, 7.0f);  p.lineTo (20.0f, 7.0f);                 // lid
+        p.startNewSubPath (9.5f, 7.0f);  p.lineTo (9.5f, 4.5f);
+        p.lineTo (14.5f, 4.5f);          p.lineTo (14.5f, 7.0f);                 // handle
+        p.startNewSubPath (6.5f, 7.0f);  p.lineTo (7.6f, 21.0f);
+        p.lineTo (16.4f, 21.0f);         p.lineTo (17.5f, 7.0f);                 // bin body (tapered)
+        p.startNewSubPath (10.0f, 10.0f); p.lineTo (10.0f, 18.0f);              // ribs
+        p.startNewSubPath (12.0f, 10.0f); p.lineTo (12.0f, 18.0f);
+        p.startNewSubPath (14.0f, 10.0f); p.lineTo (14.0f, 18.0f);
     }
 
     static void buildGear (juce::Path& p)

@@ -34,6 +34,7 @@ public:
     juce::File saveAs   (const juce::String& name);   // current state → dir/<name>.orbitcab; returns the file
     bool       loadFrom (const juce::File& file);     // file → setStateInformation; false if unreadable
     bool       writeTo  (juce::File file);            // current state → file (forces .orbitcab); embeds IRs
+    bool       deleteFile (const juce::File& file);   // move a user preset to the Trash; guarded to the preset dir
 
 private:
     OrbitCabAudioProcessor& proc;
