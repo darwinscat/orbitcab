@@ -11,11 +11,12 @@
 // Stroked marks, scaled from a 24×24 design box, with a hover wash:
 //   • exportFile — arrow up out of a tray            • undo — counter-clockwise arrow
 //   • importFile — arrow down into a tray            • redo — clockwise arrow
+//   • settings   — a toothed gear (filled, hole punched via even-odd winding)
 //==============================================================================
 class IconButton final : public juce::Button
 {
 public:
-    enum class Kind { exportFile, importFile, undo, redo };
+    enum class Kind { exportFile, importFile, undo, redo, settings };
 
     explicit IconButton (Kind k) : juce::Button ("icon"), kind (k)
     {
@@ -66,6 +67,12 @@ public:
             g.strokePath (arc, stroke, t);                  // the ring
             g.fillPath   (head, t);                         // solid triangular tip
         }
+        else if (kind == Kind::settings)
+        {
+            juce::Path gear;
+            buildGear (gear);
+            g.fillPath (gear, t);                           // filled cog, centre hole punched
+        }
         else
         {
             juce::Path p;
@@ -90,6 +97,27 @@ private:
             p.startNewSubPath (12.0f, 4.0f);  p.lineTo (12.0f, 16.0f);
             p.startNewSubPath (8.0f, 12.0f);  p.lineTo (12.0f, 16.0f); p.lineTo (16.0f, 12.0f);
         }
+    }
+
+    static void buildGear (juce::Path& p)
+    {
+        // Toothed ring around the 24×24 box centre: alternate tip/valley radius for the
+        // teeth, then punch the centre hole with an inner circle (even-odd winding).
+        const float cx = 12.0f, cy = 12.0f;
+        const int   teeth = 8;
+        const float rTip = 10.5f, rValley = 8.0f, rHole = 3.7f;
+        const int   steps = teeth * 2;
+        for (int i = 0; i < steps; ++i)
+        {
+            const float a = juce::MathConstants<float>::twoPi * (float) i / (float) steps;
+            const float r = (i % 2 == 0) ? rTip : rValley;
+            const float x = cx + r * std::cos (a);
+            const float y = cy + r * std::sin (a);
+            if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+        }
+        p.closeSubPath();
+        p.setUsingNonZeroWinding (false);                   // even-odd → inner circle = hole
+        p.addEllipse (cx - rHole, cy - rHole, rHole * 2.0f, rHole * 2.0f);
     }
 
     static void buildCircularArrow (juce::Path& arc, juce::Path& head)

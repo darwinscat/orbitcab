@@ -14,7 +14,8 @@
 //==============================================================================
 // SlotComponent — one IR slot (A or B): a mute badge + the IR browser (name popup,
 // Open file/folder, ‹ ›) + a WaveformDisplay hosting the direct-manipulation controls
-// (TRIM drag, HPF/LPF EQ points, D/W edge fader) + the per-slot enable-checkbox row.
+// (TRIM drag, HPF/LPF EQ points) + the per-slot enable-checkbox row and an optional
+// Dry/Wet slider (revealed from the gear panel).
 // Owns its APVTS attachments and its IR list. Two instances replace the editor's
 // `slots[2]` struct + the duplicated per-slot methods (editor decomposition).
 //==============================================================================
@@ -27,7 +28,7 @@ public:
 
     void rebuildList();            // bundled packs + accumulated user history (shared)
     void syncFromProcessor();      // reflect the loaded IR / trim / refs after a recall
-    void pushFiltersToWave();      // push HPF/LPF/trim/head/dw params onto the wave overlay
+    void pushFiltersToWave();      // push HPF/LPF/trim params + global HEAD onto the wave overlay
     void setActive (bool on);      // mute/empty → dim the wave + the checkbox row
     void selectBundledStartingWith (const juce::String& namePrefix);   // factory-preset helper
     void setSpectrum (const std::vector<float>& pre, const std::vector<float>& post) { wave.setSpectrum (pre, post); }
@@ -38,8 +39,13 @@ public:
 
     void resized() override;
 
+    // Show/hide this slot's horizontal Dry/Wet slider (driven by the global gear-panel
+    // toggle, default off). Re-lays-out so the waveform reclaims the row when hidden.
+    void setDryWetVisible (bool shouldShow);
+
 private:
     using BAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using SAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
 
     struct IREntry
     {
@@ -65,9 +71,15 @@ private:
 
     juce::TextButton   badge, name { "No IR" }, folder { "Open" }, prev { "<" }, next { ">" };
     WaveformDisplay    wave;
-    juce::ToggleButton hpfOn { "HPF" }, lpfOn { "LPF" }, trimOn { "TRIM" }, headOn { "HEAD" },
-                       dwOn { "D/W" }, phase { juce::String::fromUTF8 ("\xc3\x98") };
-    std::unique_ptr<BAtt> muteAtt, hpfOnAtt, lpfOnAtt, trimOnAtt, headOnAtt, phaseAtt;
+    juce::ToggleButton hpfOn { "HPF" }, lpfOn { "LPF" }, trimOn { "TRIM" },
+                       phase { juce::String::fromUTF8 ("\xc3\x98") };
+    std::unique_ptr<BAtt> muteAtt, hpfOnAtt, lpfOnAtt, trimOnAtt, phaseAtt;
+
+    // Dry/Wet — a horizontal slider under the checkbox row (hidden unless the gear-panel
+    // "Dry/Wet" toggle is on). Bound to the per-slot "mix" param via SliderAttachment.
+    juce::Label           dwLabel { {}, "DRY/WET" };
+    juce::Slider          dwSlider;
+    std::unique_ptr<SAtt> dwAtt;
 
     std::vector<IREntry> list;
     int                  listIndex = -1;

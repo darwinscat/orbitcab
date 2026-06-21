@@ -14,17 +14,9 @@ namespace
     constexpr char kKeyEpoch[]    = "lastCheckEpoch";
 }
 
-UpdateChecker::UpdateChecker (juce::String currentVersion)
-    : current (std::move (currentVersion))
+UpdateChecker::UpdateChecker (juce::String currentVersion, AppPreferences& prefsRef)
+    : current (std::move (currentVersion)), prefs (prefsRef)
 {
-    // Global (NOT the DAW session) — shared across instances, survives restarts.
-    juce::PropertiesFile::Options o;
-    o.applicationName     = "OrbitCab";
-    o.folderName          = "Darwin's Cat" + juce::String (juce::File::getSeparatorString()) + "OrbitCab";
-    o.filenameSuffix      = "settings";
-    o.osxLibrarySubFolder = "Application Support";
-    props.setStorageParameters (o);
-
     // Badge-clear: if the installed version has caught up to (or passed) a previously
     // seen "latest", drop the stored value so no stale badge shows. The ONLY place the
     // plugin compares versions itself.
@@ -33,15 +25,9 @@ UpdateChecker::UpdateChecker (juce::String currentVersion)
         clearStored();
 }
 
-juce::PropertiesFile* UpdateChecker::settings()
-{
-    return props.getUserSettings();
-}
-
 juce::String UpdateChecker::storedLatest() const
 {
-    // getUserSettings() is non-const; this read is logically const.
-    if (auto* s = const_cast<UpdateChecker*> (this)->settings())
+    if (auto* s = prefs.file())
         return s->getValue (kKeyLatest);
     return {};
 }
@@ -54,7 +40,7 @@ bool UpdateChecker::updateAvailable() const
 
 void UpdateChecker::storeOutdated (const juce::String& latest)
 {
-    if (auto* s = settings())
+    if (auto* s = prefs.file())
     {
         s->setValue (kKeyLatest, latest);
         s->setValue (kKeyEpoch, juce::String (juce::Time::getCurrentTime().toMilliseconds()));
@@ -64,7 +50,7 @@ void UpdateChecker::storeOutdated (const juce::String& latest)
 
 void UpdateChecker::clearStored()
 {
-    if (auto* s = settings())
+    if (auto* s = prefs.file())
     {
         s->removeValue (kKeyLatest);
         s->saveIfNeeded();

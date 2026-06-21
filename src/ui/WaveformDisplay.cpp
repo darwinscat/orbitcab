@@ -81,7 +81,7 @@ void WaveformDisplay::setFilters (bool hOn, float hHz, float hMin, float hMax,
 
 juce::Rectangle<int> WaveformDisplay::contentBounds() const
 {
-    return getLocalBounds().withTrimmedRight (dwEnabled ? kDwGutter : 0);
+    return getLocalBounds();
 }
 
 float WaveformDisplay::xForFreq (float f, juce::Rectangle<float> r) const
@@ -113,7 +113,7 @@ void WaveformDisplay::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xff191920), 0.0f, 0.0f,
                                              juce::Colour (0xff101013), 0.0f, (float) getHeight(), false));
     g.fillRect (getLocalBounds());
-    auto r = contentBounds().toFloat();        // leave room for the D/W gutter
+    auto r = contentBounds().toFloat();
 
     if (peaks.empty())
     {
@@ -171,9 +171,6 @@ void WaveformDisplay::paint (juce::Graphics& g)
 
     drawReadout (g, r);                     // inplace Hz / ms near the hovered/dragged handle
 
-    if (dwEnabled)
-        drawDwFader (g);                    // D/W vertical fader in the right gutter
-
     // metrics (bottom-left — clear of the EQ curve's left rise)
     g.setColour (juce::Colour (0xffb0b0b0));
     g.setFont (juce::FontOptions (12.0f));
@@ -225,9 +222,10 @@ void WaveformDisplay::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r)
     g.strokePath (post, juce::PathStrokeType (1.3f));
 }
 
-// Leading-silence indicator. Always shows the full IR; this marks the
-// silent head so the user knows there's pre-delay to trim. HEAD off → faint hint
-// ("12 ms" + light band); HEAD on → the region reads as cut (dim + diagonal hatch).
+// Leading-silence indicator. Always shows the full IR; this marks the silent head
+// (the baked-in cabinet pre-delay). Driven by the global HEAD setting (gear panel, on
+// by default — no per-slot button): HEAD on → the region reads as cut (dim + diagonal
+// hatch); HEAD off → a faint hint band. It's the passive visual for what HEAD does.
 void WaveformDisplay::drawHeadIndicator (juce::Graphics& g, juce::Rectangle<float> r)
 {
     if (leadFraction <= 0.0f)
@@ -267,21 +265,6 @@ void WaveformDisplay::drawHeadIndicator (juce::Graphics& g, juce::Rectangle<floa
     g.fillRoundedRectangle (box, 3.0f);
     g.setColour (headEnabled ? accent.withAlpha (0.95f) : juce::Colour (0xffc8c8c8));
     g.drawText (text, box, juce::Justification::centred, false);
-}
-
-void WaveformDisplay::drawDwFader (juce::Graphics& g)
-{
-    auto gutter = getLocalBounds().toFloat().removeFromRight ((float) kDwGutter).reduced (3.0f, 5.0f);
-    const float cx  = gutter.getCentreX();
-    const float top = gutter.getY(), bot = gutter.getBottom();
-    const float hy  = top + (1.0f - dryWet) * gutter.getHeight();   // top = 100% wet
-
-    g.setColour (juce::Colour (0x22ffffff));                        // track
-    g.fillRoundedRectangle (juce::Rectangle<float> (cx - 1.5f, top, 3.0f, bot - top), 1.5f);
-    g.setColour (accent.withAlpha (0.55f));                         // wet fill (top → handle)
-    g.fillRoundedRectangle (juce::Rectangle<float> (cx - 1.5f, top, 3.0f, hy - top), 1.5f);
-    g.setColour (accent);                                           // handle
-    g.fillRoundedRectangle (juce::Rectangle<float> (cx - 6.0f, hy - 3.0f, 12.0f, 6.0f), 2.0f);
 }
 
 void WaveformDisplay::drawDbGrid (juce::Graphics& g, juce::Rectangle<float> r, float mid, float amp)
@@ -364,12 +347,6 @@ void WaveformDisplay::drawReadout (juce::Graphics& g, juce::Rectangle<float> r)
         x = juce::jlimit (r.getX() + 4.0f, r.getRight() - 4.0f, r.getX() + r.getWidth() * trimFraction);
         y = r.getCentreY() - 8.0f;
     }
-    else if (el == Drag::dwet && dwEnabled)
-    {
-        text = juce::String (juce::roundToInt (dryWet * 100.0f)) + "%";
-        x = r.getRight() - 4.0f;
-        y = r.getY() + 5.0f + (1.0f - dryWet) * (r.getHeight() - 10.0f) - 8.0f;
-    }
     else
         return;
 
@@ -425,7 +402,6 @@ WaveformDisplay::Drag WaveformDisplay::pickMode (juce::Point<float> pos)
         if (hpfOn && std::abs (pos.x - xForFreq (hpfHz, r)) < kGrabPx) return Drag::hpf;
         if (lpfOn && std::abs (pos.x - xForFreq (lpfHz, r)) < kGrabPx) return Drag::lpf;
     }
-    if (dwEnabled && pos.x >= r.getRight())                            return Drag::dwet;   // gutter
     if (trimInteractive && trimEnabled)                               return Drag::trim;
     return Drag::none;
 }
@@ -446,14 +422,6 @@ void WaveformDisplay::applyDrag (juce::Point<float> pos)
             repaint();
             if (onLpfChanged) onLpfChanged (true, lpfHz);
             break;
-        case Drag::dwet:
-        {
-            const float top = r.getY() + 5.0f, bot = r.getBottom() - 5.0f;
-            dryWet = juce::jlimit (0.0f, 1.0f, 1.0f - (pos.y - top) / juce::jmax (1.0f, bot - top));
-            repaint();
-            if (onDryWetChanged) onDryWetChanged (dryWet);
-            break;
-        }
         case Drag::none: break;
     }
 }

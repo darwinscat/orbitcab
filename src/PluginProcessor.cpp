@@ -41,13 +41,17 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", orbitcab::createParameterLayout()),
-      updateCheckerInstance (JucePlugin_VersionString)
+      updateCheckerInstance (JucePlugin_VersionString, appPreferencesInstance)
 {
     formatManager.registerBasicFormats();   // WAV/AIFF/FLAC… for IR decode (bundled + user files)
 
     // Stamp the saved state with a version from day one (CLAUDE.md non-negotiable);
     // the migration logic that reads it back comes later.
     apvts.state.setProperty ("stateVersion", 1, nullptr);
+
+    // HEAD trim default: on. A global, on-by-default session setting kept as a state-tree
+    // property (not a host param) so it rides save/load + snapshots + undo. See setHeadTrim.
+    apvts.state.setProperty ("headTrim", true, nullptr);
 
     inputGainParam = apvts.getRawParameterValue ("inputGain");
     bypassParam    = apvts.getRawParameterValue ("bypass");
@@ -64,16 +68,14 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
         phaseP[i]   = apvts.getRawParameterValue ("phase"   + s);
         mixP[i]     = apvts.getRawParameterValue ("mix"     + s);
         trimOnP[i]  = apvts.getRawParameterValue ("trimOn"  + s);
-        headOnP[i]  = apvts.getRawParameterValue ("headOn"  + s);
         muteP[i]    = apvts.getRawParameterValue ("mute"    + s);
     }
 
-    // Re-trim when TRIM-enable / HEAD-trim toggles (deferred to the message thread —
-    // both change the loaded IR, and the toggle can arrive on the audio thread).
+    // Re-trim when TRIM-enable toggles (deferred to the message thread — it changes the
+    // loaded IR, and the toggle can arrive on the audio thread). HEAD trim isn't a param;
+    // setHeadTrim flags the reload directly (message thread → no listener needed).
     apvts.addParameterListener ("trimOnA", this);
     apvts.addParameterListener ("trimOnB", this);
-    apvts.addParameterListener ("headOnA", this);
-    apvts.addParameterListener ("headOnB", this);
 
     // Poll the reload flags on the message thread. The processor is constructed (and
     // destroyed) on the message thread, so start/stop the Timer here + in the destructor —
@@ -86,8 +88,6 @@ OrbitCabAudioProcessor::~OrbitCabAudioProcessor()
     stopTimer();   // no poll callback may run while *this is being torn down
     apvts.removeParameterListener ("trimOnA", this);
     apvts.removeParameterListener ("trimOnB", this);
-    apvts.removeParameterListener ("headOnA", this);
-    apvts.removeParameterListener ("headOnB", this);
 }
 
 void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
@@ -95,8 +95,8 @@ void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
     // This can run on the audio thread (host automation of the toggle), so do the absolute
     // minimum: flag the slot dirty. The 30 Hz timer below does the heavy rebuild off the
     // audio thread. An atomic store is the only hard-RT-safe primitive used on this path.
-    if      (id == "trimOnA" || id == "headOnA") pendingTrimReloadA.store (true, std::memory_order_relaxed);
-    else if (id == "trimOnB" || id == "headOnB") pendingTrimReloadB.store (true, std::memory_order_relaxed);
+    if      (id == "trimOnA") pendingTrimReloadA.store (true, std::memory_order_relaxed);
+    else if (id == "trimOnB") pendingTrimReloadB.store (true, std::memory_order_relaxed);
 }
 
 void OrbitCabAudioProcessor::timerCallback()
@@ -193,7 +193,7 @@ void OrbitCabAudioProcessor::applyTrimAndLoad (bool slotA)
     // drag fraction is the persisted position. Then refresh the host tail = longest slot.
     const int slotIdx = slotA ? 0 : 1;
     const bool trimOn = trimOnP[slotIdx] != nullptr && trimOnP[slotIdx]->load() > 0.5f;
-    const bool headOn = headOnP[slotIdx] != nullptr && headOnP[slotIdx]->load() > 0.5f;
+    const bool headOn = getHeadTrim();                 // global, on-by-default session setting
     const float frac  = slotA ? trimFractionA : trimFractionB;
 
     engine.slotApplyTrim (slotIdx, trimOn, frac, headOn);
@@ -201,6 +201,16 @@ void OrbitCabAudioProcessor::applyTrimAndLoad (bool slotA)
     const double aSec = engine.slotTrimmedSeconds (0);
     const double bSec = slotBLoaded.load() ? engine.slotTrimmedSeconds (1) : 0.0;
     irLengthSeconds = juce::jmax (0.01, juce::jmax (aSec, bSec));
+}
+
+void OrbitCabAudioProcessor::setHeadTrim (bool on)
+{
+    // Message thread (gear settings toggle). Persist the flag on the state tree, then flag
+    // BOTH slots for rebuild — the 30 Hz reload poll re-trims them off the audio thread
+    // (same path as TRIM/IR-swap), gated by enginePrepared. RT rule: no reload happens here.
+    apvts.state.setProperty ("headTrim", on, nullptr);
+    pendingTrimReloadA.store (true, std::memory_order_relaxed);
+    pendingTrimReloadB.store (true, std::memory_order_relaxed);
 }
 
 void OrbitCabAudioProcessor::loadBundledIR()

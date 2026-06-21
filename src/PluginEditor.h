@@ -12,6 +12,7 @@
 #include "ui/IconButton.h"
 #include "ui/VersionBadge.h"
 #include "ui/SpectrumAnalyser.h"
+#include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
 #include "PresetManager.h"
 
@@ -71,7 +72,7 @@ private:
     IconButton            importBtn { IconButton::Kind::importFile };   // ↓ import .orbitcab
     IconButton            undoBtn   { IconButton::Kind::undo };
     IconButton            redoBtn   { IconButton::Kind::redo };
-    juce::TextButton      spectrumBtn { juce::String::fromUTF8 ("\xe2\x89\x88") };  // toggle the analyser
+    IconButton            settingsBtn { IconButton::Kind::settings };       // gear → settings pop-over
     juce::TextButton      snapBtn[OrbitCabAudioProcessor::kNumSnapshots];   // A/B/C/D compare registers
     void updateSnapshotButtons();                                       // reflect the active register
     void afterUndoRedo();                                               // re-sync UI after undo/redo
@@ -103,9 +104,23 @@ private:
 
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B
 
-    // pre/post spectrum analyser (drawn faint inside the waveforms)
+    void openSettings();         // gear → CallOutBox: HEAD / Dry-Wet / spectrum toggles
+
+    // pre/post spectrum analyser (drawn faint inside the waveforms). `spectrumEnabled` mirrors
+    // the gear-panel toggle; it's a global view preference (default on) persisted via the
+    // UpdateChecker's PropertiesFile under "spectrumOn", seeded in the ctor.
     void updateSpectrum();
     SpectrumAnalyser spectrum;   // display-side pre/post analyser (extracted)
+    bool spectrumEnabled = true;
+
+    // Global view pref (gear panel, default off): reveal the per-slot Dry/Wet sliders.
+    // Persisted via the UpdateChecker's PropertiesFile under "dryWetShown", seeded in the ctor.
+    // The sliders are ALSO force-shown whenever a slot's Dry/Wet mix ≠ 100% (a non-default
+    // blend arriving from saved state, a preset, or host automation) so an active blend is
+    // never an invisible "ghost knob". refreshDryWetVisibility() applies pref || blend-active.
+    bool dryWetPref       = false;   // user's gear-panel preference (what the toggle reflects)
+    bool dryWetShownCache = false;   // last applied effective visibility (so we re-lay-out only on change)
+    void refreshDryWetVisibility();
 
     // enablement caches (so we only re-dim on change) + MIX strip bounds for its gradient
     bool slotOnCache[2] { true, true };   // per-slot active-state cache (drives SlotComponent::setActive)
