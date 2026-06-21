@@ -144,7 +144,9 @@ Two non-param settings ride alongside the APVTS params:
 
 - **`headTrim`** — a property on the APVTS state tree (default on). Audio-affecting (it
   re-trims the IRs), so it travels with the session + A/B/C/D snapshots + undo, but is
-  *not* a host-automatable param. Toggled from the gear settings panel.
+  *not* a host-automatable param. Toggled from the gear settings panel. Sessions saved
+  before 1.1 carry no such property (HEAD was per-slot params then); `setStateInformation`
+  falls them back to **off** — the old default — so they don't silently start head-trimming.
 - **Global view prefs** — `dryWetShown`, `spectrumOn` live in an app-wide `PropertiesFile`
   (owned by `AppPreferences`, one per machine), NOT the session. The update-checker's
   last-seen release tag shares that same single file.
