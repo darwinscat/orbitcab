@@ -156,6 +156,31 @@ struct WaveformMathTest : juce::UnitTest
             const auto z = computePeaks (buf, 0, 64);
             for (auto v : z) expectWithinAbsoluteError<float> (v, 0.0f, 0.0f);
         }
+
+        beginTest ("computePeaks: a short IR (fewer samples than buckets) stretches to fill, not squashes left");
+        {
+            // 4 samples, 16 buckets, peak on the LAST sample. The old `per = n/buckets` left the
+            // spike in bucket 3 with buckets 4..15 empty; proportional bucketing must spread the
+            // 4 samples across the whole width so the peak lands at the far right.
+            juce::AudioBuffer<float> buf (1, 4);
+            buf.clear();
+            buf.getWritePointer (0)[3] = 1.0f;
+            const auto peaks = computePeaks (buf, 4, 16);
+            expectEquals ((int) peaks.size(), 16);
+            float maxRight = 0.0f;
+            for (int i = 12; i < 16; ++i) maxRight = juce::jmax (maxRight, peaks[(size_t) i]);
+            expectWithinAbsoluteError<float> (maxRight, 1.0f, 1.0e-5f);          // spike at the right quarter
+            expect (peaks[3] < 0.5f, "the old code's bucket-3 must no longer hold the spike");
+        }
+
+        beginTest ("dbHeightFactor: floor→0, peak→1, monotonic, lifts the decay tail");
+        {
+            expectWithinAbsoluteError<float> (dbHeightFactor (1.0f, -60.0f), 1.0f, 1.0e-5f);   // 0 dB → 1
+            expectWithinAbsoluteError<float> (dbHeightFactor (0.0f, -60.0f), 0.0f, 1.0e-5f);   // silence → floor → 0
+            expectWithinAbsoluteError<float> (dbHeightFactor (juce::Decibels::decibelsToGain (-30.0f), -60.0f),
+                                              0.5f, 0.01f);                                    // -30 dB → mid
+            expect (dbHeightFactor (0.01f, -60.0f) > 0.3f, "a -40 dB tail lifts well above the floor (linear ~0.01)");
+        }
     }
 };
 

@@ -32,6 +32,7 @@ public:
     void setActive (bool on);      // mute/empty → dim the wave + the checkbox row
     void selectBundledStartingWith (const juce::String& namePrefix);   // factory-preset helper
     void setSpectrum (const std::vector<float>& pre, const std::vector<float>& post) { wave.setSpectrum (pre, post); }
+    void setWaveformScale (bool log, float floorDb) { wave.setAmplitudeScale (log, floorDb); }   // gear pref
 
     // Editor hooks (cross-slot / window-level):
     std::function<void()> onUserIRsChanged;   // chooseIR / clear → editor rebuilds BOTH lists

@@ -22,10 +22,12 @@
 class SettingsPanel final : public juce::Component
 {
 public:
-    SettingsPanel (bool headOn, bool dryWetOn, bool spectrumOn,
+    SettingsPanel (bool headOn, bool dryWetOn, bool spectrumOn, bool waveLogOn, int waveFloorDb,
                    std::function<void (bool)> onHead,
                    std::function<void (bool)> onDryWet,
-                   std::function<void (bool)> onSpectrum)
+                   std::function<void (bool)> onSpectrum,
+                   std::function<void (bool)> onWaveLog,
+                   std::function<void (int)>  onWaveFloor)
     {
         title.setText ("Settings", juce::dontSendNotification);
         title.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -42,13 +44,41 @@ public:
                "Show the faint pre/post spectrum behind the waveforms.",
                std::move (onSpectrum));
 
+        // Waveform amplitude scale (view pref): log (dB, lifts the decay tail into view) vs
+        // linear, with a selectable dB floor for the log scale.
+        waveLog.setButtonText ("Log waveform (dB)");
+        waveLog.setToggleState (waveLogOn, juce::dontSendNotification);
+        waveLog.setTooltip ("Show the IR on a dB (log) amplitude scale so its decay tail is visible — off = linear.");
+        waveLog.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        waveLog.onClick = [this, fn = std::move (onWaveLog)]
+        {
+            const bool on = waveLog.getToggleState();
+            waveFloor.setEnabled (on);
+            if (fn) fn (on);
+        };
+        addAndMakeVisible (waveLog);
+
+        setCaption (floorCap, "dB floor");
+        waveFloor.addItem (juce::String::fromUTF8 ("\xe2\x88\x92") + "60 dB", 1);   // −60
+        waveFloor.addItem (juce::String::fromUTF8 ("\xe2\x88\x92") + "48 dB", 2);   // −48
+        waveFloor.addItem (juce::String::fromUTF8 ("\xe2\x88\x92") + "32 dB", 3);   // −32
+        waveFloor.setSelectedId (waveFloorDb == -60 ? 1 : waveFloorDb == -32 ? 3 : 2, juce::dontSendNotification);
+        waveFloor.setEnabled (waveLogOn);
+        waveFloor.setTooltip ("Lowest level shown on the dB scale — lower reveals more decay / room tail.");
+        waveFloor.onChange = [this, fn = std::move (onWaveFloor)]
+        {
+            const int db = waveFloor.getSelectedId() == 1 ? -60 : waveFloor.getSelectedId() == 3 ? -32 : -48;
+            if (fn) fn (db);
+        };
+        addAndMakeVisible (waveFloor);
+
         // Two scopes: HEAD trim is audio-affecting and rides the DAW session; Dry/Wet +
         // Spectrum are app-wide view prefs (this computer, every instance). Caption + divide
         // so it's obvious which toggles travel with the project and which don't.
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 184);
+        setSize (264, 242);
     }
 
     void resized() override
@@ -64,6 +94,10 @@ public:
         globalCap.setBounds (r.removeFromTop (14));
         dryWet.setBounds    (r.removeFromTop (26));
         spectrum.setBounds  (r.removeFromTop (26));
+        waveLog.setBounds   (r.removeFromTop (26));
+        auto floorRow = r.removeFromTop (26);
+        floorCap.setBounds  (floorRow.removeFromLeft (58).withTrimmedTop (6));
+        waveFloor.setBounds (floorRow.removeFromLeft (98).reduced (0, 3));
     }
 
     void paint (juce::Graphics& g) override
@@ -95,8 +129,9 @@ private:
         addAndMakeVisible (l);
     }
 
-    juce::Label        title, sessionCap, globalCap;
-    juce::ToggleButton head, dryWet, spectrum;
+    juce::Label        title, sessionCap, globalCap, floorCap;
+    juce::ToggleButton head, dryWet, spectrum, waveLog;
+    juce::ComboBox     waveFloor;
     int                dividerY = 0;   // y of the section divider (set in resized(), drawn in paint())
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)

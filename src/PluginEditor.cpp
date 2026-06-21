@@ -82,6 +82,9 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     addAndMakeVisible (settingsBtn);
     spectrumEnabled = processorRef.appPreferences().getFlag ("spectrumOn", true);   // global view pref
     processorRef.setSpectrumActive (spectrumEnabled);                    // editor open + analyser on
+    waveLogPref   = processorRef.appPreferences().getFlag ("waveLog",  true);       // global view prefs
+    waveFloorPref = processorRef.appPreferences().getInt  ("waveFloor", -48);       // default log, −48 dB
+    applyWaveformScale();
 
     // ---- A/B/C/D compare (snapshot registers) ----
     // Distinct from the violet/orange IR-slot badges (I/II): a neutral toggle group in
@@ -278,10 +281,16 @@ void OrbitCabAudioProcessorEditor::updateSpectrum()
     slots[1].setSpectrum (spectrum.pre(), spectrum.post());
 }
 
+void OrbitCabAudioProcessorEditor::applyWaveformScale()
+{
+    slots[0].setWaveformScale (waveLogPref, (float) waveFloorPref);
+    slots[1].setWaveformScale (waveLogPref, (float) waveFloorPref);
+}
+
 void OrbitCabAudioProcessorEditor::openSettings()
 {
     auto panel = std::make_unique<SettingsPanel> (
-        processorRef.getHeadTrim(), dryWetPref, spectrumEnabled,
+        processorRef.getHeadTrim(), dryWetPref, spectrumEnabled, waveLogPref, waveFloorPref,
         [this] (bool on)                                   // HEAD: persisted session setting
         {
             processorRef.setHeadTrim (on);
@@ -304,6 +313,18 @@ void OrbitCabAudioProcessorEditor::openSettings()
                 slots[0].setSpectrum (spectrum.pre(), spectrum.post());
                 slots[1].setSpectrum (spectrum.pre(), spectrum.post());
             }
+        },
+        [this] (bool on)                                   // Log waveform (dB): global view pref
+        {
+            waveLogPref = on;
+            processorRef.appPreferences().setFlag ("waveLog", on);
+            applyWaveformScale();
+        },
+        [this] (int db)                                    // dB floor: global view pref
+        {
+            waveFloorPref = db;
+            processorRef.appPreferences().setInt ("waveFloor", db);
+            applyWaveformScale();
         });
 
     // Parent the pop-over to the editor (not the desktop) so it can't outlive the window

@@ -57,17 +57,22 @@ inline std::vector<float> computePeaks (const juce::AudioBuffer<float>& buf, int
     if (buckets <= 0 || numSamples <= 0 || buf.getNumChannels() <= 0)
         return peaks;
 
-    const int per = juce::jmax (1, numSamples / buckets);
     float globalMax = 0.0f;
     for (int b = 0; b < buckets; ++b)
     {
+        // Proportional bucket -> sample range so SHORT IRs (fewer samples than `buckets`)
+        // stretch to fill the width instead of squashing into the left edge, and a long IR
+        // is covered in full (the old `per = numSamples / buckets` truncated both: n < buckets
+        // left most buckets empty, and n not a multiple dropped the tail).
+        const int start = (int) ((juce::int64) b       * numSamples / buckets);
+        int       end   = (int) ((juce::int64) (b + 1) * numSamples / buckets);
+        if (end <= start) end = juce::jmin (numSamples, start + 1);
         float mx = 0.0f;
-        const int start = b * per;
         for (int c = 0; c < buf.getNumChannels(); ++c)
         {
             const float* d = buf.getReadPointer (c);
-            for (int k = 0; k < per && (start + k) < numSamples; ++k)
-                mx = juce::jmax (mx, std::abs (d[start + k]));
+            for (int k = start; k < end; ++k)
+                mx = juce::jmax (mx, std::abs (d[k]));
         }
         peaks[(size_t) b] = mx;
         globalMax = juce::jmax (globalMax, mx);
@@ -77,6 +82,16 @@ inline std::vector<float> computePeaks (const juce::AudioBuffer<float>& buf, int
             v /= globalMax;
 
     return peaks;
+}
+
+// --- normalised peak magnitude (0..1, 1 = the IR's peak) -> a 0..1 height factor on a dB
+// scale with a fixed floor. A cab IR's onset peak crushes its decay tail on a linear scale
+// (the impulse reads as a tick); mapping to dB lifts the tail into view. 0 at/below the
+// floor, 1 at the peak. ---
+inline float dbHeightFactor (float mag01, float floorDb)
+{
+    const float db = juce::Decibels::gainToDecibels (mag01, floorDb);
+    return juce::jlimit (0.0f, 1.0f, (db - floorDb) / (0.0f - floorDb));
 }
 
 } // namespace cab
