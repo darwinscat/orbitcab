@@ -312,6 +312,61 @@ int main()
                                                : "HEADTRIM MIGRATION BROKEN");
     }
 
+    // ---- preset-centric model: factory Default + dirty tracking + persistence ----
+    // First start IS the read-only factory "Default" (IR #16 + HPF), clean. Editing dirties
+    // it; re-baselining (== Save) cleans it; and both the dirty state and the factory flag
+    // ride a DAW session save/load (so a dirty "Default *" survives a reload).
+    {
+        OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+        const bool defName    = a.presetMeta().name == "Default";
+        const bool defFactory = a.isPresetFactory();
+        const bool defIR      = a.getSlotRef (true).startsWith ("16") && a.isSlotBundled (true);
+        const bool cleanStart = ! a.isPresetDirty();
+
+        if (auto* q = a.apvts.getParameter ("gain")) q->setValueNotifyingHost (0.8f);   // edit a sound param
+        const bool dirtyAfterEdit = a.isPresetDirty();
+
+        a.captureBaseline();                                  // == Save: re-baseline → clean
+        const bool cleanAfterSave = ! a.isPresetDirty();
+
+        // Edit again, then a session round-trip must preserve the dirty + the Default identity.
+        if (auto* q = a.apvts.getParameter ("gain")) q->setValueNotifyingHost (0.3f);
+        juce::MemoryBlock st; a.getStateInformation (st);
+        OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+        b.setStateInformation (st.getData(), (int) st.getSize());
+        pump (60);
+        const bool dirtyRidesState   = b.isPresetDirty();
+        const bool factoryRidesState = b.isPresetFactory() && b.presetMeta().name == "Default";
+
+        // A clean Default round-trips as clean (fingerprint is stable across save/load).
+        OrbitCabAudioProcessor c; c.prepareToPlay (sr, block);
+        juce::MemoryBlock cst; c.getStateInformation (cst);
+        OrbitCabAudioProcessor d; d.prepareToPlay (sr, block);
+        d.setStateInformation (cst.getData(), (int) cst.getSize());
+        pump (60);
+        const bool cleanRidesState = ! d.isPresetDirty();
+
+        b.setHeadTrim (false);                               // a non-param state property...
+        b.applyFactoryDefault();                              // ...that applyFactoryDefault must reset to factory (on)
+        const bool resetClean = ! b.isPresetDirty() && b.isPresetFactory() && b.getHeadTrim();
+
+        // Determinism: serialising twice with no change yields identical bytes (no modifiedAt
+        // churn), so a host doesn't flag the session "modified" on every getStateInformation poll.
+        OrbitCabAudioProcessor e; e.prepareToPlay (sr, block);
+        juce::MemoryBlock s1, s2; e.getStateInformation (s1); e.getStateInformation (s2);
+        const bool deterministic = (s1 == s2);
+
+        const bool pcOk = defName && defFactory && defIR && cleanStart && dirtyAfterEdit
+                          && cleanAfterSave && dirtyRidesState && factoryRidesState
+                          && cleanRidesState && resetClean && deterministic;
+        allPass &= pcOk;
+        std::printf ("PRESET TEST: default(name=%d factory=%d ir=%d clean=%d) dirtyEdit=%d cleanSave=%d ride(dirty=%d factory=%d cleanRT=%d) reset=%d det=%d\n",
+                     defName, defFactory, defIR, cleanStart, dirtyAfterEdit, cleanAfterSave,
+                     dirtyRidesState, factoryRidesState, cleanRidesState, resetClean, deterministic);
+        std::printf ("RESULT: %s\n", pcOk ? "PRESET-CENTRIC WORKS (factory Default + dirty + rides state)"
+                                          : "PRESET-CENTRIC BROKEN");
+    }
+
     // ---- IRLibrary: the shared bundled-IR enumeration (de-dup) ----
     {
         const auto bundled = orbitcab::bundledIRs();

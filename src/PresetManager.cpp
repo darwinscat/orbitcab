@@ -52,9 +52,19 @@ juce::File PresetManager::saveAs (const juce::String& name)
     auto dir = directory();
     dir.createDirectory();
     auto file = dir.getChildFile (juce::File::createLegalFileName (name) + ".orbitcab");
+    const auto prevName = proc.presetMeta().name;
+    proc.setPresetName (name);                       // stamp the preset's <meta> name first
+    proc.markPresetModified();                       // created/modified timestamps (explicit save)
     juce::MemoryBlock block;
     proc.getStateForPreset (block);
-    file.replaceWithData (block.getData(), block.getSize());
+    if (! file.replaceWithData (block.getData(), block.getSize()))
+    {
+        proc.setPresetName (prevName);               // write failed → leave identity untouched
+        return {};
+    }
+    // The saved preset is now the current one: a clean, editable (non-factory) user preset.
+    proc.setPresetFactory (false);
+    proc.captureBaseline();
     return file;
 }
 
@@ -68,7 +78,26 @@ bool PresetManager::loadFrom (const juce::File& file)
     if (! file.loadFileAsData (block))
         return false;
     proc.setStateInformation (block.getData(), (int) block.getSize());
+    // A loaded preset file is a clean, editable (non-factory) user preset: re-baseline so
+    // it reads as not-dirty, then dirties only when the user edits it. (A portable preset has
+    // no embedded baseline; a session is restored by the host directly, not via loadFrom.)
+    // A pre-v3 file carries no <meta> name → fall back to the filename so it has an identity
+    // (otherwise the UI shows "(Custom)" and Save/Delete can't target it).
+    if (proc.presetMeta().name.isEmpty())
+        proc.setPresetName (file.getFileNameWithoutExtension());
+    proc.setPresetFactory (false);
+    proc.captureBaseline();
     return true;
+}
+
+bool PresetManager::deleteFile (const juce::File& file)
+{
+    // Move a USER preset to the Trash (recoverable). Guarded: must be a .orbitcab inside our
+    // own preset dir, so a stray call can never delete an arbitrary file. Factory presets aren't
+    // files (no folder copy), so they can't be reached here — the editor also gates the button.
+    if (! file.existsAsFile() || ! file.hasFileExtension ("orbitcab") || ! file.isAChildOf (directory()))
+        return false;
+    return file.moveToTrash();
 }
 
 bool PresetManager::writeTo (juce::File file)
@@ -77,6 +106,7 @@ bool PresetManager::writeTo (juce::File file)
         return false;
     if (! file.hasFileExtension ("orbitcab"))
         file = file.withFileExtension ("orbitcab");
+    proc.markPresetModified();           // explicit save → stamp the timestamps
     juce::MemoryBlock block;
     proc.getStateForPreset (block);     // embeds external IRs + strips paths → portable preset
     return file.replaceWithData (block.getData(), block.getSize());
