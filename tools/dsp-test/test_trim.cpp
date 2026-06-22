@@ -392,8 +392,9 @@ int main()
 
     // ---- a shared preset = the ACTIVE register only; A/B/C/D + their IRs are session-only ----
     // Load external IR1 as the live sound (register A), switch to B, load external IR2, and leave
-    // B active. The session embeds both IRs + the Snapshots node; a portable preset embeds ONLY
-    // the live/active IR (B's) and drops Snapshots — so compare IRs (often proprietary) can't leak.
+    // B active. The session embeds both IRs in a <Workspace> (live + registers); a portable preset
+    // is the live <Sound> only and embeds ONLY the active IR — so compare IRs (often proprietary)
+    // can't leak.
     {
         auto mkIR = [&] (const char* nm, float freq) -> juce::File
         {
@@ -411,7 +412,7 @@ int main()
                     w->writeFromAudioSampleBuffer (b, 0, n);   // w destroyed at end of the if → finalises the WAV
             return f;
         };
-        auto noSnaps  = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); return x != nullptr && x->getChildByName ("Snapshots") == nullptr; };
+        auto hasWorkspace = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); return x != nullptr && x->getChildByName ("Workspace") != nullptr; };
         auto poolN    = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); auto* p = x ? x->getChildByName ("IRPool") : nullptr; return p ? p->getNumChildElements() : (x ? 0 : -1); };
 
         OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
@@ -423,8 +424,8 @@ int main()
 
         juce::MemoryBlock sess; a.getStateInformation (sess);
         juce::MemoryBlock pres; a.getStateForPreset  (pres);
-        const bool sessSnaps = ! noSnaps (sess);        // session keeps the compare registers
-        const bool presNo    =   noSnaps (pres);        // preset drops them
+        const bool sessSnaps =   hasWorkspace (sess);   // session keeps the compare registers (v4 <Workspace>)
+        const bool presNo    = ! hasWorkspace (pres);   // preset is the live <Sound> only — no registers
         const int  sPool = poolN (sess), pPool = poolN (pres);
         ir1.deleteFile(); ir2.deleteFile();
 

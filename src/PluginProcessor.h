@@ -10,8 +10,10 @@
 #include "AppPreferences.h"
 #include "UpdateChecker.h"
 #include "Metadata.h"
+#include "StateModel.h"
 
 #include <map>
+#include <optional>
 #include <vector>
 
 //==============================================================================
@@ -131,8 +133,8 @@ public:
                            const juce::String& bundledName = {});
     void clearSlotB();                     // unload B (back to single-IR / full A)
     void clearSlotA();                     // empty A (no cab on A → dry passthrough on that slot)
-    bool isSlotBLoaded() const { return slotBLoaded.load (std::memory_order_relaxed); }
-    bool isSlotALoaded() const { return slotALoaded.load (std::memory_order_relaxed); }
+    bool isSlotBLoaded() const { return slotAudioLoaded[1].load (std::memory_order_relaxed); }
+    bool isSlotALoaded() const { return slotAudioLoaded[0].load (std::memory_order_relaxed); }
 
     // TRIM: keep the slot IR's first `fraction` and reload the truncated copy.
     // Called from the editor's waveform drag (message thread); rebuilds + swaps off the
@@ -149,15 +151,27 @@ public:
 
     // Slot IR reference for persistence + editor sync. `bundled` => `ref` is a
     // BinaryData filename; otherwise `ref` is an absolute file path. Empty ref = none.
-    juce::String getSlotRef    (bool slotA) const { return slotA ? slotRefA : slotRefB; }
-    juce::String getSlotName   (bool slotA) const { return slotA ? slotNameA : slotNameB; }   // display override (a portable preset sets it; else empty)
-    bool         isSlotBundled (bool slotA) const { return slotA ? slotBundledA : slotBundledB; }
-    float        getTrim       (bool slotA) const { return slotA ? trimFractionA : trimFractionB; }
+    // The slot's full IR identity (v4 single source of truth) + thin back-compat wrappers.
+    orbitcab::state::SlotIR getSlotIR (bool slotA) const { return slotState[slotA ? 0 : 1]; }   // by value (no dangling ref if state changes)
+    juce::String getSlotRef    (bool slotA) const { return getSlotIR (slotA).ref; }
+    juce::String getSlotName   (bool slotA) const { return getSlotIR (slotA).displayName; }
+    bool         isSlotBundled (bool slotA) const { return getSlotIR (slotA).bundled; }
+    float        getTrim       (bool slotA) const { return getSlotIR (slotA).trim; }
+    bool         isSlotMissing (bool slotA) const { return getSlotIR (slotA).status == orbitcab::state::SlotIR::Status::missing; }
+
+    // Editor sync — monotonic counters the editor polls on its 30 Hz timer to catch
+    // processor-side changes (incl. host-driven setStateInformation) without a push:
+    //   soundRev     — any slot IR identity change / load / clear / resolve
+    //   workspaceRev — A/B/C/D switch, undo/redo, full-state restore
+    //   userIRRev    — the shared recent-IR list changed
+    juce::uint32 soundRevision()     const { return soundRev.load     (std::memory_order_relaxed); }
+    juce::uint32 workspaceRevision() const { return workspaceRev.load (std::memory_order_relaxed); }
+    juce::uint32 userIRRevision()    const { return userIRRev.load    (std::memory_order_relaxed); }
 
     // Accumulating history of user-opened IR files. Shared by both slots,
     // deduped + capped, persisted in the state so it survives editor close / reload.
     void addUserIR (const juce::File& file);
-    void clearUserIRs() { userIRPaths.clear(); }
+    void clearUserIRs() { userIRPaths.clear(); userIRRev.fetch_add (1, std::memory_order_relaxed); }
     const juce::StringArray& getUserIRPaths() const { return userIRPaths; }
 
     // A/B/C/D compare — 4 snapshot registers, each a full settings snapshot (both IR
@@ -227,13 +241,18 @@ private:
 
     juce::AudioFormatManager formatManager;
     void loadBundledIR();
-    bool loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA);   // true on a successful decode
 
-    // The decoded IR + TRIM/HEAD math now live in the core's cab::IRSlot (one per slot);
-    // the adapter keeps only the persisted drag position + the loaded flag. Message-thread.
-    float  trimFractionA = 1.0f, trimFractionB = 1.0f;
-    std::atomic<bool> slotALoaded { true };    // false = A intentionally emptied (cleared → no cab)
-    std::atomic<bool> slotBLoaded { false };
+    // v4 single source of truth: each slot's full IR identity (status / bundled / ref /
+    // displayName / localPath / trim) lives in one struct on the message thread. The audio
+    // thread NEVER reads it — it reads the derived `slotAudioLoaded` mirrors (true == ready)
+    // in packParams. setSlotAudioMirror keeps the two in sync. See StateModel.h.
+    orbitcab::state::SlotIR slotState[2];
+    std::atomic<bool>       slotAudioLoaded[2] { { false }, { false } };
+    void setSlotAudioMirror (int slotIdx)
+    {
+        slotAudioLoaded[slotIdx].store (slotState[(size_t) slotIdx].status == orbitcab::state::SlotIR::Status::ready,
+                                        std::memory_order_relaxed);
+    }
     void applyTrimAndLoad (bool slotA);
 
     // TRIM/HEAD enable are params that reshape the IR, so toggling them must re-trim — but
@@ -255,35 +274,38 @@ private:
     float softStart      = 1.0f;
     float softStartStep  = 0.0f;
 
-    // IR reference per slot (for state/preset save). Message-thread only.
-    juce::String slotRefA, slotRefB;
-    juce::String slotNameA, slotNameB;          // display name (a portable preset carries one; empty = derive from ref)
-    bool slotBundledA = false, slotBundledB = false;
-    juce::StringArray userIRPaths;             // recent user-opened IRs
+    juce::StringArray userIRPaths;             // recent user-opened IRs (shared by both slots)
     static constexpr int kMaxUserIRs = 50;
     void loadBundledByName (const juce::String& filename, bool slotA);
-    void restoreIRsFromTree (const juce::ValueTree& ir);
 
-    // Load a slot from a stored reference: bundled name → embedded bytes (this session's
-    // pool) → file on disk. Used by state/snapshot recall so external IRs survive a moved
-    // file / another machine when their bytes were embedded.
-    void loadIRRef (const juce::String& ref, bool bundled, bool slotA);
+    // The v4 state pipeline — ONE capture/apply pair used by sessions, A/B/C/D, undo AND
+    // presets, so the three serialisations can never drift (the root cause of the old bugs).
+    bool decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> reader, int slotIdx);  // decode → engine original; no identity
+    void resolveSlot           (int slotIdx, orbitcab::state::SlotIR target);   // load `target` into the engine + commit to slotState
+    orbitcab::state::SoundState captureLive();                                  // live params + both slots' identity (copyState mutates → non-const)
+    void                        applyLive (const orbitcab::state::SoundState&); // restore params + resolve both slots
+    orbitcab::state::Workspace  currentWorkspace();                             // live + active + the 4 registers
+    void                        applyWorkspace (const orbitcab::state::Workspace&);
+    static juce::String computeBlobId (const juce::MemoryBlock& canonicalWav);  // "ir-<hex>" content id of the embedded WAV
+    juce::MemoryBlock  canonicalWavForSlot (int slotIdx) const;                 // the embedded 24-bit WAV (original SR) of the loaded original
 
     // Self-contained sessions: external (user) IRs are embedded in the saved state
     // so a project/preset restores even if the original file is gone. Bytes are kept here
     // (path → WAV blob, capped to kMaxIRSeconds) for every external IR loaded this session
     // and rehydrated from the saved IRPool on restore. Bundled IRs are never embedded.
-    std::map<juce::String, juce::MemoryBlock> embeddedIRs;
-    void cacheEmbeddedIR (const juce::String& path, bool slotA);
+    std::map<juce::String, juce::MemoryBlock> embeddedIRs;   // keyed by content id "ir-<hex>"
 
-    // A/B/C/D snapshots (message-thread only). Each register is a full settings tree
-    // (params + IR refs, no user-IR history). captureStateTree snapshots the live state;
-    // applyStateTree recalls one. Persisted in get/setStateInformation.
-    juce::ValueTree snapshots[kNumSnapshots];
+    // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
+    // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as
+    // nullopt — `currentWorkspace`/`applyWorkspace` enforce that invariant). nullopt = a
+    // never-used register that inherits the current sound on first switch.
+    std::optional<orbitcab::state::SoundState> snapshots[kNumSnapshots];
     int activeSnapshot = 0;
-    juce::ValueTree captureStateTree();
-    void applyStateTree (const juce::ValueTree& tree);
-    void writeIRRefs (juce::ValueTree& ir) const;   // the shared per-slot IR-ref properties
+
+    // Monotonic editor-sync counters (see the public *Revision() getters).
+    std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 };
+    void bumpSound()     { soundRev.fetch_add     (1, std::memory_order_relaxed); }
+    void bumpWorkspace() { workspaceRev.fetch_add (1, std::memory_order_relaxed); }
 
     // Builds the state tree (params + IR refs + embedded IR pool) shared by getStateInformation
     // (session) and getStateForPreset (portable). forPreset = true OMITS the A/B/C/D snapshots

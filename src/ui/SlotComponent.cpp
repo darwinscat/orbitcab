@@ -281,8 +281,10 @@ void SlotComponent::chooseIR()
 void SlotComponent::syncFromProcessor()
 {
     const bool a = isA();
+    const auto& s = proc.getSlotIR (a);
+    using Status = orbitcab::state::SlotIR::Status;
 
-    if (! (a ? proc.isSlotALoaded() : proc.isSlotBLoaded()))   // slot empty (no cab) → dry passthrough
+    if (s.status == Status::empty)                             // no cab → dry passthrough
     {
         name.setButtonText ("No IR / Bypass");
         wave.clearIR();
@@ -292,39 +294,40 @@ void SlotComponent::syncFromProcessor()
         return;
     }
 
-    const juce::String ref     = proc.getSlotRef (a);
-    const bool         bundled = proc.isSlotBundled (a);
+    // The display name comes ONLY from the slot identity (never the raw ref / content id) — the
+    // root fix for "ID instead of filename". A missing IR (bytes gone, file gone) shows ⚠ + name.
+    const bool missing = (s.status == Status::missing);
+    name.setButtonText (missing ? juce::String::fromUTF8 ("\xe2\x9a\xa0  ") + s.displayName
+                                : s.displayName);
 
+    // Resolve the popup-highlight index from the identity, not a remembered position: bundled →
+    // by name, external → by the recovery path. (A rebuilt recents list never strands it now.)
     listIndex = -1;
     for (int i = 0; i < (int) list.size(); ++i)
     {
         const auto& e = list[(size_t) i];
-        if (bundled ? (e.bundled && e.name == ref)
-                    : (! e.bundled && e.file.getFullPathName() == ref))
+        if (s.bundled ? (e.bundled && e.name == s.ref)
+                      : (! e.bundled && s.localPath.isNotEmpty() && e.file.getFullPathName() == s.localPath))
         { listIndex = i; break; }
     }
 
-    if (listIndex >= 0)
+    // Waveform source: bundled bytes from the matched entry; external from the embedded pool
+    // (keyed by content id) or the original file on disk; missing → nothing to draw.
+    if (missing)
+        wave.clearIR();
+    else if (s.bundled)
     {
-        const auto& e = list[(size_t) listIndex];
-        name.setButtonText (e.name);
-        if (e.bundled)                  wave.setFromMemory (e.data, (size_t) e.dataSize, e.name);
-        else if (e.file.existsAsFile()) wave.setFromFile (e.file);
-        else if (auto* mb = proc.embeddedIRBytes (ref))   // file gone → embedded copy
-                                        wave.setFromMemory (mb->getData(), mb->getSize(), e.name);
-        else                            wave.clearIR();
+        if (listIndex >= 0) wave.setFromMemory (list[(size_t) listIndex].data, (size_t) list[(size_t) listIndex].dataSize, s.displayName);
+        else                wave.clearIR();
     }
-    else if (ref.isNotEmpty())
-    {
-        const juce::File f (ref);
-        const juce::String disp = proc.getSlotName (a).isNotEmpty() ? proc.getSlotName (a) : f.getFileName();
-        name.setButtonText (disp);
-        if (auto* mb = proc.embeddedIRBytes (ref)) wave.setFromMemory (mb->getData(), mb->getSize(), disp);
-        else if (f.existsAsFile())                 wave.setFromFile (f);
-        else                                       wave.clearIR();
-    }
+    else if (auto* mb = proc.embeddedIRBytes (s.ref))
+        wave.setFromMemory (mb->getData(), mb->getSize(), s.displayName);
+    else if (s.localPath.isNotEmpty() && juce::File (s.localPath).existsAsFile())
+        wave.setFromFile (juce::File (s.localPath));
+    else
+        wave.clearIR();
 
-    wave.setTrimFraction (proc.getTrim (a));
+    wave.setTrimFraction (s.trim);
     prev.setEnabled (list.size() > 1);
     next.setEnabled (list.size() > 1);
 }
