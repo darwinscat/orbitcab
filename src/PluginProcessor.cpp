@@ -131,16 +131,15 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
     // slots' reload-coalescing). setStateInformation may run before OR after
     // prepareToPlay, so only load the bundled default when no IR has been set yet; otherwise
     // re-apply what's already there (a restored session) instead of clobbering it.
-    if (! engine.slotHasOriginal (0))
+    for (int i = 0; i < 2; ++i)
     {
-        if (slotALoaded.load())      // A should hold a cab but its original is gone → (re)load default
-            loadBundledIR();
-        // else: A was intentionally cleared (no cab) → leave it empty
+        if (! slotState[(size_t) i].occupied())
+            continue;                          // empty slot → leave the engine slot dry
+        if (engine.slotHasOriginal (i))
+            applyTrimAndLoad (i == 0);         // original survived the re-prepare → just re-trim
+        else
+            resolveSlot (i, slotState[(size_t) i]);   // original gone → reload from the identity
     }
-    else
-        applyTrimAndLoad (true);
-    if (slotBLoaded.load() && engine.slotHasOriginal (1))
-        applyTrimAndLoad (false);
 
     // Seed the auto-leveler from the loaded IR's energy so the makeup starts ~converged —
     // removes most of the startup kick at the root (#48); the soft-start below is now just
@@ -157,12 +156,12 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
     softStartStep  = (float) (1.0 / (0.03 * sampleRate));     // 30 ms
 }
 
-bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> reader, bool slotA)
+bool OrbitCabAudioProcessor::decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> reader, int slotIdx)
 {
-    // Shared IR-load path (bundled + user files, either slot). Decode the whole IR and
-    // hand it to the slot's core cab::IRSlot, which keeps it so TRIM can re-truncate
-    // without re-decoding. A fresh IR starts untrimmed. Loaded AS-IS (Normalise::no): the
-    // live wet->dry match does the leveling. Stereo::yes => mono IR applied to L+R.
+    // Decode an IR into the slot's core cab::IRSlot (which keeps the original so TRIM can
+    // re-truncate without re-decoding). This does NOT touch the slot's identity (ref / name /
+    // status) or trim — the caller owns that (load = set identity here; resolve = from a
+    // stored SlotIR). Loaded AS-IS (Normalise::no): the live wet->dry match does the leveling.
     if (reader == nullptr || reader->lengthInSamples <= 0)
         return false;                                 // unreadable / empty — caller leaves the slot untouched
 
@@ -177,14 +176,29 @@ bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormat
     reader->read (&decoded, 0, n, 0, true, true);
 
     // The IRSlot stores the original + detects leading silence (HEAD trim) on its own.
-    engine.setSlotOriginalIR (slotA ? 0 : 1, decoded.getArrayOfReadPointers(),
+    engine.setSlotOriginalIR (slotIdx, decoded.getArrayOfReadPointers(),
                               decoded.getNumChannels(), n, srLoaded);
-    (slotA ? trimFractionA : trimFractionB) = 1.0f;             // new IR => full length
-    (slotA ? slotNameA : slotNameB).clear();                   // display name derives from the ref/file unless restore overrides it
-    (slotA ? slotALoaded : slotBLoaded).store (true, std::memory_order_relaxed);   // this slot now holds a cab
-
-    applyTrimAndLoad (slotA);
     return true;
+}
+
+//==============================================================================
+juce::MemoryBlock OrbitCabAudioProcessor::canonicalWavForSlot (int slotIdx) const
+{
+    // The canonical, content-addressable form of a loaded external IR: its decoded original
+    // re-encoded to a 24-bit WAV at the file's ORIGINAL sample rate (NOT the session rate),
+    // capped at kMaxIRSeconds. This is the exact blob we embed, so computeBlobId(it) == the
+    // IRPool key — session and portable preset share one id, and it's session-rate-independent.
+    juce::MemoryBlock mb;
+    encodeBufferToWav (engine.slotOriginal (slotIdx), engine.slotOriginalSampleRate (slotIdx), mb);
+    return mb;
+}
+
+juce::String OrbitCabAudioProcessor::computeBlobId (const juce::MemoryBlock& canonicalWav)
+{
+    // "ir-" + hex(hash(base64(wav))). Matches the pre-v4 makePortable() hash exactly, so a
+    // v3 portable preset's "ir-<hex>" ref re-derives to the SAME id on migration (seamless).
+    const auto b64 = juce::Base64::toBase64 (canonicalWav.getData(), canonicalWav.getSize());
+    return "ir-" + juce::String::toHexString (b64.hashCode64());
 }
 
 void OrbitCabAudioProcessor::setTrim (float fraction01, bool slotA)
@@ -192,7 +206,7 @@ void OrbitCabAudioProcessor::setTrim (float fraction01, bool slotA)
     // Store the latest fraction + flag the slot dirty; the 30 Hz poll timer coalesces rapid
     // drags into one reload (calling the loader on every micro-move floods it so the final
     // position never lands). Called from the editor's waveform drag — message thread.
-    (slotA ? trimFractionA : trimFractionB) = juce::jlimit (0.0f, 1.0f, fraction01);
+    slotState[slotA ? 0 : 1].trim = juce::jlimit (0.0f, 1.0f, fraction01);
     (slotA ? pendingTrimReloadA : pendingTrimReloadB).store (true, std::memory_order_relaxed);
 }
 
@@ -204,12 +218,15 @@ void OrbitCabAudioProcessor::applyTrimAndLoad (bool slotA)
     const int slotIdx = slotA ? 0 : 1;
     const bool trimOn = trimOnP[slotIdx] != nullptr && trimOnP[slotIdx]->load() > 0.5f;
     const bool headOn = getHeadTrim();                 // global, on-by-default session setting
-    const float frac  = slotA ? trimFractionA : trimFractionB;
+    const float frac  = slotState[(size_t) slotIdx].trim;
 
     engine.slotApplyTrim (slotIdx, trimOn, frac, headOn);
 
-    const double aSec = engine.slotTrimmedSeconds (0);
-    const double bSec = slotBLoaded.load() ? engine.slotTrimmedSeconds (1) : 0.0;
+    // Length comes from the message-thread slot status (NOT the audio mirror), so this is
+    // correct even when called before the mirror is opened (see resolveSlot's ordering).
+    using Status = orbitcab::state::SlotIR::Status;
+    const double aSec = (slotState[0].status == Status::ready) ? engine.slotTrimmedSeconds (0) : 0.0;
+    const double bSec = (slotState[1].status == Status::ready) ? engine.slotTrimmedSeconds (1) : 0.0;
     irLengthSeconds = juce::jmax (0.01, juce::jmax (aSec, bSec));
 }
 
@@ -228,65 +245,103 @@ void OrbitCabAudioProcessor::loadBundledIR()
     if (auto* r = formatManager.createReaderFor (std::make_unique<juce::MemoryInputStream> (
             BinaryData::_01cookiemonster_wav, (size_t) BinaryData::_01cookiemonster_wavSize, false)))
     {
-        if (loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (r), true))
+        if (decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> (r), 0))
         {
-            slotRefA = "01-cookie-monster.wav";
-            slotBundledA = true;
+            slotState[0] = orbitcab::state::SlotIR::makeBundled ("01-cookie-monster.wav");
+            applyTrimAndLoad (true);
+            setSlotAudioMirror (0);                    // open the gate only after the IR is swapped in
+            bumpSound();
             return;
         }
     }
 
     // Fallback: byte-array load with JUCE's own normalisation (via the slot's convolver).
-    // No decoded original here (so TRIM is a no-op), but keep the slot ref consistent.
+    // No decoded original here (so TRIM is a no-op), but keep the slot identity consistent.
     engine.slotLoadBytesFallback (0, BinaryData::_01cookiemonster_wav, (size_t) BinaryData::_01cookiemonster_wavSize);
-    slotRefA = "01-cookie-monster.wav";
-    slotBundledA = true;
+    slotState[0] = orbitcab::state::SlotIR::makeBundled ("01-cookie-monster.wav");
+    setSlotAudioMirror (0);
+    bumpSound();
 }
 
 void OrbitCabAudioProcessor::loadIRFromFile (const juce::File& file, bool slotA)
 {
+    const int slotIdx = slotA ? 0 : 1;
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader == nullptr)
         return;                                       // unreadable / missing → leave the slot as-is
-    if (! loadIRFromReader (std::move (reader), slotA))
+    if (! decodeReaderIntoEngine (std::move (reader), slotIdx))
         return;                                       // decode failed → leave the slot as-is
-    const auto path = file.getFullPathName();
-    (slotA ? slotRefA : slotRefB) = path;
-    (slotA ? slotBundledA : slotBundledB) = false;
-    cacheEmbeddedIR (path, slotA);                    // keep bytes for a self-contained session
+
+    // Content-address the IR at load time: id = hash of the canonical embedded WAV. The same
+    // id is used by the session AND a portable preset (no path→hash rewrite on export), and
+    // the bytes are pooled so the IR survives a moved file / another machine.
+    juce::MemoryBlock mb = canonicalWavForSlot (slotIdx);
+    const auto blobId = computeBlobId (mb);
+    embeddedIRs[blobId] = std::move (mb);
+
+    slotState[(size_t) slotIdx] = orbitcab::state::SlotIR::makeExternal (blobId, file.getFileName(), file.getFullPathName());
+    applyTrimAndLoad (slotA);                          // fresh IR → trim is 1.0 (makeExternal default)
+    setSlotAudioMirror (slotIdx);                      // open the gate only after the IR is swapped in
+    bumpSound();
 }
 
-void OrbitCabAudioProcessor::cacheEmbeddedIR (const juce::String& path, bool slotA)
+void OrbitCabAudioProcessor::resolveSlot (int slotIdx, orbitcab::state::SlotIR target)
 {
-    // Encode the just-loaded (capped) IR — the slot's original buffer in the core — to a
-    // WAV blob so it can be embedded in the saved state and recalled even if the file moves.
-    const int slotIdx = slotA ? 0 : 1;
-    juce::MemoryBlock mb;
-    if (encodeBufferToWav (engine.slotOriginal (slotIdx), engine.slotOriginalSampleRate (slotIdx), mb))
-        embeddedIRs[path] = std::move (mb);
-}
+    // Load a slot from a stored identity (session / snapshot / undo / preset recall). The ONE
+    // place a SlotIR becomes audio. Resolve order for external IRs: pooled bytes (by content
+    // id) → the recovery localPath (decode + adopt) → else mark MISSING and clear the engine
+    // slot (never leave the previous IR live under the restored identity — old bug F).
+    using Status = orbitcab::state::SlotIR::Status;
 
-void OrbitCabAudioProcessor::loadIRRef (const juce::String& ref, bool bundled, bool slotA)
-{
-    if (ref.isEmpty())
-        return;
-    if (bundled)
+    if (! target.occupied())
     {
-        loadBundledByName (ref, slotA);
+        engine.clearSlotOriginal (slotIdx);
+        slotState[(size_t) slotIdx] = orbitcab::state::SlotIR::makeEmpty();
+        setSlotAudioMirror (slotIdx);
         return;
     }
-    // Prefer this session's embedded bytes (survives a moved file / another machine).
-    if (auto it = embeddedIRs.find (ref); it != embeddedIRs.end() && it->second.getSize() > 0)
+
+    bool loaded = false;
+    if (target.bundled)
     {
-        if (loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
-            std::make_unique<juce::MemoryInputStream> (it->second.getData(), it->second.getSize(), false))), slotA))
+        for (const auto& b : orbitcab::bundledIRs())
+            if (b.name == target.ref)
+            {
+                loaded = decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> (
+                    formatManager.createReaderFor (std::make_unique<juce::MemoryInputStream> (b.data, (size_t) b.size, false))), slotIdx);
+                break;
+            }
+    }
+    else
+    {
+        // 1) this session's pool, keyed by the content id.
+        if (auto it = embeddedIRs.find (target.ref); it != embeddedIRs.end() && it->second.getSize() > 0)
+            loaded = decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
+                std::make_unique<juce::MemoryInputStream> (it->second.getData(), it->second.getSize(), false))), slotIdx);
+
+        // 2) fall back to the original file on disk; re-pool its (recomputed) bytes so the id is current.
+        if (! loaded && target.localPath.isNotEmpty())
         {
-            (slotA ? slotRefA : slotRefB) = ref;
-            (slotA ? slotBundledA : slotBundledB) = false;
-            return;
+            const juce::File f (target.localPath);
+            if (f.existsAsFile())
+                if (auto* r = formatManager.createReaderFor (f))
+                    if (decodeReaderIntoEngine (std::unique_ptr<juce::AudioFormatReader> (r), slotIdx))
+                    {
+                        loaded = true;
+                        juce::MemoryBlock mb = canonicalWavForSlot (slotIdx);
+                        target.ref = computeBlobId (mb);          // re-key to the (possibly changed) content
+                        embeddedIRs[target.ref] = std::move (mb);
+                    }
         }
     }
-    loadIRFromFile (juce::File (ref), slotA);          // embedded missing/corrupt → fall back to disk
+
+    target.status = loaded ? Status::ready : Status::missing;
+    if (! loaded)
+        engine.clearSlotOriginal (slotIdx);           // missing → no fantom IR; UI shows "⚠ <name>"
+    slotState[(size_t) slotIdx] = target;             // keep ref/name/localPath even when missing (for relink + UI)
+    if (loaded)
+        applyTrimAndLoad (slotIdx == 0);              // build + atomic-swap the trimmed IR FIRST…
+    setSlotAudioMirror (slotIdx);                     // …THEN open the audio-thread gate (IR is ready)
 }
 
 void OrbitCabAudioProcessor::addUserIR (const juce::File& file)
@@ -298,18 +353,23 @@ void OrbitCabAudioProcessor::addUserIR (const juce::File& file)
     userIRPaths.insert (0, path);
     while (userIRPaths.size() > kMaxUserIRs)
         userIRPaths.remove (userIRPaths.size() - 1);
+    userIRRev.fetch_add (1, std::memory_order_relaxed);   // editor re-syncs both slots' lists
 }
 
 void OrbitCabAudioProcessor::loadIRFromMemory (const void* data, size_t sizeInBytes, bool slotA,
                                            const juce::String& bundledName)
 {
-    // Bundled IR: wrap the embedded bytes in a stream and reuse the shared path.
+    // Bundled IR: wrap the embedded bytes in a stream and decode into the engine.
     // `false` => the stream does not own/copy the data (it's a static BinaryData blob).
-    if (! loadIRFromReader (std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (
-        std::make_unique<juce::MemoryInputStream> (data, sizeInBytes, false))), slotA))
+    const int slotIdx = slotA ? 0 : 1;
+    std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (
+        std::make_unique<juce::MemoryInputStream> (data, sizeInBytes, false)));
+    if (! decodeReaderIntoEngine (std::move (reader), slotIdx))
         return;                                       // bad bytes → don't claim the slot loaded
-    (slotA ? slotRefA : slotRefB) = bundledName;
-    (slotA ? slotBundledA : slotBundledB) = true;
+    slotState[(size_t) slotIdx] = orbitcab::state::SlotIR::makeBundled (bundledName);
+    applyTrimAndLoad (slotA);
+    setSlotAudioMirror (slotIdx);                      // open the gate only after the IR is swapped in
+    bumpSound();
 }
 
 void OrbitCabAudioProcessor::loadBundledByName (const juce::String& filename, bool slotA)
@@ -326,127 +386,93 @@ void OrbitCabAudioProcessor::loadBundledByName (const juce::String& filename, bo
 
 void OrbitCabAudioProcessor::clearSlotB()
 {
-    // Unload B: stop convolving it and force MIX back to A. The slot's convolver keeps its
-    // last IR internally but we just stop feeding/using it (process skips B when !bLoaded).
-    slotBLoaded.store (false, std::memory_order_relaxed);
+    // Empty B (no cab): process feeds the dry signal through B (skipped when !ready). Mirrors
+    // clearSlotA exactly — canonical empty so no stale ref/name/trim rides the state (bug G).
     engine.clearSlotOriginal (1);
-    slotRefB.clear();
-    slotBundledB = false;
+    slotState[1] = orbitcab::state::SlotIR::makeEmpty();
+    setSlotAudioMirror (1);
+    bumpSound();
 }
 
 void OrbitCabAudioProcessor::clearSlotA()
 {
-    // Empty A (no cab): process feeds the dry signal through A when !aLoaded — a clean
-    // passthrough, not silence. Mirrors clearSlotB; A and B may both be empty → fully dry.
-    slotALoaded.store (false, std::memory_order_relaxed);
+    // Empty A (no cab): process feeds the dry signal through A — a clean passthrough, not
+    // silence. A and B may both be empty → fully dry. Symmetric with clearSlotB.
     engine.clearSlotOriginal (0);
-    slotRefA.clear();
-    slotBundledA = false;
-    trimFractionA = 1.0f;
-}
-
-void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
-{
-    // user-IR history — only when present (snapshot trees omit it, so recalling
-    // a snapshot must not wipe the global history; full session state always carries it).
-    if (ir.hasProperty ("userIRs"))
-    {
-        userIRPaths.clear();
-        userIRPaths.addLines (ir.getProperty ("userIRs").toString());
-        userIRPaths.removeEmptyStrings();
-    }
-
-    // Slot A — load it unless the state marks A empty (aLoaded=false) or carries no ref.
-    // Back-compat: pre-clear states have no "aLoaded" property → default true → load as before.
-    const juce::String aRef = ir.getProperty ("aRef").toString();
-    if ((bool) ir.getProperty ("aLoaded", true) && aRef.isNotEmpty())
-    {
-        loadIRRef (aRef, (bool) ir.getProperty ("aBundled", true), true);
-        slotNameA = ir.getProperty ("aName", {}).toString();   // portable-preset display name (empty in sessions)
-        setTrim ((float) ir.getProperty ("aTrim", 1.0f), true);
-    }
-    else
-    {
-        clearSlotA();
-    }
-
-    // Slot B
-    if ((bool) ir.getProperty ("bLoaded", false))
-    {
-        const juce::String bRef = ir.getProperty ("bRef").toString();
-        if (bRef.isNotEmpty())
-        {
-            loadIRRef (bRef, (bool) ir.getProperty ("bBundled", true), false);
-            slotNameB = ir.getProperty ("bName", {}).toString();
-            setTrim ((float) ir.getProperty ("bTrim", 1.0f), false);
-        }
-    }
-    else
-    {
-        clearSlotB();
-    }
+    slotState[0] = orbitcab::state::SlotIR::makeEmpty();
+    setSlotAudioMirror (0);
+    bumpSound();
 }
 
 //==============================================================================
-// A/B/C/D compare — snapshot registers (full settings, live-register model).
+// The v4 state pipeline — ONE capture/apply for live + workspace, used by sessions,
+// A/B/C/D, undo/redo and presets. See StateModel.h for the data model.
 //==============================================================================
-void OrbitCabAudioProcessor::writeIRRefs (juce::ValueTree& ir) const
+orbitcab::state::SoundState OrbitCabAudioProcessor::captureLive()
 {
-    // The per-slot IR references — shared by the session tree (buildStateTree) and the
-    // A/B/C/D snapshots (captureStateTree) so the two can't drift.
-    ir.setProperty ("aLoaded",  slotALoaded.load(), nullptr);
-    ir.setProperty ("aBundled", slotBundledA,      nullptr);
-    ir.setProperty ("aRef",     slotRefA,          nullptr);
-    ir.setProperty ("aTrim",    trimFractionA,     nullptr);
-    ir.setProperty ("bLoaded",  slotBLoaded.load(), nullptr);
-    ir.setProperty ("bBundled", slotBundledB,      nullptr);
-    ir.setProperty ("bRef",     slotRefB,          nullptr);
-    ir.setProperty ("bTrim",    trimFractionB,     nullptr);
+    orbitcab::state::SoundState s;
+    s.params   = apvts.copyState();            // includes the headTrim state property
+    s.slots[0] = slotState[0];
+    s.slots[1] = slotState[1];
+    return s;
 }
 
-juce::ValueTree OrbitCabAudioProcessor::captureStateTree()
+void OrbitCabAudioProcessor::applyLive (const orbitcab::state::SoundState& s)
 {
-    // A snapshot of the live state: the parameter tree + the per-slot IR references.
-    // No user-IR history (that's a global accumulator, not part of a "sound").
-    juce::ValueTree t ("Snap");
-    t.appendChild (apvts.copyState(), nullptr);
-
-    juce::ValueTree ir ("IR");
-    writeIRRefs (ir);
-    t.appendChild (ir, nullptr);
-    return t;
+    // Restore params FIRST (replaceState keeps the parameter objects, so cached raw-pointers
+    // + editor attachments stay valid AND getHeadTrim() reads the restored value), then
+    // resolve both slots from their stored identity. Callers bump the revisions.
+    if (s.params.isValid())
+        apvts.replaceState (s.params.createCopy());
+    resolveSlot (0, s.slots[0]);
+    resolveSlot (1, s.slots[1]);
 }
 
-void OrbitCabAudioProcessor::applyStateTree (const juce::ValueTree& t)
+orbitcab::state::Workspace OrbitCabAudioProcessor::currentWorkspace()
 {
-    // Recall a snapshot: replace the params (a copy, so live edits don't mutate the
-    // stored register) + reload the referenced IRs. replaceState keeps the existing
-    // parameter objects, so cached raw-pointers + editor attachments stay valid.
-    if (auto params = t.getChildWithName (apvts.state.getType()); params.isValid())
-        apvts.replaceState (params.createCopy());
-    if (auto ir = t.getChildWithName ("IR"); ir.isValid())
-        restoreIRsFromTree (ir);
+    orbitcab::state::Workspace w;
+    w.live   = captureLive();
+    w.active = activeSnapshot;
+    for (int i = 0; i < kNumSnapshots; ++i)
+        w.snapshots[(size_t) i] = snapshots[(size_t) i];
+    w.snapshots[(size_t) activeSnapshot] = std::nullopt;   // the active register IS live — never stored twice
+    return w;
+}
+
+void OrbitCabAudioProcessor::applyWorkspace (const orbitcab::state::Workspace& w)
+{
+    activeSnapshot = juce::jlimit (0, kNumSnapshots - 1, w.active);
+    for (int i = 0; i < kNumSnapshots; ++i)
+        snapshots[(size_t) i] = w.snapshots[(size_t) i];
+    snapshots[(size_t) activeSnapshot] = std::nullopt;     // active is live, not a stored register
+    applyLive (w.live);
+    bumpSound();
+    bumpWorkspace();
 }
 
 void OrbitCabAudioProcessor::switchToSnapshot (int index)
 {
     if (index < 0 || index >= kNumSnapshots || index == activeSnapshot)
         return;
-    snapshots[activeSnapshot] = captureStateTree();   // stash the live state into the active register
-    if (snapshots[index].isValid())
-        applyStateTree (snapshots[index]);            // recall an existing register
-    // else: a fresh register inherits the current state (nothing to apply)
+    snapshots[(size_t) activeSnapshot] = captureLive();    // stash live into the register we're leaving
+    if (snapshots[(size_t) index].has_value())
+        applyLive (*snapshots[(size_t) index]);            // recall an existing register
+    // else: a fresh register inherits the current live sound (nothing to apply)
     activeSnapshot = index;
+    snapshots[(size_t) activeSnapshot] = std::nullopt;     // active is live now
+    bumpSound();
+    bumpWorkspace();
 }
 
 //==============================================================================
-// Undo / redo — coalesced full-state snapshots.
+// Undo / redo — coalesced full-WORKSPACE snapshots, so an A/B/C/D switch is exactly
+// reversible (it restores the live sound, the active register AND the register contents).
 //==============================================================================
 void OrbitCabAudioProcessor::undoTick()
 {
     // Driven by the editor timer. Commit one undo step once the state has settled
     // (unchanged for kUndoSettleTicks), so a slider drag becomes a single step.
-    auto cur = captureStateTree();
+    auto cur = orbitcab::state::toTree (currentWorkspace(), false);
     if (! undoBaseline.isValid())                       // first tick → seed the baseline
     {
         undoBaseline = cur;
@@ -475,12 +501,13 @@ bool OrbitCabAudioProcessor::undo()
 {
     if (undoStack.empty())
         return false;
-    redoStack.push_back (captureStateTree());
+    redoStack.push_back (orbitcab::state::toTree (currentWorkspace(), false));
     const auto target = undoStack.back();
     undoStack.pop_back();
-    applyStateTree (target);
-    undoBaseline = target;
-    undoPrev     = target;
+    applyWorkspace (orbitcab::state::workspaceFromTree (target));
+    // Re-seed from the ACTUAL post-apply workspace (resolveSlot may re-key an external ref
+    // path→content-id), so the next undoTick doesn't record a phantom step.
+    undoBaseline = undoPrev = orbitcab::state::toTree (currentWorkspace(), false);
     undoSettle   = 0;
     return true;
 }
@@ -489,12 +516,13 @@ bool OrbitCabAudioProcessor::redo()
 {
     if (redoStack.empty())
         return false;
-    undoStack.push_back (captureStateTree());
+    undoStack.push_back (orbitcab::state::toTree (currentWorkspace(), false));
     const auto target = redoStack.back();
     redoStack.pop_back();
-    applyStateTree (target);
-    undoBaseline = target;
-    undoPrev     = target;
+    applyWorkspace (orbitcab::state::workspaceFromTree (target));
+    // Re-seed from the ACTUAL post-apply workspace (resolveSlot may re-key an external ref
+    // path→content-id), so the next undoTick doesn't record a phantom step.
+    undoBaseline = undoPrev = orbitcab::state::toTree (currentWorkspace(), false);
     undoSettle   = 0;
     return true;
 }
@@ -580,8 +608,8 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.mixAB01      = mixABParam->load() * 0.01f;
     p.bypass       = bypassParam->load()    > 0.5f;
     p.autoLevel    = autoLevelParam->load() > 0.5f;
-    p.aLoaded      = slotALoaded.load (std::memory_order_relaxed);
-    p.bLoaded      = slotBLoaded.load (std::memory_order_relaxed);
+    p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
+    p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);
     for (int i = 0; i < 2; ++i)
     {
         p.slot[i].hpfOn    = hpfOnP[i]->load() > 0.5f;
@@ -602,84 +630,26 @@ juce::AudioProcessorEditor* OrbitCabAudioProcessor::createEditor()
 }
 
 //==============================================================================
-// Strip external-IR file paths for portable preset export: re-key the IRPool + the slot
-// refs by content hash, attach a display name, and drop the recent-files list.
-static void makePortable (juce::ValueTree& root)
-{
-    std::map<juce::String, juce::String> pathToHash;
-    if (auto pool = root.getChildWithName ("IRPool"); pool.isValid())
-        for (auto e : pool)
-        {
-            const auto wav  = e.getProperty ("wav").toString();
-            const auto hash = "ir-" + juce::String::toHexString (wav.hashCode64());   // content-derived, path-free key
-            pathToHash[e.getProperty ("path").toString()] = hash;
-            e.setProperty ("path", hash, nullptr);
-        }
-
-    auto portIR = [&] (juce::ValueTree ir)
-    {
-        if (! ir.isValid()) return;
-        ir.removeProperty ("userIRs", nullptr);                          // recents leak the folder tree
-        for (const char* side : { "a", "b" })
-        {
-            if ((bool) ir.getProperty (juce::String (side) + "Bundled", true)) continue;   // bundled = no path
-            const juce::String refK (juce::String (side) + "Ref");
-            const auto ref = ir.getProperty (refK).toString();
-            if (ref.isEmpty()) continue;
-            ir.setProperty (juce::String (side) + "Name", juce::File (ref).getFileName(), nullptr);   // display name
-            if (auto it = pathToHash.find (ref); it != pathToHash.end())
-                ir.setProperty (refK, it->second, nullptr);              // absolute path -> content hash
-        }
-    };
-
-    portIR (root.getChildWithName ("IR"));
-    if (auto snaps = root.getChildWithName ("Snapshots"); snaps.isValid())
-        for (auto s : snaps)
-            if (auto snap = s.getChild (0); snap.isValid())              // S > Snap > IR
-                portIR (snap.getChildWithName ("IR"));
-
-    // <meta> is descriptive JSON; strip any absolute path in its irRefs[].fallback so a
-    // shared preset can't reveal the sharer's folder layout (mirrors the <IR> path-strip
-    // above). Round-trips through fromVar/toVar, so unknown keys are preserved.
-    if (auto m = root.getChildWithName ("meta"); m.isValid())
-    {
-        auto meta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m.getProperty ("json").toString()));
-        for (auto& r : meta.irRefs)
-            if (! r.bundled && r.fallback.isNotEmpty())
-                r.fallback = juce::File (r.fallback).getFileName();      // absolute path -> bare filename
-        m.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
-        m.removeProperty ("baselineHash", nullptr);                     // session dirty-baseline — not shareable
-        m.setProperty ("factory", false, nullptr);                     // a shared/exported preset is never the Default
-    }
-}
-
-//==============================================================================
 std::vector<orbitcab::IrRef> OrbitCabAudioProcessor::currentIrRefs() const
 {
     // Display-layer references for the preset <meta>: which IR each slot uses, so a browser
     // can show them without decoding audio or applying state. The functional load still goes
-    // through <IR> + the embedded-bytes pool. `id` (content hash) is left empty — the
-    // IR-hashing / library milestone fills it; the resolve path's id branch is dormant today.
-    auto baseName = [] (const juce::String& ref, bool bundled)
-    {
-        return bundled ? ref.upToLastOccurrenceOf (".", false, false)      // "16-nacho-guacamole"
-                       : juce::File (ref).getFileNameWithoutExtension();
-    };
-    auto make = [&] (const juce::String& ref, bool bundled, const char* slot)
+    // through <Workspace>/<IRPool>. With v4's content-addressed identity the descriptive `id`
+    // is the external content id (no longer dormant); `fallback` is path-free by construction.
+    auto make = [] (const orbitcab::state::SlotIR& s, const char* slot)
     {
         orbitcab::IrRef r;
         r.slot     = slot;
-        r.bundled  = bundled;
-        r.fallback = ref;
-        r.name     = baseName (ref, bundled);
-        return r;                                  // r.id intentionally empty (reserved)
+        r.bundled  = s.bundled;
+        r.name     = s.displayName.upToLastOccurrenceOf (".", false, false);   // drop extension for display
+        r.id       = s.bundled ? juce::String() : s.ref;       // external: the content id
+        r.fallback = s.bundled ? s.ref : s.displayName;        // bundled filename; external: bare name (no path)
+        return r;
     };
 
     std::vector<orbitcab::IrRef> refs;
-    if (slotRefA.isNotEmpty())
-        refs.push_back (make (slotRefA, slotBundledA, "A"));
-    if (slotBLoaded.load() && slotRefB.isNotEmpty())
-        refs.push_back (make (slotRefB, slotBundledB, "B"));
+    if (slotState[0].occupied()) refs.push_back (make (slotState[0], "A"));
+    if (slotState[1].occupied()) refs.push_back (make (slotState[1], "B"));
     return refs;
 }
 
@@ -710,12 +680,19 @@ void OrbitCabAudioProcessor::applyFactoryDefault()
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
             rp->setValueNotifyingHost (rp->getDefaultValue());
 
-    clearSlotB();                                   // box II empty (single IR)
-    trimFractionB = 1.0f;                            // ...and its trim back to full (deterministic baseline)
+    clearSlotB();                                   // box II empty (single IR; clear canonicalises its trim)
     loadFactoryDefaultIR();                          // box I → IR #16 (resets slot A trim to full)
     if (auto* q = apvts.getParameter ("hpfOnA"))
         q->setValueNotifyingHost (1.0f);             // HPF on (default 80 Hz)
     setHeadTrim (true);                              // factory HEAD-trim on (a state property, not a param)
+
+    // A fresh Default is a clean starting point: clear the A/B/C/D compare registers and the
+    // undo history so neither resurrects the previous preset (bug B / the dop#4 contradiction).
+    activeSnapshot = 0;
+    for (auto& snap : snapshots) snap = std::nullopt;
+    undoStack.clear();  redoStack.clear();
+    undoBaseline = juce::ValueTree();  undoPrev = juce::ValueTree();  undoSettle = 0;
+    bumpWorkspace();
 
     currentMeta      = orbitcab::PresetMeta();
     currentMeta.name = "Default";
@@ -732,10 +709,10 @@ void OrbitCabAudioProcessor::markPresetModified()
 
 juce::String OrbitCabAudioProcessor::stateFingerprint()
 {
-    // A cheap, stable hash of the preset-defining state (params incl. headTrim + IR refs —
-    // the same tree the snapshots/undo capture). Excludes <meta>, view-prefs, snapshots and
-    // undo, so only sound-affecting edits flip it. Drives the dirty indicator.
-    return juce::String (captureStateTree().toXmlString().hashCode64());
+    // Cheap, stable hash of the preset-defining live sound (params incl. headTrim + each slot's
+    // identity/trim). Excludes <meta>, view-prefs, snapshots, undo AND localPath, so only
+    // sound-affecting edits flip it and the same sound hashes identically across machines.
+    return orbitcab::state::fingerprint (captureLive());
 }
 
 //==============================================================================
@@ -748,7 +725,7 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
     // self-contained — survives a moved file / another machine. Bundled IRs are
     // never embedded (their bytes live in the plugin binary).
     juce::ValueTree root ("OrbitCabState");
-    root.setProperty ("stateVersion", 3, nullptr);   // 3 = + preset <meta> (descriptive identity)
+    root.setProperty ("stateVersion", orbitcab::state::kStateVersion, nullptr);   // 4 = single-source-of-truth <Workspace>/<Slot> model
 
     // Preset identity (preset-centric model): the descriptive metadata + which IRs the live
     // state uses, as JSON in a <meta> child. Built into a LOCAL copy so serialising never
@@ -769,68 +746,57 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
         // serialisation must be deterministic so a host doesn't see "changed" state on poll.
         juce::ValueTree metaTree ("meta");
         metaTree.setProperty ("json", orbitcab::toJSON (meta.toVar()), nullptr);
-        // Preset-centric session bookkeeping (NOT part of the shareable JSON): the dirty
-        // baseline + the factory flag, so a dirty "Default *" and "this is the read-only
-        // Default" both survive a DAW session reload. makePortable strips these for export.
-        metaTree.setProperty ("baselineHash", presetBaselineFingerprint, nullptr);
-        metaTree.setProperty ("factory",      presetIsFactory,           nullptr);
+        if (! forPreset)
+        {
+            // Session bookkeeping (NOT shareable): the dirty baseline + factory flag, so a
+            // dirty "Default *" and "this is the read-only Default" survive a DAW reload.
+            metaTree.setProperty ("baselineHash", presetBaselineFingerprint, nullptr);
+            metaTree.setProperty ("factory",      presetIsFactory,           nullptr);
+        }
+        else
+        {
+            metaTree.setProperty ("factory", false, nullptr);   // a shared/exported preset is never the Default
+        }
         root.appendChild (metaTree, nullptr);
     }
 
-    root.appendChild (apvts.copyState(), nullptr);
-
-    juce::ValueTree ir ("IR");
-    writeIRRefs (ir);
-    ir.setProperty ("userIRs",  userIRPaths.joinIntoString ("\n"), nullptr);   // user-IR history
-    root.appendChild (ir, nullptr);
-
-    // A/B/C/D snapshots: a SESSION-only compare workspace, not part of a shareable preset.
-    // Omitted from a preset so its (possibly proprietary) comparison IRs never get embedded
-    // or redistributed — convention: a preset is the current sound, not the compare registers.
-    if (! forPreset)
+    // The sound. A SESSION carries the whole compare workspace (live + the 4 registers) + the
+    // recents list; a PORTABLE PRESET carries only the live sound (no registers, no paths,
+    // no recents). Both go through the single v4 (de)serialiser so they can't drift.
+    if (forPreset)
     {
-        juce::ValueTree snaps ("Snapshots");
-        snaps.setProperty ("active", activeSnapshot, nullptr);
-        for (int i = 0; i < kNumSnapshots; ++i)
-        {
-            juce::ValueTree slot ("S");
-            const juce::ValueTree content = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
-            if (content.isValid())
-                slot.appendChild (content.createCopy(), nullptr);
-            snaps.appendChild (slot, nullptr);
-        }
-        root.appendChild (snaps, nullptr);
+        root.appendChild (orbitcab::state::toTree (captureLive(), /*portable*/ true), nullptr);
+    }
+    else
+    {
+        root.appendChild (orbitcab::state::toTree (currentWorkspace(), /*portable*/ false), nullptr);
+        root.setProperty ("userIRs", userIRPaths.joinIntoString ("\n"), nullptr);   // recents (session-only)
     }
 
-    // IRPool: embed the audio of every external IR referenced by the live state (and, for a
-    // session, by any snapshot), once per unique path (deduped). base64 WAV; bundled refs are
-    // skipped. A preset embeds ONLY the live slots — never the compare registers' IRs.
+    // IRPool: embed every external IR's audio referenced by the live sound (and, for a session,
+    // by any register), keyed by content id, deduped. Bundled refs are never embedded.
     {
-        juce::StringArray refs;
-        auto addRef = [&] (bool bundled, const juce::String& r)
-        { if (! bundled && r.isNotEmpty()) refs.addIfNotAlreadyThere (r); };
+        juce::StringArray ids;
+        auto addSlot = [&] (const orbitcab::state::SlotIR& s)
+        { if (s.occupied() && ! s.bundled && s.ref.isNotEmpty()) ids.addIfNotAlreadyThere (s.ref); };
 
-        addRef (slotBundledA, slotRefA);
-        if (slotBLoaded.load()) addRef (slotBundledB, slotRefB);
+        addSlot (slotState[0]);
+        addSlot (slotState[1]);
         if (! forPreset)
             for (int i = 0; i < kNumSnapshots; ++i)
-            {
-                const juce::ValueTree t = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
-                if (auto irn = t.getChildWithName ("IR"); irn.isValid())
+                if (snapshots[(size_t) i].has_value())
                 {
-                    addRef ((bool) irn.getProperty ("aBundled", true), irn.getProperty ("aRef").toString());
-                    if ((bool) irn.getProperty ("bLoaded", false))
-                        addRef ((bool) irn.getProperty ("bBundled", true), irn.getProperty ("bRef").toString());
+                    addSlot (snapshots[(size_t) i]->slots[0]);
+                    addSlot (snapshots[(size_t) i]->slots[1]);
                 }
-            }
 
         juce::ValueTree pool ("IRPool");
-        for (const auto& r : refs)
-            if (auto it = embeddedIRs.find (r); it != embeddedIRs.end() && it->second.getSize() > 0)
+        for (const auto& id : ids)
+            if (auto it = embeddedIRs.find (id); it != embeddedIRs.end() && it->second.getSize() > 0)
             {
                 juce::ValueTree e ("E");
-                e.setProperty ("path", r, nullptr);
-                e.setProperty ("wav",  juce::Base64::toBase64 (it->second.getData(), it->second.getSize()), nullptr);
+                e.setProperty ("id",  id, nullptr);
+                e.setProperty ("wav", juce::Base64::toBase64 (it->second.getData(), it->second.getSize()), nullptr);
                 pool.appendChild (e, nullptr);
             }
         root.appendChild (pool, nullptr);
@@ -848,10 +814,11 @@ void OrbitCabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void OrbitCabAudioProcessor::getStateForPreset (juce::MemoryBlock& destData)
 {
-    // Strip external-IR paths so a shared preset can't reveal the sharer's folder layout.
-    // forPreset=true also drops the A/B/C/D compare registers (and their embedded IR audio).
+    // Portable export. forPreset=true builds the live sound in portable mode (no localPath, no
+    // recents) and drops the A/B/C/D registers. With v4's content-addressed refs there are no
+    // file paths to strip — the ref IS the path-free content id — so the old makePortable() and
+    // its name-from-ref rewrite (which baked the hash in as the display name) are gone.
     auto root = buildStateTree (true);
-    makePortable (root);
     if (auto xml = root.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -863,13 +830,11 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
         return;
 
     auto root = juce::ValueTree::fromXml (*xml);
+    bool migratedLegacy = false;                    // true → re-baseline clean after the load
 
     if (root.hasType ("OrbitCabState"))
     {
-        // Preset <meta> (v3). Absent in v2 / param-only states → reset to a clean default so
-        // a stale name can't linger; the name then derives from the file (listWithMeta / editor).
-        // baselineHash/factory are session bookkeeping: a session restores its dirty baseline +
-        // factory flag; a portable preset (stripped) lands clean (PresetManager re-baselines it).
+        // <meta> identity + session bookkeeping. Absent → clean default (name derives from the file).
         if (auto m = root.getChildWithName ("meta"); m.isValid())
         {
             currentMeta = orbitcab::PresetMeta::fromVar (orbitcab::parseJSON (m.getProperty ("json").toString()));
@@ -883,45 +848,103 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
             presetIsFactory = false;
         }
 
-        if (auto params = root.getChildWithName (apvts.state.getType()); params.isValid())
-            apvts.replaceState (params);
+        // Recents are a GLOBAL accumulator — only REPLACE them when the incoming state
+        // actually carries a list. A full session does (→ restore it); a portable preset does
+        // NOT, so loading a preset must PRESERVE the user's accumulated folders, not wipe them.
+        if (root.hasProperty ("userIRs"))
+        {
+            userIRPaths.clear();
+            userIRPaths.addLines (root.getProperty ("userIRs").toString());
+            userIRPaths.removeEmptyStrings();
+        }
 
-        // Rehydrate embedded IRs BEFORE restoring refs, so loadIRRef finds the bytes
-        // (and so snapshot recall works later even if the original files aren't present).
+        // Rehydrate the embedded-IR pool FRESH for the incoming state (never accumulate across
+        // loads — the old bug where a later restore could pick up a previous preset's bytes).
+        // v4 keys by content "id"; v3 keyed by "path" — accept both.
+        embeddedIRs.clear();
         if (auto pool = root.getChildWithName ("IRPool"); pool.isValid())
             for (auto e : pool)
             {
-                const juce::String path = e.getProperty ("path").toString();
-                const juce::String b64  = e.getProperty ("wav").toString();
-                if (path.isEmpty() || b64.isEmpty())
+                juce::String key = e.getProperty ("id", {}).toString();
+                if (key.isEmpty()) key = e.getProperty ("path", {}).toString();   // v3 fallback
+                const juce::String b64 = e.getProperty ("wav").toString();
+                if (key.isEmpty() || b64.isEmpty())
                     continue;
                 if ((size_t) b64.getNumBytesAsUTF8() / 4 * 3 > kMaxEmbeddedIRBytes)
                     continue;                          // oversized blob (crafted/corrupt) → skip, don't OOM
                 juce::MemoryOutputStream mos;
                 if (juce::Base64::convertFromBase64 (mos, b64) && mos.getDataSize() <= kMaxEmbeddedIRBytes)
-                    embeddedIRs[path] = juce::MemoryBlock (mos.getData(), mos.getDataSize());
+                    embeddedIRs[key] = juce::MemoryBlock (mos.getData(), mos.getDataSize());
             }
 
-        if (auto ir = root.getChildWithName ("IR"); ir.isValid())
-            restoreIRsFromTree (ir);
-
-        // A/B/C/D snapshots (absent in pre-snapshot sessions → registers stay empty).
-        if (auto snaps = root.getChildWithName ("Snapshots"); snaps.isValid())
+        if (auto ws = root.getChildWithName ("Workspace"); ws.isValid())
         {
-            activeSnapshot = juce::jlimit (0, kNumSnapshots - 1, (int) snaps.getProperty ("active", 0));
-            for (int i = 0; i < kNumSnapshots; ++i)
-                snapshots[i] = (i < snaps.getNumChildren())
-                                   ? snaps.getChild (i).getChildWithName ("Snap").createCopy()
-                                   : juce::ValueTree();
+            applyWorkspace (orbitcab::state::workspaceFromTree (ws));   // v4 session
+        }
+        else if (auto sound = root.getChildWithName ("Sound"); sound.isValid())
+        {
+            orbitcab::state::Workspace w;                              // v4 portable preset (live only) →
+            w.live = orbitcab::state::soundFromTree (sound);           // reset the compare registers (bug B)
+            applyWorkspace (w);
+        }
+        else
+        {
+            // v3 → v4 migration: legacy <PARAMS> + flat <IR> (+ optional <Snapshots>). Re-key
+            // external path/hash refs to the v4 content id using the rehydrated pool.
+            auto params    = root.getChildWithName (apvts.state.getType());
+            auto legacyIR  = root.getChildWithName ("IR");
+            auto rekey = [this] (orbitcab::state::SoundState& s)
+            {
+                for (auto& slot : s.slots)
+                {
+                    if (! slot.occupied() || slot.bundled) continue;
+                    const juce::String oldKey = slot.localPath.isNotEmpty() ? slot.localPath : slot.ref;
+                    if (auto it = embeddedIRs.find (oldKey); it != embeddedIRs.end() && it->second.getSize() > 0)
+                    {
+                        const auto newId = computeBlobId (it->second);
+                        if (newId != oldKey) embeddedIRs[newId] = it->second;   // copy under the content id
+                        slot.ref = newId;
+                    }
+                    // else: leave ref; resolveSlot will try localPath on disk and re-pool it.
+                }
+            };
+
+            orbitcab::state::Workspace w;
+            w.live = orbitcab::state::migrateLegacySound (legacyIR, params);
+            rekey (w.live);
+            if (auto snaps = root.getChildWithName ("Snapshots"); snaps.isValid())
+            {
+                w.active = juce::jlimit (0, kNumSnapshots - 1, (int) snaps.getProperty ("active", 0));
+                int i = 0;
+                for (auto sNode : snaps)
+                {
+                    if (i >= kNumSnapshots) break;
+                    if (auto snap = sNode.getChildWithName ("Snap"); snap.isValid())
+                    {
+                        auto ss = orbitcab::state::migrateLegacySound (snap.getChildWithName ("IR"),
+                                                                       snap.getChildWithName (apvts.state.getType()));
+                        rekey (ss);
+                        w.snapshots[(size_t) i] = ss;
+                    }
+                    ++i;
+                }
+            }
+            migratedLegacy = true;
+            applyWorkspace (w);
         }
     }
     else if (xml->hasTagName (apvts.state.getType()))
     {
-        // Backward-compat: earlier sessions stored just the PARAMS tree (no <meta>).
+        // pre-v3: just the PARAMS tree (no IR info) → params only, both slots empty.
+        // (Recents are a global accumulator and pre-v3 carries none → leave them untouched.)
         currentMeta = orbitcab::PresetMeta();
         presetBaselineFingerprint.clear();
         presetIsFactory = false;
-        apvts.replaceState (root);
+        embeddedIRs.clear();
+        orbitcab::state::Workspace w;
+        w.live.params = root.createCopy();
+        migratedLegacy = true;
+        applyWorkspace (w);
     }
 
     // Migration: HEAD trim was per-slot params (headOnA/B, default off) through 1.0.x; it's
@@ -931,7 +954,20 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     // their value, so property-absence IS the version marker (no stateVersion bump needed).
     // The IR re-trim is deferred to the reload poll, which reads getHeadTrim() after this returns.
     if (! apvts.state.hasProperty ("headTrim"))
-        apvts.state.setProperty ("headTrim", false, nullptr);
+    {
+        apvts.state.setProperty ("headTrim", false, nullptr);   // pre-1.1: HEAD was off by default
+        // resolveSlot already trimmed with HEAD defaulting ON — re-trim both now it's known off.
+        if (isSlotALoaded()) applyTrimAndLoad (true);
+        if (isSlotBLoaded()) applyTrimAndLoad (false);
+    }
+
+    // A migrated v3 state stored its baseline hash in the OLD fingerprint format, which never
+    // matches the v4 hash → it would load spuriously "dirty". Re-baseline to the settled v4
+    // state so an unchanged old project opens clean.
+    if (migratedLegacy)
+        presetBaselineFingerprint = stateFingerprint();
+
+    userIRRev.fetch_add (1, std::memory_order_relaxed);   // editor rebuilds the shared recents menus
 
     // A loaded session/preset is a fresh starting point — drop undo history and re-seed
     // the baseline (lazily, on the next undoTick) so you can't undo past the load.

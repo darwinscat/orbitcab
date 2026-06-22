@@ -151,6 +151,16 @@ private:
     int          presetShownId    = -1;
     juce::String presetShownLabel;
 
+    // Last-seen processor revision counters — polled on the timer to re-sync the slot display /
+    // A/B/C/D buttons / recents after any processor-side state change (incl. host setStateInformation).
+    juce::uint32 lastSoundRev = 0, lastWorkspaceRev = 0, lastUserIRRev = 0;
+
+    // The actual file the current preset was loaded from / saved to THIS session — the Save /
+    // Delete target. Tracking the file (not matching by name) stops Save overwriting a different
+    // library preset that happens to share the imported preset's name (doc#7). Empty after a
+    // host reload recreated the editor → currentPresetFile() falls back to a name match.
+    juce::File loadedPresetFile;
+
     // Hosts the hover hints for every control (without this, setTooltip does nothing).
     juce::TooltipWindow tooltipWindow { this, 600 };
 

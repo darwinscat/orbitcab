@@ -134,7 +134,11 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     // and snap MIX to centre when B's first IR loads.)
     for (auto& slot : slots)
     {
-        slot.onUserIRsChanged = [this] { slots[0].rebuildList(); slots[1].rebuildList(); };
+        slot.onUserIRsChanged = [this]
+        {
+            slots[0].rebuildList(); slots[1].rebuildList();
+            slots[0].syncFromProcessor(); slots[1].syncFromProcessor();   // re-resolve both selections (bug D)
+        };
         slot.onFirstBLoad     = [this] { snapMixToCentre(); };
         addAndMakeVisible (slot);
     }
@@ -217,6 +221,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     pushFiltersToWave();
     refreshPresets();
 
+    // Seed the revision caches to the current values so the first timer tick doesn't re-sync
+    // what the ctor just synced (only genuine later changes trip the poll).
+    lastSoundRev     = processorRef.soundRevision();
+    lastWorkspaceRev = processorRef.workspaceRevision();
+    lastUserIRRev    = processorRef.userIRRevision();
+
     startTimerHz (30);
     setSize (1040, 620);
 }
@@ -240,6 +250,29 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     processorRef.undoTick();                       // coalesce edits into undo steps
     undoBtn.setEnabled (processorRef.canUndo());
     redoBtn.setEnabled (processorRef.canRedo());
+
+    // Catch processor-side state changes WITHOUT a push callback (revision-counter poll): a
+    // host-driven setStateInformation, or any path that didn't already re-sync the editor.
+    // Editor-initiated actions re-sync immediately AND bump these, so this is mostly a no-op
+    // safety net — but it's what keeps the slot display honest after a host reload.
+    if (const auto r = processorRef.userIRRevision(); r != lastUserIRRev)
+    {
+        lastUserIRRev = r;
+        slots[0].rebuildList(); slots[1].rebuildList();
+        slots[0].syncFromProcessor(); slots[1].syncFromProcessor();
+    }
+    if (const auto r = processorRef.workspaceRevision(); r != lastWorkspaceRev)
+    {
+        lastWorkspaceRev = r;
+        updateSnapshotButtons();
+        slots[0].syncFromProcessor(); slots[1].syncFromProcessor();
+    }
+    if (const auto r = processorRef.soundRevision(); r != lastSoundRev)
+    {
+        lastSoundRev = r;
+        slots[0].syncFromProcessor(); slots[1].syncFromProcessor();
+        pushFiltersToWave();
+    }
 
     updatePresetDisplay();                         // live dirty marker ("Default *") as knobs move
 }
@@ -486,7 +519,7 @@ void OrbitCabAudioProcessorEditor::promptSavePreset (const juce::String& initial
                 return;
             }
 
-            presets.saveAs (name);     // stamps <meta> name + re-baselines (clean, non-factory)
+            loadedPresetFile = presets.saveAs (name);   // becomes the current backing file (Save target)
             refreshPresets();          // rebuild list; updatePresetDisplay selects it by name
         }), false);
 }
@@ -495,6 +528,7 @@ void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
 {
     if (! presets.loadFrom (file))                 // applies state + re-baselines (clean, non-factory)
         return;
+    loadedPresetFile = file;                        // the Save/Delete target (library file → writeable; external → not)
     slots[0].rebuildList();                        // restored user-IR history may differ
     slots[1].rebuildList();
     slots[0].syncFromProcessor();
@@ -552,6 +586,7 @@ void OrbitCabAudioProcessorEditor::applyDefaultPreset()
     // first-start preset — Emerald IR #16 + HPF, single box, read-only). Apply it there, then
     // re-sync the editor to the new IR/params and mark the combo Default (clean).
     processorRef.applyFactoryDefault();
+    loadedPresetFile = juce::File();               // the factory Default has no backing file
     slots[0].syncFromProcessor();
     slots[1].syncFromProcessor();
     pushFiltersToWave();
@@ -626,10 +661,18 @@ juce::String OrbitCabAudioProcessorEditor::nextCopyName (const juce::String& bas
 
 juce::File OrbitCabAudioProcessorEditor::currentPresetFile() const
 {
-    // The library file backing the current preset, matched by name. A factory preset (Default)
-    // or an external one not in the library has none → Save As territory.
+    // The library file backing the current preset — the Save / Delete target. A factory preset
+    // (Default) or an imported/external one has none → Save As territory.
     if (processorRef.isPresetFactory())
         return {};
+
+    // We know exactly which file this preset came from this session: trust it (collision-safe).
+    if (loadedPresetFile != juce::File())
+        return (loadedPresetFile.existsAsFile()
+                && loadedPresetFile.isAChildOf (orbitcab::PresetManager::directory()))
+                   ? loadedPresetFile : juce::File();   // imported/external → no library backing
+
+    // Unknown backing (e.g. a host session reload recreated the editor) → best-effort name match.
     const auto name = processorRef.presetMeta().name;
     for (const auto& f : presetFiles)
         if (f.getFileNameWithoutExtension() == name)

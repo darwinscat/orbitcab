@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a macOS installer package (.pkg) that drops the VST3 + AU into the system
+# Build a macOS installer package (.pkg) that drops the VST3 + AU + CLAP into the system
 # plug-in folders. This produces an UNSIGNED .pkg — release.yml then productsigns it
 # (Developer ID Installer) + notarizes + staples.
 #
@@ -17,6 +17,11 @@ mkdir -p "$stage/VST3" "$stage/Components" "$OUT"
 
 cp -R "$REL/VST3/OrbitCab.vst3"      "$stage/VST3/"
 cp -R "$REL/AU/OrbitCab.component"   "$stage/Components/"
+# CLAP is a bundle dir on macOS, like VST3 — lands in /Library/Audio/Plug-Ins/CLAP.
+if [ -d "$REL/CLAP/OrbitCab.clap" ]; then
+  mkdir -p "$stage/CLAP"
+  cp -R "$REL/CLAP/OrbitCab.clap"    "$stage/CLAP/"
+fi
 
 # --root mirrors the install tree; --install-location is where it lands.
 pkgbuild \

@@ -3,14 +3,14 @@ cmake_minimum_required(VERSION 3.22)
 # ----------------------------------------------------------------------------
 # OrbitCab — IR Cabinet Loader plugin (C++/JUCE). Felitronics line, by Darwin's Cat.
 #
-# One CMake config builds VST3 + AU on macOS and Windows. JUCE 8 is fetched by
+# One CMake config builds VST3 + AU + CLAP on macOS and Windows. JUCE 8 is fetched by
 # CMake (FetchContent, pinned tag) — NOT vendored, NOT system-installed.
 # See docs/BUILD.md and docs/ARCHITECTURE.md.
 # ----------------------------------------------------------------------------
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 1.2.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 1.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -222,6 +222,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/AutoLevelerTests.cpp
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
+    tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
 )
@@ -231,6 +232,7 @@ target_compile_definitions(OrbitCab_Tests PRIVATE
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
+    juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )

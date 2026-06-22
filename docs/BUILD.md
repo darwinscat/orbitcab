@@ -20,14 +20,14 @@
 #    downloads + builds JUCE — that's the slow ~minute+; it's cached afterwards.
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# 2. Build all formats (VST3 + AU + Standalone). After edits to src/*, only the
+# 2. Build all formats (VST3 + AU + CLAP + Standalone). After edits to src/*, only the
 #    changed files recompile — seconds.
 #    ⚠️ Build the DEFAULT target (no --target). Do NOT use `--target OrbitCab`: that name
 #    is the shared-code static lib only — it recompiles src/* and updates
 #    libOrbitCab_SharedCode.a but does NOT relink the VST3/AU/Standalone bundles or run
 #    COPY_PLUGIN_AFTER_BUILD, so every .vst3/.component/.app stays the OLD binary
 #    (silent stale build — even auval/pluginval then test old code). To build/refresh
-#    only the plugin, target the formats: OrbitCab_VST3 / OrbitCab_AU / OrbitCab_Standalone.
+#    only the plugin, target the formats: OrbitCab_VST3 / OrbitCab_AU / OrbitCab_CLAP / OrbitCab_Standalone.
 cmake --build build --config Release
 
 # 3. Run the Standalone app to see/hear it without a DAW (macOS):
@@ -47,6 +47,7 @@ Artefacts land under `build/OrbitCab_artefacts/Release/`:
 
 - `VST3/OrbitCab.vst3`
 - `AU/OrbitCab.component`
+- `CLAP/OrbitCab.clap`
 - `Standalone/OrbitCab.app`
 
 `COPY_PLUGIN_AFTER_BUILD TRUE` also auto-installs the plug-ins to the user folders
@@ -54,6 +55,7 @@ during dev, so a DAW picks them up immediately:
 
 - macOS VST3: `~/Library/Audio/Plug-Ins/VST3/OrbitCab.vst3`
 - macOS AU:   `~/Library/Audio/Plug-Ins/Components/OrbitCab.component`
+- macOS CLAP: `~/Library/Audio/Plug-Ins/CLAP/OrbitCab.clap`
 - Windows VST3 (via the Inno installer): `C:\Program Files\Common Files\VST3\OrbitCab.vst3`
 
 ## Validate

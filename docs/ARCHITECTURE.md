@@ -125,20 +125,42 @@ The convolver is **`juce::dsp::Convolution`**:
 > (`autoLevel`); everything that colours/cuts is off.** **HEAD trim is NOT a param** — it's
 > a global session-state property (see the state model below).
 
-## State model — versioned from day one
+## State model — single source of truth (v4)
 
-The APVTS ValueTree is serialized into the DAW session. We add a top-level
-`stateVersion` attribute now (v1 = 1). On load:
+Every form of "the sound" — a DAW session, a portable `.orbitcab` preset, each A/B/C/D
+register, and one undo step — is built from **one** data model and **one** (de)serialiser
+in `src/StateModel.h` (`orbitcab::state`, pure `juce_core`/`juce_data_structures`, headless
+unit-tested in `tests/StateModelTests.cpp`). Before v4 the slot identity was split across
+loose processor members and projected by three independent, lossy writers that disagreed
+about which fields they carried, so the display name, the active register and the undo
+timeline drifted apart (e.g. the IR "combo" showing a content hash instead of the filename).
 
-```
-read stateVersion
-  == current  -> load normally
-  <  current  -> migrate (add v2 PowerAmp params with safe defaults), bump
-  >  current  -> a newer plugin saved this; load what we recognize, warn
-```
+The model:
 
-Without this, adding PowerAmp params in v2 risks corrupting/zeroing v1 sessions.
-Cheap insurance, written once.
+- **`SlotIR`** — a slot's whole IR identity: `status {empty,ready,missing}`, `bundled`,
+  `ref` (bundled filename **or** external content id `ir-<hex>`), `displayName` (always
+  persisted for occupied slots), `localPath` (session-only recovery hint, dropped on export),
+  `trim`. External IRs are **content-addressed at load time** — `ref` is a hash of the
+  canonical embedded WAV (original sample rate, 24-bit, capped) — so a session and a portable
+  preset share one id and export never rewrites the ref. Bundled IRs keep a stable filename
+  key (never hashed, so a re-mastered factory IR can't orphan old sessions).
+- **`SoundState`** = params (opaque APVTS copy, incl. `headTrim`) + two `SlotIR`. A preset is
+  exactly this (portable mode). The dirty fingerprint hashes it (minus `localPath`).
+- **`Workspace`** = live `SoundState` + active index + the 4 inactive registers. The active
+  register *is* the live sound (never stored twice). A session persists the whole workspace;
+  **undo/redo capture the whole workspace**, so an A/B/C/D switch is exactly reversible.
+
+The processor owns the authoritative `SlotIR slotState[2]` on the message thread; the audio
+thread reads only derived `slotAudioLoaded[2]` atomic mirrors. Loading/clearing/resolving a
+slot, switching registers, and restoring state bump monotonic **revision counters** the editor
+polls on its 30 Hz timer — so a host-driven `setStateInformation` (or any non-editor path)
+re-syncs the slot display without a push callback. Restore is transactional: a slot whose bytes
+are gone resolves to **`missing`** (shown as "⚠ name") rather than leaving the previous IR live.
+
+Root tree carries a top-level `stateVersion` (now **4**). On load, a `<Workspace>` node is v4;
+a `<Sound>` node is a v4 portable preset (registers reset); a legacy flat `<IR>` (+ optional
+`<Snapshots>`) is migrated to v4, re-keying external path/hash refs to the content id from the
+embedded `<IRPool>`. Pre-1.1 `headTrim`-absent sessions still fall back to **off**.
 
 Two non-param settings ride alongside the APVTS params:
 

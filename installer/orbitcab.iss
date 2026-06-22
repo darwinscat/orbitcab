@@ -41,12 +41,15 @@ PrivilegesRequired=admin
 
 [Components]
 Name: "vst3";       Description: "VST3 plugin";   Types: full custom; Flags: fixed
+Name: "clap";       Description: "CLAP plugin";   Types: full custom
 Name: "standalone"; Description: "Standalone app"; Types: full custom
 
 [Files]
 ; VST3 is a bundle (folder) — copy its contents into the shared VST3 location.
 Source: "{#BuildDir}\VST3\OrbitCab.vst3\*"; DestDir: "{commoncf64}\VST3\OrbitCab.vst3"; \
     Flags: recursesubdirs createallsubdirs ignoreversion; Components: vst3
+; CLAP on Windows is a single file (a DLL) — copy it into the shared CLAP location.
+Source: "{#BuildDir}\CLAP\OrbitCab.clap"; DestDir: "{commoncf64}\CLAP"; Flags: ignoreversion; Components: clap
 Source: "{#BuildDir}\Standalone\OrbitCab.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: standalone
 
 [Icons]
@@ -54,3 +57,4 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\OrbitCab.exe"; Components: s
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\OrbitCab.vst3"
+Type: files;          Name: "{commoncf64}\CLAP\OrbitCab.clap"

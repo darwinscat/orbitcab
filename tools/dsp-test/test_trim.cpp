@@ -392,8 +392,9 @@ int main()
 
     // ---- a shared preset = the ACTIVE register only; A/B/C/D + their IRs are session-only ----
     // Load external IR1 as the live sound (register A), switch to B, load external IR2, and leave
-    // B active. The session embeds both IRs + the Snapshots node; a portable preset embeds ONLY
-    // the live/active IR (B's) and drops Snapshots — so compare IRs (often proprietary) can't leak.
+    // B active. The session embeds both IRs in a <Workspace> (live + registers); a portable preset
+    // is the live <Sound> only and embeds ONLY the active IR — so compare IRs (often proprietary)
+    // can't leak.
     {
         auto mkIR = [&] (const char* nm, float freq) -> juce::File
         {
@@ -411,7 +412,7 @@ int main()
                     w->writeFromAudioSampleBuffer (b, 0, n);   // w destroyed at end of the if → finalises the WAV
             return f;
         };
-        auto noSnaps  = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); return x != nullptr && x->getChildByName ("Snapshots") == nullptr; };
+        auto hasWorkspace = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); return x != nullptr && x->getChildByName ("Workspace") != nullptr; };
         auto poolN    = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); auto* p = x ? x->getChildByName ("IRPool") : nullptr; return p ? p->getNumChildElements() : (x ? 0 : -1); };
 
         OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
@@ -423,8 +424,8 @@ int main()
 
         juce::MemoryBlock sess; a.getStateInformation (sess);
         juce::MemoryBlock pres; a.getStateForPreset  (pres);
-        const bool sessSnaps = ! noSnaps (sess);        // session keeps the compare registers
-        const bool presNo    =   noSnaps (pres);        // preset drops them
+        const bool sessSnaps =   hasWorkspace (sess);   // session keeps the compare registers (v4 <Workspace>)
+        const bool presNo    = ! hasWorkspace (pres);   // preset is the live <Sound> only — no registers
         const int  sPool = poolN (sess), pPool = poolN (pres);
         ir1.deleteFile(); ir2.deleteFile();
 
@@ -457,6 +458,193 @@ int main()
                      countOk, sortedOk, packOk, (int) bundled.size());
         std::printf ("RESULT: %s\n", libOk ? "IR LIBRARY WORKS (21, sorted, pack-split)"
                                            : "IR LIBRARY BROKEN");
+    }
+
+    // ============================================================================
+    // v4 BUG-SCENARIO REGRESSION TESTS — the EXACT reported failures, driven through
+    // the real OrbitCabAudioProcessor and asserted behaviour-first: each check states
+    // the CORRECT outcome from the spec, then proves the code obeys it (not the reverse).
+    // ============================================================================
+    auto makeExt = [&] (const char* nm, float freq) -> juce::File
+    {
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm);
+        const int n = (int) (0.06 * sr);
+        juce::AudioBuffer<float> b (1, n);
+        for (int i = 0; i < n; ++i)
+        { const float t = (float) i / (float) sr; b.setSample (0, i, std::cos (juce::MathConstants<float>::twoPi * freq * t) * std::exp (-t * 35.0f)); }
+        f.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> os = f.createOutputStream();
+        if (os != nullptr)
+            if (auto w = wav.createWriterFor (os, juce::AudioFormatWriter::Options{}.withSampleRate (sr).withNumChannels (1).withBitsPerSample (24)))
+                w->writeFromAudioSampleBuffer (b, 0, n);
+        return f;
+    };
+
+    // ---- BUG A (the reported one): a portable preset's external-IR display name must survive
+    //      an import, then an A/B/C/D round-trip, then undo — it must NEVER show the content id.
+    {
+        auto extf = makeExt ("orbitcab_namebug.wav", 850.0f);
+        const juce::String fileName = extf.getFileName();
+        juce::MemoryBlock preset;
+        { OrbitCabAudioProcessor src; src.prepareToPlay (sr, block); src.loadIRFromFile (extf, true); pump (150); src.getStateForPreset (preset); }
+        extf.deleteFile();                                   // a shared preset has no original file
+
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        p.setStateInformation (preset.getData(), (int) preset.getSize());   // "import"
+        pump (200);
+
+        const bool refIsContentId = p.getSlotRef (true).startsWith ("ir-");   // external identity is content-addressed
+        const bool nameOnImport   = p.getSlotName (true) == fileName;          // …but the UI shows the filename
+        p.switchToSnapshot (1); pump (60); p.switchToSnapshot (0); pump (60);  // A→B→A (the old name-loss trigger)
+        const bool nameAfterABCD  = p.getSlotName (true) == fileName;
+        for (int i = 0; i < 20; ++i) p.undoTick();
+        if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (0.66f);
+        for (int i = 0; i < 20; ++i) p.undoTick();
+        p.undo(); pump (60);
+        const bool nameAfterUndo  = p.getSlotName (true) == fileName;
+
+        const bool ok = refIsContentId && nameOnImport && nameAfterABCD && nameAfterUndo;
+        allPass &= ok;
+        std::printf ("BUG-A TEST: refIsId=%d import=%d afterABCD=%d afterUndo=%d (shown=\"%s\")\n",
+                     refIsContentId, nameOnImport, nameAfterABCD, nameAfterUndo, p.getSlotName (true).toRawUTF8());
+        std::printf ("RESULT: %s\n", ok ? "DISPLAY NAME SURVIVES (no id-instead-of-filename)"
+                                        : "BUG A REGRESSED (name lost / shows the id)");
+    }
+
+    // ---- re-export cascade: import a preset then export it again → the real name must persist
+    //      (the old makePortable derived the name from the already-hashed ref → baked in "ir-…").
+    {
+        auto extf = makeExt ("orbitcab_reexport.wav", 1200.0f);
+        const juce::String fileName = extf.getFileName();
+        juce::MemoryBlock p1;
+        { OrbitCabAudioProcessor src; src.prepareToPlay (sr, block); src.loadIRFromFile (extf, true); pump (150); src.getStateForPreset (p1); }
+        extf.deleteFile();
+        OrbitCabAudioProcessor mid; mid.prepareToPlay (sr, block);
+        mid.setStateInformation (p1.getData(), (int) p1.getSize()); pump (150);
+        juce::MemoryBlock p2; mid.getStateForPreset (p2);                       // re-export
+        OrbitCabAudioProcessor dst; dst.prepareToPlay (sr, block);
+        dst.setStateInformation (p2.getData(), (int) p2.getSize()); pump (150);
+        const bool ok = dst.getSlotName (true) == fileName;
+        allPass &= ok;
+        std::printf ("RE-EXPORT TEST: name after import→re-export→import = \"%s\"\n", dst.getSlotName (true).toRawUTF8());
+        std::printf ("RESULT: %s\n", ok ? "RE-EXPORT KEEPS THE NAME" : "RE-EXPORT CASCADE REGRESSED (name became the id)");
+    }
+
+    // ---- BUG B: loading a preset must RESET the A/B/C/D registers — pressing a register after
+    //      the load must not recall the previous project's sound.
+    {
+        auto irX = makeExt ("orbitcab_regX.wav", 500.0f);
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        p.switchToSnapshot (1); p.loadIRFromFile (irX, true); pump (120);       // register 1 = a distinct IR
+        const juce::String regName = p.getSlotName (true);
+        p.switchToSnapshot (0); pump (60);
+        irX.deleteFile();
+        juce::MemoryBlock preset;
+        { OrbitCabAudioProcessor d; d.prepareToPlay (sr, block); d.getStateForPreset (preset); }   // a fresh Default
+        p.setStateInformation (preset.getData(), (int) preset.getSize()); pump (150);
+        const bool activeReset   = p.getActiveSnapshot() == 0;
+        const juce::String before = p.getSlotName (true);
+        p.switchToSnapshot (1); pump (80);                                      // the OLD register 1 must be gone
+        const juce::String after  = p.getSlotName (true);
+        const bool registerCleared = (after != regName) && (after == before);   // inherits current, not stale regX
+        const bool ok = activeReset && registerCleared;
+        allPass &= ok;
+        std::printf ("BUG-B TEST: active=%d regWas=\"%s\" afterSwitch=\"%s\"\n",
+                     p.getActiveSnapshot(), regName.toRawUTF8(), after.toRawUTF8());
+        std::printf ("RESULT: %s\n", ok ? "PRESET LOAD RESETS A/B/C/D" : "BUG B REGRESSED (stale register recalled)");
+    }
+
+    // ---- BUG C: a snapshot switch is undoable — undo restores BOTH the live sound AND the
+    //      active-register index (the chosen fully-reversible compare model).
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        setG (0.20f); ticks (20);                          // register 0 settles
+        const float reg0 = getG();
+        p.switchToSnapshot (1); ticks (20);                // switch is one undo step
+        setG (0.85f); ticks (20);                          // edit is another
+        const float reg1 = getG();
+        const int activeBefore = p.getActiveSnapshot();
+        p.undo();                                          // undo the edit
+        p.undo();                                          // undo the switch itself
+        const int   activeAfter = p.getActiveSnapshot();
+        const float soundAfter  = getG();
+        // gain is stored in dB (getG is the raw value), so assert the INVARIANT, not a 0..1
+        // literal: the two registers differ, and undo restores BOTH reg0's sound and active=0.
+        const bool ok = std::abs (reg1 - reg0) > 1.0f && activeBefore == 1
+                      && activeAfter == 0 && std::abs (soundAfter - reg0) < 1e-2f;
+        allPass &= ok;
+        std::printf ("BUG-C TEST: reg0=%.2f reg1=%.2f activeBefore=%d → activeAfter=%d sound=%.2f\n",
+                     reg0, reg1, activeBefore, activeAfter, soundAfter);
+        std::printf ("RESULT: %s\n", ok ? "SNAPSHOT SWITCH IS UNDOABLE (sound + active index)"
+                                        : "BUG C REGRESSED (undo ignores the register)");
+    }
+
+    // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must
+    //      resolve to MISSING (slot not loaded, no phantom IR), keeping the name for relink.
+    {
+        auto extf = makeExt ("orbitcab_missing.wav", 950.0f);
+        const juce::String fileName = extf.getFileName();
+        juce::MemoryBlock session;
+        { OrbitCabAudioProcessor src; src.prepareToPlay (sr, block); src.loadIRFromFile (extf, true); pump (150); src.getStateInformation (session); }
+        extf.deleteFile();                                   // file gone…
+        juce::MemoryBlock stripped;                           // …and strip the embedded pool → unresolvable
+        if (auto xml = juce::AudioProcessor::getXmlFromBinary (session.getData(), (int) session.getSize()))
+        {
+            if (auto* pool = xml->getChildByName ("IRPool")) xml->removeChildElement (pool, true);
+            juce::AudioProcessor::copyXmlToBinary (*xml, stripped);
+        }
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        p.setStateInformation (stripped.getData(), (int) stripped.getSize()); pump (200);
+        const bool notLoaded = ! p.isSlotALoaded();
+        const bool isMissing =   p.isSlotMissing (true);
+        const bool nameKept  =   p.getSlotName (true) == fileName;
+        const bool ok = notLoaded && isMissing && nameKept;
+        allPass &= ok;
+        std::printf ("BUG-F TEST: notLoaded=%d missing=%d nameKept=%d\n", notLoaded, isMissing, nameKept);
+        std::printf ("RESULT: %s\n", ok ? "MISSING IR HANDLED (no phantom, name kept for relink)"
+                                        : "BUG F REGRESSED (phantom IR or lost name)");
+    }
+
+    // ---- BUG G: clearSlotA and clearSlotB both canonicalise (trim→1, name cleared, status empty).
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto extf = makeExt ("orbitcab_clear.wav", 600.0f);
+        using Status = orbitcab::state::SlotIR::Status;
+        p.loadIRFromFile (extf, true);  p.setTrim (0.3f, true);  pump (120); p.clearSlotA();
+        const bool aOk = ! p.isSlotALoaded() && p.getSlotName (true).isEmpty()
+                       && std::abs (p.getTrim (true)  - 1.0f) < 1e-4f && p.getSlotIR (true).status  == Status::empty;
+        p.loadIRFromFile (extf, false); p.setTrim (0.3f, false); pump (120); p.clearSlotB();
+        const bool bOk = ! p.isSlotBLoaded() && p.getSlotName (false).isEmpty()
+                       && std::abs (p.getTrim (false) - 1.0f) < 1e-4f && p.getSlotIR (false).status == Status::empty;
+        extf.deleteFile();
+        const bool ok = aOk && bOk;
+        allPass &= ok;
+        std::printf ("BUG-G TEST: clearA ok=%d clearB ok=%d\n", aOk, bOk);
+        std::printf ("RESULT: %s\n", ok ? "CLEAR SLOT IS SYMMETRIC + CANONICAL" : "BUG G REGRESSED (asymmetric clear)");
+    }
+
+    // ---- RECENTS: switching to a preset must NOT wipe the accumulated user-IR list.
+    //      (Open a folder → it shows in the slot menu; load a preset → the folder must stay.)
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto extf = makeExt ("orbitcab_recent.wav", 720.0f);
+        p.addUserIR (extf);                                   // user opened a folder → recents
+        const bool had = p.getUserIRPaths().contains (extf.getFullPathName());
+        juce::MemoryBlock preset;                             // a portable preset carries NO recents
+        { OrbitCabAudioProcessor d; d.prepareToPlay (sr, block); d.getStateForPreset (preset); }
+        p.setStateInformation (preset.getData(), (int) preset.getSize()); pump (120);
+        const bool kept = p.getUserIRPaths().contains (extf.getFullPathName());
+        extf.deleteFile();
+        const bool ok = had && kept;
+        allPass &= ok;
+        std::printf ("RECENTS TEST: hadAfterOpen=%d keptAfterPreset=%d (count=%d)\n",
+                     had, kept, p.getUserIRPaths().size());
+        std::printf ("RESULT: %s\n", ok ? "RECENTS SURVIVE A PRESET LOAD"
+                                        : "BUG: PRESET LOAD WIPES THE USER-IR LIST");
     }
 
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
