@@ -50,9 +50,11 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         if      (id == 2)                                  applyDefaultPreset();      // factory
         else if (id >= 3 && id - 3 < presetFiles.size())   loadPresetFile (presetFiles[id - 3]);
     };
+    saveBtn.framed = true;                 // floppy icon, framed like the A/B/C/D + trash group
     saveBtn.onClick = [this] { saveCurrentPreset(); };
     saveBtn.setTooltip ("Save changes to the current preset (disabled for the factory Default — use Save As)");
     addAndMakeVisible (saveBtn);
+    saveAsBtn.framed = true;
     saveAsBtn.onClick = [this] { promptSavePreset (nextCopyName (processorRef.presetMeta().name)); };
     saveAsBtn.setTooltip ("Save as a new preset in the library");
     addAndMakeVisible (saveAsBtn);
@@ -61,6 +63,10 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     // first-start Default immediately read as "Default *". (The processor already captured one
     // on construction; this is a no-op safety net.)
     processorRef.ensureBaselineCaptured();
+
+    // Keyboard: 1/2/3/4 recall snapshot A/B/C/D. Want focus so the editor receives key events
+    // (a bubbled key from a child lands here); some hosts forward keys, some don't.
+    setWantsKeyboardFocus (true);
 
     // Export / Import a .orbitcab preset file (IR embedded). Icon-only buttons, right of Save.
     exportBtn.setTooltip ("Export preset to a .orbitcab file (IR included)");
@@ -117,15 +123,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         b.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xff8a8a92));
         b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black);
         b.setColour (OrbitCabLookAndFeel::accentBorderColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
-        b.setTooltip ("Snapshot " + juce::String (snapNames[i]));
-        b.onClick = [this, i]
-        {
-            processorRef.switchToSnapshot (i);
-            slots[0].syncFromProcessor();          // recall may have swapped the IRs / refs
-            slots[1].syncFromProcessor();
-            pushFiltersToWave();
-            updateSnapshotButtons();
-        };
+        b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1) + ")");
+        b.onClick = [this, i] { switchSnapshot (i); };
         addAndMakeVisible (b);
     }
     updateSnapshotButtons();
@@ -376,6 +375,30 @@ void OrbitCabAudioProcessorEditor::updateSnapshotButtons()
     const int a = processorRef.getActiveSnapshot();
     for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
         snapBtn[i].setToggleState (i == a, juce::dontSendNotification);
+}
+
+void OrbitCabAudioProcessorEditor::switchSnapshot (int i)
+{
+    // Recall register i (the processor captures the live state into the active register first),
+    // then re-sync the editor — shared by the A/B/C/D buttons and the 1-4 keyboard shortcuts.
+    processorRef.switchToSnapshot (i);
+    slots[0].syncFromProcessor();          // recall may have swapped the IRs / refs
+    slots[1].syncFromProcessor();
+    pushFiltersToWave();
+    updateSnapshotButtons();
+}
+
+bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    // 1/2/3/4 → snapshot A/B/C/D. Only the digit row (no modifiers) so it won't fight typing
+    // in a text field (a modal name prompt grabs focus anyway) or common host shortcuts.
+    for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
+        if (key == juce::KeyPress ((juce::juce_wchar) ('1' + i)))
+        {
+            switchSnapshot (i);
+            return true;
+        }
+    return false;
 }
 
 void OrbitCabAudioProcessorEditor::afterUndoRedo()
@@ -721,14 +744,16 @@ void OrbitCabAudioProcessorEditor::resized()
     auto header = r.removeFromTop (50);
     constexpr int kCtlBand = 44;
 
-    auto headerRight = header.removeFromRight (410 + 64 + 40 + 124);  // save+saveAs+trash+export+import+≈ + A/B/C/D
+    // Right cluster narrower now that Save/Save As are icons (not text) — that frees the gap
+    // on the left so undo/redo are visible again in their original spot (see leftBar below).
+    auto headerRight = header.removeFromRight (580);   // save+saveAs+trash+export+import+gear + A/B/C/D + combo
     auto rightBar    = headerRight.withSizeKeepingCentre (headerRight.getWidth(), kCtlBand);
     settingsBtn.setBounds (rightBar.removeFromRight (40).reduced (7));
     importBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
     exportBtn.setBounds   (rightBar.removeFromRight (34).reduced (5, 7));
-    trashBtn.setBounds    (rightBar.removeFromRight (40).reduced (4, 7));   // framed → grouped with Save/Save As
-    saveAsBtn.setBounds   (rightBar.removeFromRight (64).reduced (4, 7));
-    saveBtn.setBounds     (rightBar.removeFromRight (54).reduced (4, 7));
+    trashBtn.setBounds    (rightBar.removeFromRight (40).reduced (4, 7));   // framed icons, grouped
+    saveAsBtn.setBounds   (rightBar.removeFromRight (40).reduced (4, 7));
+    saveBtn.setBounds     (rightBar.removeFromRight (40).reduced (4, 7));
     // A/B/C/D compare cluster sits just left of the preset combo (between it and the title)
     auto snapArea = rightBar.removeFromLeft (124).reduced (6, 8);
     const int sw = snapArea.getWidth() / OrbitCabAudioProcessor::kNumSnapshots;

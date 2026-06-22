@@ -48,6 +48,7 @@ private:
     using BAtt  = APVTS::ButtonAttachment;
 
     void timerCallback() override;
+    bool keyPressed (const juce::KeyPress& key) override;   // 1/2/3/4 → A/B/C/D snapshot switch
 
     void pushFiltersToWave();                 // push both SlotComponents' wave overlays
     void snapMixToCentre();                   // MIX param -> centre (B's first IR load hook)
@@ -73,8 +74,8 @@ private:
     SlotComponent slots[2] { { processorRef, 0 }, { processorRef, 1 } };
 
     // header
-    juce::TextButton      saveBtn   { "Save" };
-    juce::TextButton      saveAsBtn { "Save As" };
+    IconButton            saveBtn   { IconButton::Kind::save };          // write back to the current user preset
+    IconButton            saveAsBtn { IconButton::Kind::saveAs };        // fork a new named preset
     IconButton            exportBtn { IconButton::Kind::exportFile };   // ↑ export .orbitcab (IR inside)
     IconButton            importBtn { IconButton::Kind::importFile };   // ↓ import .orbitcab
     IconButton            trashBtn  { IconButton::Kind::trash };        // delete current user preset (factory: disabled)
@@ -83,6 +84,7 @@ private:
     IconButton            settingsBtn { IconButton::Kind::settings };       // gear → settings pop-over
     juce::TextButton      snapBtn[OrbitCabAudioProcessor::kNumSnapshots];   // A/B/C/D compare registers
     void updateSnapshotButtons();                                       // reflect the active register
+    void switchSnapshot (int i);                                        // recall register i + re-sync (click or 1-4 key)
     void afterUndoRedo();                                               // re-sync UI after undo/redo
     juce::ComboBox        presetBox;
     std::unique_ptr<juce::Drawable> logo;  // Darwin's Cat mark (drawn inside HeaderBrand)

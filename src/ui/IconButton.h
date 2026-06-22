@@ -16,7 +16,7 @@
 class IconButton final : public juce::Button
 {
 public:
-    enum class Kind { exportFile, importFile, undo, redo, settings, trash };
+    enum class Kind { exportFile, importFile, undo, redo, settings, trash, save, saveAs };
 
     explicit IconButton (Kind k) : juce::Button ("icon"), kind (k)
     {
@@ -79,6 +79,12 @@ public:
             buildTrash (p);
             g.strokePath (p, stroke, t);
         }
+        else if (kind == Kind::save || kind == Kind::saveAs)
+        {
+            juce::Path p;
+            buildFloppy (p, kind == Kind::saveAs);          // floppy; saveAs adds a "+" (new copy)
+            g.strokePath (p, stroke, t);
+        }
         else
         {
             juce::Path p;
@@ -116,6 +122,25 @@ private:
         p.startNewSubPath (10.0f, 10.0f); p.lineTo (10.0f, 18.0f);              // ribs
         p.startNewSubPath (12.0f, 10.0f); p.lineTo (12.0f, 18.0f);
         p.startNewSubPath (14.0f, 10.0f); p.lineTo (14.0f, 18.0f);
+    }
+
+    static void buildFloppy (juce::Path& p, bool plus)
+    {
+        // Floppy-disk "save": body with a cut top-right corner + a shutter slot up top. The
+        // plain save adds a label panel below; saveAs replaces it with a "+" (save a new copy).
+        p.startNewSubPath (4.0f, 4.0f);  p.lineTo (15.0f, 4.0f); p.lineTo (20.0f, 9.0f);
+        p.lineTo (20.0f, 20.0f);         p.lineTo (4.0f, 20.0f); p.closeSubPath();                    // body
+        p.startNewSubPath (8.0f, 4.0f);  p.lineTo (8.0f, 8.5f);  p.lineTo (14.0f, 8.5f); p.lineTo (14.0f, 4.0f);  // shutter
+        if (plus)
+        {
+            p.startNewSubPath (12.0f, 12.5f); p.lineTo (12.0f, 18.5f);                                // +
+            p.startNewSubPath (9.0f, 15.5f);  p.lineTo (15.0f, 15.5f);
+        }
+        else
+        {
+            p.startNewSubPath (7.0f, 20.0f); p.lineTo (7.0f, 13.0f);
+            p.lineTo (17.0f, 13.0f);         p.lineTo (17.0f, 20.0f);                                 // label panel
+        }
     }
 
     static void buildGear (juce::Path& p)
