@@ -848,10 +848,12 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
             presetIsFactory = false;
         }
 
-        // Recents (session-only; a portable preset carries none → cleared).
-        userIRPaths.clear();
+        // Recents are a GLOBAL accumulator — only REPLACE them when the incoming state
+        // actually carries a list. A full session does (→ restore it); a portable preset does
+        // NOT, so loading a preset must PRESERVE the user's accumulated folders, not wipe them.
         if (root.hasProperty ("userIRs"))
         {
+            userIRPaths.clear();
             userIRPaths.addLines (root.getProperty ("userIRs").toString());
             userIRPaths.removeEmptyStrings();
         }
@@ -934,11 +936,11 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     else if (xml->hasTagName (apvts.state.getType()))
     {
         // pre-v3: just the PARAMS tree (no IR info) → params only, both slots empty.
+        // (Recents are a global accumulator and pre-v3 carries none → leave them untouched.)
         currentMeta = orbitcab::PresetMeta();
         presetBaselineFingerprint.clear();
         presetIsFactory = false;
         embeddedIRs.clear();
-        userIRPaths.clear();
         orbitcab::state::Workspace w;
         w.live.params = root.createCopy();
         migratedLegacy = true;

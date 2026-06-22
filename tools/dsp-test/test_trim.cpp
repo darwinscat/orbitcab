@@ -627,6 +627,26 @@ int main()
         std::printf ("RESULT: %s\n", ok ? "CLEAR SLOT IS SYMMETRIC + CANONICAL" : "BUG G REGRESSED (asymmetric clear)");
     }
 
+    // ---- RECENTS: switching to a preset must NOT wipe the accumulated user-IR list.
+    //      (Open a folder → it shows in the slot menu; load a preset → the folder must stay.)
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto extf = makeExt ("orbitcab_recent.wav", 720.0f);
+        p.addUserIR (extf);                                   // user opened a folder → recents
+        const bool had = p.getUserIRPaths().contains (extf.getFullPathName());
+        juce::MemoryBlock preset;                             // a portable preset carries NO recents
+        { OrbitCabAudioProcessor d; d.prepareToPlay (sr, block); d.getStateForPreset (preset); }
+        p.setStateInformation (preset.getData(), (int) preset.getSize()); pump (120);
+        const bool kept = p.getUserIRPaths().contains (extf.getFullPathName());
+        extf.deleteFile();
+        const bool ok = had && kept;
+        allPass &= ok;
+        std::printf ("RECENTS TEST: hadAfterOpen=%d keptAfterPreset=%d (count=%d)\n",
+                     had, kept, p.getUserIRPaths().size());
+        std::printf ("RESULT: %s\n", ok ? "RECENTS SURVIVE A PRESET LOAD"
+                                        : "BUG: PRESET LOAD WIPES THE USER-IR LIST");
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }
