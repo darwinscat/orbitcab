@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # ----------------------------------------------------------------------------
 # OrbitCab — IR Cabinet Loader plugin (C++/JUCE). Felitronics line, by Darwin's Cat.
 #
-# One CMake config builds VST3 + AU on macOS and Windows. JUCE 8 is fetched by
+# One CMake config builds VST3 + AU + CLAP on macOS and Windows. JUCE 8 is fetched by
 # CMake (FetchContent, pinned tag) — NOT vendored, NOT system-installed.
 # See docs/BUILD.md and docs/ARCHITECTURE.md.
 # ----------------------------------------------------------------------------

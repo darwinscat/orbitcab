@@ -5,10 +5,10 @@ server. Built by `.github/workflows/release.yml` (tag `vX.Y.Z` or run it manuall
 
 | Platform | Artifact | Installs to |
 |----------|----------|-------------|
-| macOS | `OrbitCab-<ver>-macOS.pkg` (`build-pkg.sh`) | `/Library/Audio/Plug-Ins/{VST3,Components}` |
-| macOS | `OrbitCab-<ver>-macOS.zip` | (manual copy — VST3 + AU bundles) |
-| Windows | `OrbitCab-<ver>-Windows-Setup.exe` (`orbitcab.iss`, Inno Setup 6) | `Common Files\VST3\OrbitCab.vst3` + `Program Files\OrbitCab\OrbitCab.exe` |
-| Windows | `OrbitCab-<ver>-Windows.zip` | (manual copy — VST3 + Standalone) |
+| macOS | `OrbitCab-<ver>-macOS.pkg` (`build-pkg.sh`) | `/Library/Audio/Plug-Ins/{VST3,Components,CLAP}` |
+| macOS | `OrbitCab-<ver>-macOS.zip` | (manual copy — VST3 + AU + CLAP bundles) |
+| Windows | `OrbitCab-<ver>-Windows-Setup.exe` (`orbitcab.iss`, Inno Setup 6) | `Common Files\{VST3\OrbitCab.vst3, CLAP\OrbitCab.clap}` + `Program Files\OrbitCab\OrbitCab.exe` |
+| Windows | `OrbitCab-<ver>-Windows.zip` | (manual copy — VST3 + CLAP + Standalone) |
 
 On a version tag (or a manual run with `dry_run=false`), `release.yml` attaches these to a
 **GitHub Release** — GitHub hosts the binaries; there's no own download server.
