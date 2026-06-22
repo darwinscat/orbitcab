@@ -1,0 +1,21 @@
+version: 2
+
+# Keeps our GitHub Actions pinned versions fresh (security + bug fixes in the
+# actions themselves). Only github-actions is covered here on purpose: our one real
+# dependency, JUCE, is fetched via CMake FetchContent at a pinned tag — Dependabot
+# does not understand FetchContent, so JUCE is bumped by hand. There is no other
+# package ecosystem to track.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # One PR for all action bumps instead of a flurry of single-action PRs.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
