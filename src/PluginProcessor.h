@@ -130,7 +130,9 @@ public:
     void loadIRFromMemory (const void* data, size_t sizeInBytes, bool slotA = true,
                            const juce::String& bundledName = {});
     void clearSlotB();                     // unload B (back to single-IR / full A)
+    void clearSlotA();                     // empty A (no cab on A → dry passthrough on that slot)
     bool isSlotBLoaded() const { return slotBLoaded.load (std::memory_order_relaxed); }
+    bool isSlotALoaded() const { return slotALoaded.load (std::memory_order_relaxed); }
 
     // TRIM: keep the slot IR's first `fraction` and reload the truncated copy.
     // Called from the editor's waveform drag (message thread); rebuilds + swaps off the
@@ -230,6 +232,7 @@ private:
     // The decoded IR + TRIM/HEAD math now live in the core's cab::IRSlot (one per slot);
     // the adapter keeps only the persisted drag position + the loaded flag. Message-thread.
     float  trimFractionA = 1.0f, trimFractionB = 1.0f;
+    std::atomic<bool> slotALoaded { true };    // false = A intentionally emptied (cleared → no cab)
     std::atomic<bool> slotBLoaded { false };
     void applyTrimAndLoad (bool slotA);
 

@@ -194,6 +194,12 @@ void SlotComponent::showIRMenu()
         subs[(size_t) g].addItem (i + 1, e.name, true, i == listIndex);
     }
 
+    // Clear THIS slot's IR (→ no cab, dry passthrough). At the very top, where you'd look to
+    // change the IR. Distinct from "Clear recent list" below (which only wipes the recents).
+    constexpr int clearSlotId = 1000001;
+    menu.addItem (clearSlotId, juce::String::fromUTF8 ("\xe2\x9c\x95  No cabinet (clear)"));
+    menu.addSeparator();
+
     for (int g = 0; g < packOrder.size(); ++g)
         if (bundledPack[(size_t) g])
             menu.addSubMenu (packOrder[g], subs[(size_t) g]);
@@ -219,15 +225,21 @@ void SlotComponent::showIRMenu()
                 menu.addSubMenu (label, subs[(size_t) g]);
             }
         menu.addSeparator();
-        menu.addItem (clearId, "Clear recent IRs");
+        menu.addItem (clearId, "Clear recent list");
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (name),
                         [this, safe = juce::Component::SafePointer<SlotComponent> (this)] (int result)
                         {
                             if (safe == nullptr) return;   // editor closed before the menu was dismissed
-                            if (result == clearId) { proc.clearUserIRs(); if (onUserIRsChanged) onUserIRsChanged(); }
-                            else if (result > 0)   selectIR (result - 1);
+                            if (result == clearSlotId)
+                            {
+                                if (isA()) proc.clearSlotA(); else proc.clearSlotB();
+                                syncFromProcessor();                       // name → "No IR", clear the waveform
+                                if (onUserIRsChanged) onUserIRsChanged();  // editor re-syncs enablement / MIX
+                            }
+                            else if (result == clearId) { proc.clearUserIRs(); if (onUserIRsChanged) onUserIRsChanged(); }
+                            else if (result > 0)        selectIR (result - 1);
                         });
 }
 
@@ -270,7 +282,7 @@ void SlotComponent::syncFromProcessor()
 {
     const bool a = isA();
 
-    if (! a && ! proc.isSlotBLoaded())
+    if (! (a ? proc.isSlotALoaded() : proc.isSlotBLoaded()))   // slot empty (no cab) → dry passthrough
     {
         name.setButtonText ("No IR / Bypass");
         wave.clearIR();
