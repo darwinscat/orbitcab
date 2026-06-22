@@ -37,8 +37,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(juce)
 
 # CLAP format via the MIT clap-juce-extensions wrapper (native CLAP is slated for JUCE 9).
-# Pinned like JUCE — bump ORBITCAB_CLAP_EXT_TAG deliberately.
-set(ORBITCAB_CLAP_EXT_TAG "main" CACHE STRING "clap-juce-extensions git tag to build against")
+# Pinned like JUCE — bump ORBITCAB_CLAP_EXT_TAG deliberately. Upstream stopped tagging in
+# 2022 (last tag 0.26.0 predates CLAP 1.0 / JUCE 6), so main is their de-facto release
+# channel; we pin a specific main commit (51a9359, 2026-06-01) for reproducible builds
+# instead of tracking the moving branch.
+set(ORBITCAB_CLAP_EXT_TAG "51a9359315298de632cf44e9d7524940868441e6" CACHE STRING "clap-juce-extensions git commit to build against")
 FetchContent_Declare(
     clap-juce-extensions
     GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
@@ -219,6 +222,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/AutoLevelerTests.cpp
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
+    tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
 )
@@ -228,6 +232,7 @@ target_compile_definitions(OrbitCab_Tests PRIVATE
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
+    juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
