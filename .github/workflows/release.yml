@@ -36,7 +36,7 @@ jobs:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 300         # Apple notarization is slow for new accounts (later: minutes)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Version
         id: v
         run: |
@@ -108,7 +108,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Version
         id: v
         shell: bash
@@ -153,7 +153,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Version
         id: v
         run: |
