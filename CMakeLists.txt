@@ -26,7 +26,7 @@ endif()
 # ----------------------------------------------------------------------------
 include(FetchContent)
 
-set(ORBITCAB_JUCE_TAG "8.0.13" CACHE STRING "JUCE git tag to build against")
+set(ORBITCAB_JUCE_TAG "8.0.14" CACHE STRING "JUCE git tag to build against")
 
 FetchContent_Declare(
     juce
