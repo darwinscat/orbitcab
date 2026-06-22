@@ -390,6 +390,53 @@ int main()
                                            : "SLOT CLEAR BROKEN");
     }
 
+    // ---- a shared preset = the ACTIVE register only; A/B/C/D + their IRs are session-only ----
+    // Load external IR1 as the live sound (register A), switch to B, load external IR2, and leave
+    // B active. The session embeds both IRs + the Snapshots node; a portable preset embeds ONLY
+    // the live/active IR (B's) and drops Snapshots — so compare IRs (often proprietary) can't leak.
+    {
+        auto mkIR = [&] (const char* nm, float freq) -> juce::File
+        {
+            auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm);
+            const int n = (int) (0.05 * sr);
+            juce::AudioBuffer<float> b (1, n);
+            for (int i = 0; i < n; ++i)
+            { const float t = (float) i / (float) sr; b.setSample (0, i, std::cos (juce::MathConstants<float>::twoPi * freq * t) * std::exp (-t * 40.0f)); }
+            f.deleteFile();
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::OutputStream> os = f.createOutputStream();
+            if (os != nullptr)
+                if (auto w = wav.createWriterFor (os, juce::AudioFormatWriter::Options{}
+                                                         .withSampleRate (sr).withNumChannels (1).withBitsPerSample (24)))
+                    w->writeFromAudioSampleBuffer (b, 0, n);   // w destroyed at end of the if → finalises the WAV
+            return f;
+        };
+        auto noSnaps  = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); return x != nullptr && x->getChildByName ("Snapshots") == nullptr; };
+        auto poolN    = [] (const juce::MemoryBlock& mb) { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); auto* p = x ? x->getChildByName ("IRPool") : nullptr; return p ? p->getNumChildElements() : (x ? 0 : -1); };
+
+        OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+        auto ir1 = mkIR ("orbitcab_live.wav", 700.0f);
+        auto ir2 = mkIR ("orbitcab_compare.wav", 1500.0f);
+        a.loadIRFromFile (ir1, true); pump (80);        // register A live sound = IR1
+        a.switchToSnapshot (1); pump (80);              // -> B
+        a.loadIRFromFile (ir2, true); pump (80);        // B's sound = IR2 (the compare IR); leave B ACTIVE
+
+        juce::MemoryBlock sess; a.getStateInformation (sess);
+        juce::MemoryBlock pres; a.getStateForPreset  (pres);
+        const bool sessSnaps = ! noSnaps (sess);        // session keeps the compare registers
+        const bool presNo    =   noSnaps (pres);        // preset drops them
+        const int  sPool = poolN (sess), pPool = poolN (pres);
+        ir1.deleteFile(); ir2.deleteFile();
+
+        // session embeds both IRs (IR1 in snapshot A + IR2 live); preset embeds only the active (B) IR
+        const bool scopeOk = sessSnaps && presNo && sPool >= 2 && pPool == 1;
+        allPass &= scopeOk;
+        std::printf ("PRESET SCOPE TEST: session(snaps=%d pool=%d) preset(noSnaps=%d pool=%d)\n",
+                     sessSnaps, sPool, presNo, pPool);
+        std::printf ("RESULT: %s\n", scopeOk ? "PRESET = ACTIVE SOUND ONLY (A/B/C/D + their IRs stay in session)"
+                                             : "PRESET SCOPE BROKEN");
+    }
+
     // ---- IRLibrary: the shared bundled-IR enumeration (de-dup) ----
     {
         const auto bundled = orbitcab::bundledIRs();

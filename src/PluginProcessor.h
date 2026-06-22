@@ -285,9 +285,11 @@ private:
     void applyStateTree (const juce::ValueTree& tree);
     void writeIRRefs (juce::ValueTree& ir) const;   // the shared per-slot IR-ref properties
 
-    // Builds the full state tree (params + IR refs + snapshots + embedded IR pool) shared by
-    // getStateInformation (session, keeps paths) and getStateForPreset (portable, paths stripped).
-    juce::ValueTree buildStateTree();
+    // Builds the state tree (params + IR refs + embedded IR pool) shared by getStateInformation
+    // (session) and getStateForPreset (portable). forPreset = true OMITS the A/B/C/D snapshots
+    // and embeds ONLY the live slots' IR audio — so a shared .orbitcab carries just the current
+    // sound, never the IRs you loaded into the compare registers (which may be proprietary).
+    juce::ValueTree buildStateTree (bool forPreset = false);
 
     // Preset identity for the live state (preset-centric model). Embedded as the <meta> child
     // by buildStateTree, restored in setStateInformation. currentIrRefs() builds the
