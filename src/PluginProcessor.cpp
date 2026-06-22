@@ -739,7 +739,7 @@ juce::String OrbitCabAudioProcessor::stateFingerprint()
 }
 
 //==============================================================================
-juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
+juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
 {
     // Wrap the parameter tree + per-slot IR references in one root so a saved
     // DAW session (or a preset) restores both the params and which IRs were loaded. Each
@@ -784,22 +784,27 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
     ir.setProperty ("userIRs",  userIRPaths.joinIntoString ("\n"), nullptr);   // user-IR history
     root.appendChild (ir, nullptr);
 
-    // A/B/C/D snapshots: the active register's true content is the live state, so capture
-    // it now; the others persist as-is (invalid = never used → empty child).
-    juce::ValueTree snaps ("Snapshots");
-    snaps.setProperty ("active", activeSnapshot, nullptr);
-    for (int i = 0; i < kNumSnapshots; ++i)
+    // A/B/C/D snapshots: a SESSION-only compare workspace, not part of a shareable preset.
+    // Omitted from a preset so its (possibly proprietary) comparison IRs never get embedded
+    // or redistributed — convention: a preset is the current sound, not the compare registers.
+    if (! forPreset)
     {
-        juce::ValueTree slot ("S");
-        const juce::ValueTree content = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
-        if (content.isValid())
-            slot.appendChild (content.createCopy(), nullptr);
-        snaps.appendChild (slot, nullptr);
+        juce::ValueTree snaps ("Snapshots");
+        snaps.setProperty ("active", activeSnapshot, nullptr);
+        for (int i = 0; i < kNumSnapshots; ++i)
+        {
+            juce::ValueTree slot ("S");
+            const juce::ValueTree content = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
+            if (content.isValid())
+                slot.appendChild (content.createCopy(), nullptr);
+            snaps.appendChild (slot, nullptr);
+        }
+        root.appendChild (snaps, nullptr);
     }
-    root.appendChild (snaps, nullptr);
 
-    // IRPool: embed the audio of every external IR referenced by the live state or
-    // any snapshot, once per unique path (deduped). base64 WAV; bundled refs are skipped.
+    // IRPool: embed the audio of every external IR referenced by the live state (and, for a
+    // session, by any snapshot), once per unique path (deduped). base64 WAV; bundled refs are
+    // skipped. A preset embeds ONLY the live slots — never the compare registers' IRs.
     {
         juce::StringArray refs;
         auto addRef = [&] (bool bundled, const juce::String& r)
@@ -807,16 +812,17 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree()
 
         addRef (slotBundledA, slotRefA);
         if (slotBLoaded.load()) addRef (slotBundledB, slotRefB);
-        for (int i = 0; i < kNumSnapshots; ++i)
-        {
-            const juce::ValueTree t = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
-            if (auto irn = t.getChildWithName ("IR"); irn.isValid())
+        if (! forPreset)
+            for (int i = 0; i < kNumSnapshots; ++i)
             {
-                addRef ((bool) irn.getProperty ("aBundled", true), irn.getProperty ("aRef").toString());
-                if ((bool) irn.getProperty ("bLoaded", false))
-                    addRef ((bool) irn.getProperty ("bBundled", true), irn.getProperty ("bRef").toString());
+                const juce::ValueTree t = (i == activeSnapshot) ? captureStateTree() : snapshots[i];
+                if (auto irn = t.getChildWithName ("IR"); irn.isValid())
+                {
+                    addRef ((bool) irn.getProperty ("aBundled", true), irn.getProperty ("aRef").toString());
+                    if ((bool) irn.getProperty ("bLoaded", false))
+                        addRef ((bool) irn.getProperty ("bBundled", true), irn.getProperty ("bRef").toString());
+                }
             }
-        }
 
         juce::ValueTree pool ("IRPool");
         for (const auto& r : refs)
@@ -843,7 +849,8 @@ void OrbitCabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 void OrbitCabAudioProcessor::getStateForPreset (juce::MemoryBlock& destData)
 {
     // Strip external-IR paths so a shared preset can't reveal the sharer's folder layout.
-    auto root = buildStateTree();
+    // forPreset=true also drops the A/B/C/D compare registers (and their embedded IR audio).
+    auto root = buildStateTree (true);
     makePortable (root);
     if (auto xml = root.createXml())
         copyXmlToBinary (*xml, destData);
