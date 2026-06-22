@@ -367,6 +367,29 @@ int main()
                                           : "PRESET-CENTRIC BROKEN");
     }
 
+    // ---- clear slot: emptying A (no cab) rides the state; a fresh instance still loads ----
+    {
+        OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+        const bool startLoaded = a.isSlotALoaded();          // default: A holds the factory cab
+        a.clearSlotA();
+        const bool clearedA = ! a.isSlotALoaded();
+        juce::MemoryBlock st; a.getStateInformation (st);
+        OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+        b.setStateInformation (st.getData(), (int) st.getSize());
+        pump (60);
+        const bool ridesEmpty = ! b.isSlotALoaded();         // empty A survived save/load
+
+        OrbitCabAudioProcessor c; c.prepareToPlay (sr, block);
+        const bool defaultLoaded = c.isSlotALoaded();        // back-compat: fresh instance keeps a cab in A
+
+        const bool clrOk = startLoaded && clearedA && ridesEmpty && defaultLoaded;
+        allPass &= clrOk;
+        std::printf ("CLEAR TEST: startLoaded=%d clearedA=%d ridesEmpty=%d defaultLoaded=%d\n",
+                     startLoaded, clearedA, ridesEmpty, defaultLoaded);
+        std::printf ("RESULT: %s\n", clrOk ? "SLOT CLEAR WORKS (empty A rides state; default still loads)"
+                                           : "SLOT CLEAR BROKEN");
+    }
+
     // ---- IRLibrary: the shared bundled-IR enumeration (de-dup) ----
     {
         const auto bundled = orbitcab::bundledIRs();

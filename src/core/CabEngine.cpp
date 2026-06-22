@@ -122,6 +122,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     }
 
     // --- map parameters onto the live smoothers ---
+    const bool aLoaded  = p.aLoaded;   // false = slot A empty (no cab) → A contributes the dry signal
     const bool bLoaded  = p.bLoaded;
     const bool hpfOn[2] = { p.slot[0].hpfOn, p.slot[1].hpfOn };
     const bool lpfOn[2] = { p.slot[0].lpfOn, p.slot[1].lpfOn };
@@ -147,7 +148,10 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         dryBuffer.copyFrom (ch, 0, buffer, ch, 0, numSamples);
 
     // --- per-slot wet path: HPF -> LPF -> Convolution (into wet[0] / wet[1]) ---
-    slot[0].processWet (wet[0], buffer, numCh, numSamples, hpfOn[0], p.slot[0].hpfHz, lpfOn[0], p.slot[0].lpfHz);
+    // Skip a slot's convolution when it's empty — its branch falls back to the dry signal
+    // below (so an empty slot = "no cab", a clean passthrough, not silence).
+    if (aLoaded)
+        slot[0].processWet (wet[0], buffer, numCh, numSamples, hpfOn[0], p.slot[0].hpfHz, lpfOn[0], p.slot[0].lpfHz);
     if (bLoaded)
         slot[1].processWet (wet[1], buffer, numCh, numSamples, hpfOn[1], p.slot[1].hpfHz, lpfOn[1], p.slot[1].lpfHz);
 
@@ -165,7 +169,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             for (int ch = 0; ch < numCh; ++ch)
             {
                 const float d  = dry[ch][n];
-                const float sA = d * (1.0f - mA) + wa[ch][n] * phA * mA;
+                const float sA = aLoaded ? d * (1.0f - mA) + wa[ch][n] * phA * mA : d;   // empty A → dry
                 const float sB = bLoaded ? d * (1.0f - mB) + wb[ch][n] * phB * mB : sA;
                 // MUTE gate is applied AFTER auto-level (#45) so the leveler measures the
                 // *ungated* wet — its makeup stays put through a toggle instead of lagging

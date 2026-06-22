@@ -32,6 +32,7 @@ struct Params
     float mixAB01      = 0.0f;   // 0 = slot A, 1 = slot B (the "mixAB" param / 100)
     bool  bypass       = false;
     bool  autoLevel    = true;
+    bool  aLoaded      = true;   // slot A has an IR; false = empty (no cab → dry passthrough on A)
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)
 
     SlotParams slot[2];          // [0] = A, [1] = B

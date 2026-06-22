@@ -56,6 +56,19 @@ struct CabEngineTest : juce::UnitTest
             expect (maxAbsDiff (buf, ref) < 1.0e-6f, "dry path altered the signal");
         }
 
+        beginTest ("empty slot A (aLoaded=false) => dry passthrough, not silence");
+        {
+            // The "no cabinet" contract: an empty slot must output the DRY signal (clean
+            // passthrough), never silence — and never read a stale wet[] buffer. FULL wet on A
+            // + no IR loaded: with the slot empty the wet branch must be skipped entirely.
+            Params p; p.autoLevel = false; p.aLoaded = false; p.slot[0].dryWet01 = 1.0f;
+            CabEngine e; e.prepare (sr, block, 2, p);   // note: no setSlotOriginalIR → A is empty
+            juce::AudioBuffer<float> buf (2, block); fillRamp (buf);
+            juce::AudioBuffer<float> ref; ref.makeCopyOf (buf);
+            run (e, buf, p);
+            expect (maxAbsDiff (buf, ref) < 1.0e-5f, "empty slot A should pass the dry signal through unchanged");
+        }
+
         beginTest ("bypass returns the input untouched");
         {
             Params p; p.bypass = true;

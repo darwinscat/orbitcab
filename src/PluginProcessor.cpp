@@ -132,7 +132,11 @@ void OrbitCabAudioProcessor::prepareToPlay (double sampleRate, int maximumExpect
     // prepareToPlay, so only load the bundled default when no IR has been set yet; otherwise
     // re-apply what's already there (a restored session) instead of clobbering it.
     if (! engine.slotHasOriginal (0))
-        loadBundledIR();
+    {
+        if (slotALoaded.load())      // A should hold a cab but its original is gone → (re)load default
+            loadBundledIR();
+        // else: A was intentionally cleared (no cab) → leave it empty
+    }
     else
         applyTrimAndLoad (true);
     if (slotBLoaded.load() && engine.slotHasOriginal (1))
@@ -177,8 +181,7 @@ bool OrbitCabAudioProcessor::loadIRFromReader (std::unique_ptr<juce::AudioFormat
                               decoded.getNumChannels(), n, srLoaded);
     (slotA ? trimFractionA : trimFractionB) = 1.0f;             // new IR => full length
     (slotA ? slotNameA : slotNameB).clear();                   // display name derives from the ref/file unless restore overrides it
-    if (! slotA)
-        slotBLoaded.store (true, std::memory_order_relaxed);
+    (slotA ? slotALoaded : slotBLoaded).store (true, std::memory_order_relaxed);   // this slot now holds a cab
 
     applyTrimAndLoad (slotA);
     return true;
@@ -331,6 +334,17 @@ void OrbitCabAudioProcessor::clearSlotB()
     slotBundledB = false;
 }
 
+void OrbitCabAudioProcessor::clearSlotA()
+{
+    // Empty A (no cab): process feeds the dry signal through A when !aLoaded — a clean
+    // passthrough, not silence. Mirrors clearSlotB; A and B may both be empty → fully dry.
+    slotALoaded.store (false, std::memory_order_relaxed);
+    engine.clearSlotOriginal (0);
+    slotRefA.clear();
+    slotBundledA = false;
+    trimFractionA = 1.0f;
+}
+
 void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
 {
     // user-IR history — only when present (snapshot trees omit it, so recalling
@@ -342,13 +356,18 @@ void OrbitCabAudioProcessor::restoreIRsFromTree (const juce::ValueTree& ir)
         userIRPaths.removeEmptyStrings();
     }
 
-    // Slot A — bundled name / embedded bytes / file on disk (loadIRRef picks the source).
+    // Slot A — load it unless the state marks A empty (aLoaded=false) or carries no ref.
+    // Back-compat: pre-clear states have no "aLoaded" property → default true → load as before.
     const juce::String aRef = ir.getProperty ("aRef").toString();
-    if (aRef.isNotEmpty())
+    if ((bool) ir.getProperty ("aLoaded", true) && aRef.isNotEmpty())
     {
         loadIRRef (aRef, (bool) ir.getProperty ("aBundled", true), true);
         slotNameA = ir.getProperty ("aName", {}).toString();   // portable-preset display name (empty in sessions)
         setTrim ((float) ir.getProperty ("aTrim", 1.0f), true);
+    }
+    else
+    {
+        clearSlotA();
     }
 
     // Slot B
@@ -375,6 +394,7 @@ void OrbitCabAudioProcessor::writeIRRefs (juce::ValueTree& ir) const
 {
     // The per-slot IR references — shared by the session tree (buildStateTree) and the
     // A/B/C/D snapshots (captureStateTree) so the two can't drift.
+    ir.setProperty ("aLoaded",  slotALoaded.load(), nullptr);
     ir.setProperty ("aBundled", slotBundledA,      nullptr);
     ir.setProperty ("aRef",     slotRefA,          nullptr);
     ir.setProperty ("aTrim",    trimFractionA,     nullptr);
@@ -560,6 +580,7 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.mixAB01      = mixABParam->load() * 0.01f;
     p.bypass       = bypassParam->load()    > 0.5f;
     p.autoLevel    = autoLevelParam->load() > 0.5f;
+    p.aLoaded      = slotALoaded.load (std::memory_order_relaxed);
     p.bLoaded      = slotBLoaded.load (std::memory_order_relaxed);
     for (int i = 0; i < 2; ++i)
     {
