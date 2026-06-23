@@ -15,6 +15,7 @@
 #include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
 #include "PresetManager.h"
+#include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
 #include <array>
 #include <vector>
@@ -60,7 +61,8 @@ private:
     void promptSavePreset (const juce::String& initialName = {});   // Save As: prompt a name → fork (re-prompts on a name clash)
     void saveCurrentPreset();           // Save: write back to the current user preset, else Save As
     void loadPresetFile (const juce::File&);
-    void applyDefaultPreset();          // factory "Default": IR 16 + HPF, single box (read-only)
+    void loadFactoryPreset (const orbitcab::FactoryPreset&);   // load a bundled read-only factory preset
+    void applyDefaultPreset();          // first-start / reset → the bundled default (Roche Limit)
     void exportPreset();                // → .orbitcab at a chosen location (IR embedded)
     void importPreset();                // ← .orbitcab from disk
     void deleteCurrentPreset();         // move the current user preset to the Trash (factory/none: no-op)
@@ -144,7 +146,8 @@ private:
     juce::Rectangle<int> mixStripBounds, inBlockBounds, outBlockBounds;
 
     orbitcab::PresetManager presets { processorRef };   // preset file/state I/O
-    juce::Array<juce::File> presetFiles;                 // combo id -> file (3+); UI mapping
+    juce::Array<juce::File> presetFiles;                 // combo id -> user file (1000+); UI mapping
+    std::vector<orbitcab::FactoryPreset> factoryList;    // combo id -> bundled factory preset (100+)
     std::unique_ptr<juce::AlertWindow> saveDialog;
     std::unique_ptr<juce::FileChooser> chooser;
     // Cache so the 30 Hz timer only re-touches the combo when the shown preset / dirty changes.

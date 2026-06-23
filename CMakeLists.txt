@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 1.2.1 LANGUAGES C CXX)
+project(OrbitCab VERSION 1.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -100,6 +100,11 @@ target_sources(OrbitCab PRIVATE
 # The editor enumerates these at runtime via BinaryData::namedResourceList — adding
 # a row here is all it takes to surface a new IR in the browser (no code change).
 # ----------------------------------------------------------------------------
+# Factory presets — every .orbitcab in resources/presets/ is embedded + shipped read-only
+# (enumerated at runtime via BinaryData; the default first-start preset is "Roche Limit").
+# CONFIGURE_DEPENDS re-globs on build, so dropping a new preset in that folder ships it.
+file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/presets/*.orbitcab")
+
 juce_add_binary_data(OrbitCabData
     SOURCES
         # Brutal pack (mod. Behringer BG412S — V30 / Rockdriver Jr / DV-77)
@@ -129,6 +134,8 @@ juce_add_binary_data(OrbitCabData
         resources/brand/logo-darwinscat.svg
         # Wordmark font — Michroma (OFL), embedded for the "rbitCab" header mark
         resources/fonts/Michroma-Regular.ttf
+        # Factory presets (.orbitcab) — see the glob above
+        ${ORBITCAB_PRESET_FILES}
 )
 
 target_compile_definitions(OrbitCab PUBLIC
