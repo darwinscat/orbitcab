@@ -100,6 +100,11 @@ target_sources(OrbitCab PRIVATE
 # The editor enumerates these at runtime via BinaryData::namedResourceList — adding
 # a row here is all it takes to surface a new IR in the browser (no code change).
 # ----------------------------------------------------------------------------
+# Factory presets — every .orbitcab in resources/presets/ is embedded + shipped read-only
+# (enumerated at runtime via BinaryData; the default first-start preset is "Roche Limit").
+# CONFIGURE_DEPENDS re-globs on build, so dropping a new preset in that folder ships it.
+file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/presets/*.orbitcab")
+
 juce_add_binary_data(OrbitCabData
     SOURCES
         # Brutal pack (mod. Behringer BG412S — V30 / Rockdriver Jr / DV-77)
@@ -129,6 +134,8 @@ juce_add_binary_data(OrbitCabData
         resources/brand/logo-darwinscat.svg
         # Wordmark font — Michroma (OFL), embedded for the "rbitCab" header mark
         resources/fonts/Michroma-Regular.ttf
+        # Factory presets (.orbitcab) — see the glob above
+        ${ORBITCAB_PRESET_FILES}
 )
 
 target_compile_definitions(OrbitCab PUBLIC

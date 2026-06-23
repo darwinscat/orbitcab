@@ -6,6 +6,7 @@
 // measures where the output decays to silence. If trim works, the 25% tail is much shorter.
 #include "../../src/PluginProcessor.h"
 #include "../../src/IRLibrary.h"
+#include "../../src/FactoryPresets.h"   // kDefaultPresetName (the bundled first-start default)
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <cstdio>
 #include <cmath>
@@ -312,15 +313,15 @@ int main()
                                                : "HEADTRIM MIGRATION BROKEN");
     }
 
-    // ---- preset-centric model: factory Default + dirty tracking + persistence ----
-    // First start IS the read-only factory "Default" (IR #16 + HPF), clean. Editing dirties
+    // ---- preset-centric model: factory default + dirty tracking + persistence ----
+    // First start IS the read-only bundled default preset (Roche Limit), clean. Editing dirties
     // it; re-baselining (== Save) cleans it; and both the dirty state and the factory flag
-    // ride a DAW session save/load (so a dirty "Default *" survives a reload).
+    // ride a DAW session save/load (so a dirty default "*" survives a reload).
     {
         OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
-        const bool defName    = a.presetMeta().name == "Default";
+        const bool defName    = a.presetMeta().name == orbitcab::kDefaultPresetName;   // "Roche Limit"
         const bool defFactory = a.isPresetFactory();
-        const bool defIR      = a.getSlotRef (true).startsWith ("16") && a.isSlotBundled (true);
+        const bool defIR      = a.isSlotALoaded() && a.isSlotBundled (true);            // default's box I = a bundled IR
         const bool cleanStart = ! a.isPresetDirty();
 
         if (auto* q = a.apvts.getParameter ("gain")) q->setValueNotifyingHost (0.8f);   // edit a sound param
@@ -336,7 +337,7 @@ int main()
         b.setStateInformation (st.getData(), (int) st.getSize());
         pump (60);
         const bool dirtyRidesState   = b.isPresetDirty();
-        const bool factoryRidesState = b.isPresetFactory() && b.presetMeta().name == "Default";
+        const bool factoryRidesState = b.isPresetFactory() && b.presetMeta().name == orbitcab::kDefaultPresetName;
 
         // A clean Default round-trips as clean (fingerprint is stable across save/load).
         OrbitCabAudioProcessor c; c.prepareToPlay (sr, block);
@@ -669,6 +670,32 @@ int main()
 
         // restore the user's real global recents — no side effects from running this harness.
         { OrbitCabAudioProcessor s; s.prepareToPlay (sr, block); s.appPreferences().setString ("userIRs", savedRecents); }
+    }
+
+    // ---- FACTORY PRESETS: bundled, read-only; the first-start default is Roche Limit ----
+    {
+        const auto facs = orbitcab::factoryPresets();
+        const bool hasFacs    = facs.size() >= 10;
+        const bool hasDefault = orbitcab::findFactoryPreset (orbitcab::kDefaultPresetName).data != nullptr;
+
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        const bool defaultIsRoche = p.isPresetFactory() && p.presetMeta().name == orbitcab::kDefaultPresetName;
+
+        bool loadOther = false;                               // load a DIFFERENT factory preset → read-only, named, loaded
+        for (const auto& fp : facs)
+            if (fp.name != orbitcab::kDefaultPresetName)
+            {
+                p.loadFactoryPresetState (fp.data, fp.size); pump (60);
+                loadOther = p.isPresetFactory() && p.presetMeta().name == fp.name && p.isSlotALoaded() && ! p.isPresetDirty();
+                break;
+            }
+
+        const bool ok = hasFacs && hasDefault && defaultIsRoche && loadOther;
+        allPass &= ok;
+        std::printf ("FACTORY PRESETS TEST: count=%d hasDefault=%d defaultIsRoche=%d loadOther=%d\n",
+                     (int) facs.size(), hasDefault, defaultIsRoche, loadOther);
+        std::printf ("RESULT: %s\n", ok ? "FACTORY PRESETS WORK (bundled, read-only, default=Roche Limit)"
+                                        : "FACTORY PRESETS BROKEN");
     }
 
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");

@@ -95,7 +95,8 @@ public:
     // refs — the same tree snapshots/undo use), so only sound-affecting edits flip it; the
     // baseline is stamped on load/save and persisted in <meta> so a dirty "Default *" survives
     // a DAW session reload. All message-thread (editor / state restore).
-    void applyFactoryDefault();                            // establish the factory Default (params + IR #16 + HPF)
+    void applyFactoryDefault();                            // first-start / reset: load the bundled default (Roche Limit)
+    void loadFactoryPresetState (const void* data, int size);   // load a bundled read-only factory preset (editor Factory section)
     void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); }
     bool isPresetDirty()          { return presetBaselineFingerprint.isNotEmpty() && stateFingerprint() != presetBaselineFingerprint; }
     void ensureBaselineCaptured() { if (presetBaselineFingerprint.isEmpty()) captureBaseline(); }

@@ -47,8 +47,9 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     presetBox.onChange = [this]
     {
         const int id = presetBox.getSelectedId();
-        if      (id == 2)                                  applyDefaultPreset();      // factory
-        else if (id >= 3 && id - 3 < presetFiles.size())   loadPresetFile (presetFiles[id - 3]);
+        if      (id == 2)                                             applyDefaultPreset();                                  // Default (= the bundled default)
+        else if (id >= 100  && id - 100  < (int) factoryList.size())  loadFactoryPreset (factoryList[(size_t) (id - 100)]);  // OrbitCab bank
+        else if (id >= 1000 && id - 1000 < presetFiles.size())        loadPresetFile (presetFiles[id - 1000]);              // User
     };
     saveBtn.framed = true;                 // floppy icon, framed like the A/B/C/D + trash group
     saveBtn.onClick = [this] { saveCurrentPreset(); };
@@ -452,14 +453,32 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
 {
     presetFiles.clear();
     presetBox.clear (juce::dontSendNotification);
-    presetBox.addItem ("Default", 2);                  // FACTORY section (read-only)
 
-    auto files = presets.list();                       // USER section
-    if (! files.isEmpty())
+    // FACTORY section (read-only, bundled). "Default" (id 2) is an alias to the bundled default
+    // (kDefaultPresetName); the rest live in the "OrbitCab" submenu (ids 100+ = factoryList index).
+    // ComboBox::getItemForId searches the menu recursively, so submenu items select/display fine.
+    // (Future: bucket into more banks — e.g. a "Darwin's Cat" submenu — by a meta field.)
+    factoryList = orbitcab::factoryPresets();
+    presetBox.addItem ("Default", 2);
+    juce::PopupMenu orbitcabBank;
+    for (int i = 0; i < (int) factoryList.size(); ++i)
+        if (factoryList[(size_t) i].name != orbitcab::kDefaultPresetName)   // the default shows once, as "Default"
+            orbitcabBank.addItem (100 + i, factoryList[(size_t) i].name);
+    presetBox.getRootMenu()->addSubMenu ("OrbitCab", orbitcabBank);
+
+    // USER section (ids 1000+). Hide any user file whose name matches a bundled factory preset —
+    // factory takes precedence, so the author's own copies of now-shipped presets don't double up.
+    juce::StringArray facNames;
+    for (const auto& fp : factoryList) facNames.add (fp.name);
+    juce::Array<juce::File> userFiles;
+    for (const auto& f : presets.list())
+        if (! facNames.contains (f.getFileNameWithoutExtension()))
+            userFiles.add (f);
+    if (! userFiles.isEmpty())
     {
         presetBox.addSeparator();                      // factory ──────── user
-        int id = 3;                                    // 1 = current-external, 2 = Default, 3+ = user files
-        for (const auto& f : files)
+        int id = 1000;                                 // 1 = current-external, 100+ = factory, 1000+ = user files
+        for (const auto& f : userFiles)
         {
             presetFiles.add (f);
             presetBox.addItem (f.getFileNameWithoutExtension(), id++);
@@ -496,14 +515,16 @@ void OrbitCabAudioProcessorEditor::promptSavePreset (const juce::String& initial
             if (result != 1 || name.isEmpty())
                 return;
 
-            // Never shadow the factory name, and never silently overwrite an existing preset:
-            // show an error and re-prompt (prefilled) so the user picks a different name.
-            const bool reserved = name.equalsIgnoreCase ("Default");
+            // Never shadow a factory preset name, and never silently overwrite an existing user
+            // preset: show an error and re-prompt (prefilled) so the user picks a different name.
+            bool reserved = false;
+            for (const auto& fp : factoryList)
+                if (name.equalsIgnoreCase (fp.name)) { reserved = true; break; }
             const auto target   = orbitcab::PresetManager::directory()
                                       .getChildFile (juce::File::createLegalFileName (name) + ".orbitcab");
             if (reserved || target.existsAsFile())
             {
-                const juce::String msg = (reserved ? juce::String ("\"Default\" is the factory preset name.")
+                const juce::String msg = (reserved ? "\"" + name + "\" is a factory preset name."
                                                    : "A preset named \"" + name + "\" already exists.")
                                          + "\nChoose a different name.";
                 saveDialog = std::make_unique<juce::AlertWindow> ("Name already in use", msg,
@@ -536,6 +557,21 @@ void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
     pushFiltersToWave();
     updateSnapshotButtons();
     refreshPresets();                              // rebuild (adds/removes the external slot) + select
+}
+
+void OrbitCabAudioProcessorEditor::loadFactoryPreset (const orbitcab::FactoryPreset& p)
+{
+    // Bundled read-only preset: the processor loads it + forces the factory flag; then re-sync the
+    // editor. No backing file (Save disabled; Save As forks). updatePresetDisplay selects it by name.
+    processorRef.loadFactoryPresetState (p.data, p.size);
+    loadedPresetFile = juce::File();
+    slots[0].rebuildList();
+    slots[1].rebuildList();
+    slots[0].syncFromProcessor();
+    slots[1].syncFromProcessor();
+    pushFiltersToWave();
+    updateSnapshotButtons();
+    refreshPresets();
 }
 
 void OrbitCabAudioProcessorEditor::exportPreset()
@@ -696,17 +732,27 @@ void OrbitCabAudioProcessorEditor::updatePresetDisplay()
 
     int          id   = 1;                                   // 1 = current external / "(Custom)"
     juce::String base = name.isNotEmpty() ? name : "(Custom)";
-    if (processorRef.isPresetFactory())                      // factory is the FLAG, not the name
+    if (processorRef.isPresetFactory())                      // a bundled factory preset
     {
-        id = 2;
-        base = "Default";
+        if (name == orbitcab::kDefaultPresetName)            // the default shows as "Default" (id 2)
+        {
+            id   = 2;
+            base = "Default";
+        }
+        else                                                 // the rest live in the OrbitCab bank (ids 100+)
+            for (int i = 0; i < (int) factoryList.size(); ++i)
+                if (factoryList[(size_t) i].name == name)
+                {
+                    id = 100 + i;
+                    break;
+                }
     }
-    else
+    else                                                     // a user library file (ids 1000+)
     {
         for (int i = 0; i < presetFiles.size(); ++i)
             if (presetFiles[i].getFileNameWithoutExtension() == name)
             {
-                id = i + 3;
+                id = 1000 + i;
                 break;
             }
     }
