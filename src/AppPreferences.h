@@ -55,6 +55,19 @@ public:
         if (auto* s = file()) { s->setValue (key, value); s->saveIfNeeded(); }
     }
 
+    // Same, for a small string pref (e.g. the recent-IR list, joined with newlines) —
+    // makes the recents a per-machine accumulator shared across instances, not session state.
+    juce::String getString (juce::StringRef key, const juce::String& defaultValue = {}) const
+    {
+        if (auto* s = file()) return s->getValue (key, defaultValue);
+        return defaultValue;
+    }
+
+    void setString (juce::StringRef key, const juce::String& value)
+    {
+        if (auto* s = file()) { s->setValue (key, value); s->saveIfNeeded(); }
+    }
+
     // Raw PropertiesFile access for richer needs (the UpdateChecker's string tag +
     // epoch + removeValue). Logically const — getUserSettings() is non-const in JUCE.
     juce::PropertiesFile* file() const

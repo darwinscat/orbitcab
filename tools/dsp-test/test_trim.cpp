@@ -627,24 +627,48 @@ int main()
         std::printf ("RESULT: %s\n", ok ? "CLEAR SLOT IS SYMMETRIC + CANONICAL" : "BUG G REGRESSED (asymmetric clear)");
     }
 
-    // ---- RECENTS: switching to a preset must NOT wipe the accumulated user-IR list.
-    //      (Open a folder → it shows in the slot menu; load a preset → the folder must stay.)
+    // ---- RECENTS are a GLOBAL per-machine list (AppPreferences), NOT session state. Both checks
+    //      touch the REAL global prefs, so snapshot + restore them — this harness must not clobber
+    //      the user's actual recent-IR list.
     {
-        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
-        auto extf = makeExt ("orbitcab_recent.wav", 720.0f);
-        p.addUserIR (extf);                                   // user opened a folder → recents
-        const bool had = p.getUserIRPaths().contains (extf.getFullPathName());
-        juce::MemoryBlock preset;                             // a portable preset carries NO recents
-        { OrbitCabAudioProcessor d; d.prepareToPlay (sr, block); d.getStateForPreset (preset); }
-        p.setStateInformation (preset.getData(), (int) preset.getSize()); pump (120);
-        const bool kept = p.getUserIRPaths().contains (extf.getFullPathName());
-        extf.deleteFile();
-        const bool ok = had && kept;
-        allPass &= ok;
-        std::printf ("RECENTS TEST: hadAfterOpen=%d keptAfterPreset=%d (count=%d)\n",
-                     had, kept, p.getUserIRPaths().size());
-        std::printf ("RESULT: %s\n", ok ? "RECENTS SURVIVE A PRESET LOAD"
-                                        : "BUG: PRESET LOAD WIPES THE USER-IR LIST");
+        juce::String savedRecents;
+        { OrbitCabAudioProcessor s; s.prepareToPlay (sr, block); savedRecents = s.appPreferences().getString ("userIRs"); }
+
+        // (1) switching to a preset must NOT wipe the accumulated user-IR list.
+        {
+            OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+            auto extf = makeExt ("orbitcab_recent.wav", 720.0f);
+            p.addUserIR (extf);
+            const bool had = p.getUserIRPaths().contains (extf.getFullPathName());
+            juce::MemoryBlock preset;                         // a portable preset carries NO recents
+            { OrbitCabAudioProcessor d; d.prepareToPlay (sr, block); d.getStateForPreset (preset); }
+            p.setStateInformation (preset.getData(), (int) preset.getSize()); pump (120);
+            const bool kept = p.getUserIRPaths().contains (extf.getFullPathName());
+            extf.deleteFile();
+            const bool ok = had && kept;
+            allPass &= ok;
+            std::printf ("RECENTS TEST: hadAfterOpen=%d keptAfterPreset=%d (count=%d)\n",
+                         had, kept, p.getUserIRPaths().size());
+            std::printf ("RESULT: %s\n", ok ? "RECENTS SURVIVE A PRESET LOAD"
+                                            : "BUG: PRESET LOAD WIPES THE USER-IR LIST");
+        }
+
+        // (2) recents are SYSTEM-WIDE: a freshly-inserted plugin (new instance, no session state)
+        //     must still see a folder added by a previous instance — through the global prefs.
+        {
+            auto extf = makeExt ("orbitcab_global.wav", 660.0f);
+            { OrbitCabAudioProcessor a; a.prepareToPlay (sr, block); a.addUserIR (extf); }   // A adds → persists → dies
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);                            // fresh instance B
+            const bool seen = b.getUserIRPaths().contains (extf.getFullPathName());
+            extf.deleteFile();
+            allPass &= seen;
+            std::printf ("RECENTS GLOBAL TEST: fresh instance sees prior instance's folder = %d\n", seen);
+            std::printf ("RESULT: %s\n", seen ? "RECENTS ARE SYSTEM-WIDE (survive a new instance)"
+                                              : "BUG: RECENTS NOT SYSTEM-WIDE (lost on re-insert)");
+        }
+
+        // restore the user's real global recents — no side effects from running this harness.
+        { OrbitCabAudioProcessor s; s.prepareToPlay (sr, block); s.appPreferences().setString ("userIRs", savedRecents); }
     }
 
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
