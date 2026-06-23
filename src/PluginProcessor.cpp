@@ -82,6 +82,10 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     // + store the original IR) mirrors the supported setStateInformation-before-prepareToPlay
     // path; prepareToPlay re-applies it onto the prepared engine. A host that restores a
     // session right after construction simply overwrites this in setStateInformation.
+    // Recents are a GLOBAL, per-machine accumulator (not session-scoped): seed this instance
+    // from the shared prefs so a freshly-inserted plugin already has your IR folders.
+    loadRecentsFromPrefs();
+
     applyFactoryDefault();
 
     // Poll the reload flags on the message thread. The processor is constructed (and
@@ -353,7 +357,24 @@ void OrbitCabAudioProcessor::addUserIR (const juce::File& file)
     userIRPaths.insert (0, path);
     while (userIRPaths.size() > kMaxUserIRs)
         userIRPaths.remove (userIRPaths.size() - 1);
+    persistRecents();                                     // system-wide: a new instance gets it too
     userIRRev.fetch_add (1, std::memory_order_relaxed);   // editor re-syncs both slots' lists
+}
+
+void OrbitCabAudioProcessor::persistRecents()
+{
+    // Recents are a per-machine accumulator → store in the global prefs, NOT the session state,
+    // so they survive removing + re-inserting the plugin (a fresh instance) and DAW restarts.
+    appPreferencesInstance.setString ("userIRs", userIRPaths.joinIntoString ("\n"));
+}
+
+void OrbitCabAudioProcessor::loadRecentsFromPrefs()
+{
+    userIRPaths.clear();
+    userIRPaths.addLines (appPreferencesInstance.getString ("userIRs"));
+    userIRPaths.removeEmptyStrings();
+    while (userIRPaths.size() > kMaxUserIRs)
+        userIRPaths.remove (userIRPaths.size() - 1);
 }
 
 void OrbitCabAudioProcessor::loadIRFromMemory (const void* data, size_t sizeInBytes, bool slotA,
@@ -848,14 +869,22 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
             presetIsFactory = false;
         }
 
-        // Recents are a GLOBAL accumulator — only REPLACE them when the incoming state
-        // actually carries a list. A full session does (→ restore it); a portable preset does
-        // NOT, so loading a preset must PRESERVE the user's accumulated folders, not wipe them.
+        // Recents are a GLOBAL per-machine accumulator (kept in the prefs, not the session). A
+        // session that carries a list MERGES into the global set (session entries first, then the
+        // existing global ones, deduped + capped) and is persisted back — so opening a project
+        // enriches recents (and seeds a new machine) but never wipes what's already there. A
+        // portable preset carries none → the seeded global recents are left untouched.
         if (root.hasProperty ("userIRs"))
         {
-            userIRPaths.clear();
-            userIRPaths.addLines (root.getProperty ("userIRs").toString());
-            userIRPaths.removeEmptyStrings();
+            juce::StringArray merged;
+            merged.addLines (root.getProperty ("userIRs").toString());
+            merged.removeEmptyStrings();
+            for (const auto& p : userIRPaths)
+                merged.addIfNotAlreadyThere (p);
+            while (merged.size() > kMaxUserIRs)
+                merged.remove (merged.size() - 1);
+            userIRPaths = merged;
+            persistRecents();
         }
 
         // Rehydrate the embedded-IR pool FRESH for the incoming state (never accumulate across

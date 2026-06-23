@@ -171,7 +171,7 @@ public:
     // Accumulating history of user-opened IR files. Shared by both slots,
     // deduped + capped, persisted in the state so it survives editor close / reload.
     void addUserIR (const juce::File& file);
-    void clearUserIRs() { userIRPaths.clear(); userIRRev.fetch_add (1, std::memory_order_relaxed); }
+    void clearUserIRs() { userIRPaths.clear(); persistRecents(); userIRRev.fetch_add (1, std::memory_order_relaxed); }
     const juce::StringArray& getUserIRPaths() const { return userIRPaths; }
 
     // A/B/C/D compare — 4 snapshot registers, each a full settings snapshot (both IR
@@ -274,8 +274,10 @@ private:
     float softStart      = 1.0f;
     float softStartStep  = 0.0f;
 
-    juce::StringArray userIRPaths;             // recent user-opened IRs (shared by both slots)
+    juce::StringArray userIRPaths;             // recent user-opened IRs (GLOBAL, per-machine — see AppPreferences)
     static constexpr int kMaxUserIRs = 50;
+    void persistRecents();                     // write userIRPaths to the global prefs (system-wide, survives new instances)
+    void loadRecentsFromPrefs();               // seed userIRPaths from the global prefs on construction
     void loadBundledByName (const juce::String& filename, bool slotA);
 
     // The v4 state pipeline — ONE capture/apply pair used by sessions, A/B/C/D, undo AND
