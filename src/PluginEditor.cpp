@@ -423,11 +423,30 @@ void OrbitCabAudioProcessorEditor::openSettings()
             showTubesPref = on;
             processorRef.appPreferences().setFlag ("showTubes", on);
             updateAmpRow();                                // re-flow + resize the row (tall ↔ slim strip)
+        },
+        [this]                                             // Manage library…: open the poweramp manager
+        {
+            if (settingsCallout != nullptr)
+                settingsCallout->dismiss();                // close the settings pop-over first (no nested call-outs)
+            openPowerampManager();
         });
 
     // Parent the pop-over to the editor (not the desktop) so it can't outlive the window
     // (the version call-out orphan bug, #52). areaToPointTo is in the editor's coords.
-    juce::CallOutBox::launchAsynchronously (std::move (panel), settingsBtn.getBounds(), this);
+    settingsCallout = &juce::CallOutBox::launchAsynchronously (std::move (panel), settingsBtn.getBounds(), this);
+}
+
+void OrbitCabAudioProcessorEditor::openPowerampManager()
+{
+    // The library manager: Add / Remove the user .nam captures (powerampDir). On any change it
+    // rebuilds the bottom-strip selector + re-flows the row — so adding the first model makes the
+    // whole POWERAMP UI appear, and removing the active one falls back cleanly.
+    auto mgr = std::make_unique<PowerampManager> (processorRef, [this]
+    {
+        rebuildAmpSelector();   // rescan merged library → model buttons + hasPoweramps + power-btn visibility
+        updateAmpRow();         // reveal/hide + resize to match the new library / selection
+    });
+    juce::CallOutBox::launchAsynchronously (std::move (mgr), settingsBtn.getBounds(), this);
 }
 
 //==============================================================================

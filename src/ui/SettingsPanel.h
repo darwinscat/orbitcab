@@ -29,7 +29,8 @@ public:
                    std::function<void (bool)> onSpectrum,
                    std::function<void (bool)> onWaveLog,
                    std::function<void (int)>  onWaveFloor,
-                   std::function<void (bool)> onShowTubes)
+                   std::function<void (bool)> onShowTubes,
+                   std::function<void ()>     onManageAmp)
     {
         title.setText ("Settings", juce::dontSendNotification);
         title.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -81,13 +82,20 @@ public:
                "Draw the glowing schematic tubes in the POWERAMP row. Off = just the controls.",
                std::move (onShowTubes));
 
+        // "Manage library…" → the PowerampManager pop-over (Add / Remove your .nam captures).
+        // Always present, even with an empty library — it's how the first user model gets added.
+        manageBtn.setButtonText (juce::String::fromUTF8 ("Manage library\xe2\x80\xa6"));
+        manageBtn.setTooltip ("Add or remove your poweramp captures (the .nam models the selector lists).");
+        manageBtn.onClick = [this, fn = std::move (onManageAmp)] { if (fn) fn(); };
+        addAndMakeVisible (manageBtn);
+
         // Two scopes: HEAD trim is audio-affecting and rides the DAW session; Dry/Wet +
         // Spectrum are app-wide view prefs (this computer, every instance). Caption + divide
         // so it's obvious which toggles travel with the project and which don't.
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 300);
+        setSize (264, 338);
     }
 
     void resized() override
@@ -113,6 +121,8 @@ public:
         r.removeFromTop (8);
         ampCap.setBounds (r.removeFromTop (14));
         showTubesBtn.setBounds (r.removeFromTop (26));
+        r.removeFromTop (4);
+        manageBtn.setBounds (r.removeFromTop (26).removeFromLeft (140));
     }
 
     void paint (juce::Graphics& g) override
@@ -146,6 +156,7 @@ private:
 
     juce::Label        title, sessionCap, globalCap, floorCap, ampCap;
     juce::ToggleButton head, dryWet, spectrum, waveLog, showTubesBtn;
+    juce::TextButton   manageBtn;
     juce::ComboBox     waveFloor;
     int                dividerY = 0, ampDividerY = 0;   // section dividers (set in resized(), drawn in paint())
 

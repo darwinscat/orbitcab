@@ -15,6 +15,7 @@
 #include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
 #include "ui/TubeDisplay.h"
+#include "ui/PowerampManager.h"
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
@@ -146,6 +147,8 @@ private:
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B
 
     void openSettings();         // gear → CallOutBox: HEAD / Dry-Wet / spectrum toggles
+    void openPowerampManager();  // settings "Manage library…" → PowerampManager pop-over (Add/Remove .nam)
+    juce::Component::SafePointer<juce::CallOutBox> settingsCallout;   // dismiss it when opening the manager
 
     // pre/post spectrum analyser (drawn faint inside the waveforms). `spectrumEnabled` mirrors
     // the gear-panel toggle; it's a global view preference (default on) persisted via the
