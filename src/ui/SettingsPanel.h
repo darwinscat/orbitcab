@@ -23,11 +23,13 @@ class SettingsPanel final : public juce::Component
 {
 public:
     SettingsPanel (bool headOn, bool dryWetOn, bool spectrumOn, bool waveLogOn, int waveFloorDb,
+                   bool showTubes,
                    std::function<void (bool)> onHead,
                    std::function<void (bool)> onDryWet,
                    std::function<void (bool)> onSpectrum,
                    std::function<void (bool)> onWaveLog,
-                   std::function<void (int)>  onWaveFloor)
+                   std::function<void (int)>  onWaveFloor,
+                   std::function<void (bool)> onShowTubes)
     {
         title.setText ("Settings", juce::dontSendNotification);
         title.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -72,13 +74,20 @@ public:
         };
         addAndMakeVisible (waveFloor);
 
+        // POWERAMP (NAM): the tube is picked from the bottom-strip radio cluster; this panel
+        // just carries the output level-normalisation toggle (loudness matching across tubes).
+        setCaption (ampCap, "POWERAMP (NAM)");
+        setUp (showTubesBtn, "Show tubes", showTubes,
+               "Draw the glowing schematic tubes in the POWERAMP row. Off = just the controls.",
+               std::move (onShowTubes));
+
         // Two scopes: HEAD trim is audio-affecting and rides the DAW session; Dry/Wet +
         // Spectrum are app-wide view prefs (this computer, every instance). Caption + divide
         // so it's obvious which toggles travel with the project and which don't.
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 242);
+        setSize (264, 300);
     }
 
     void resized() override
@@ -98,15 +107,21 @@ public:
         auto floorRow = r.removeFromTop (26);
         floorCap.setBounds  (floorRow.removeFromLeft (58).withTrimmedTop (6));
         waveFloor.setBounds (floorRow.removeFromLeft (98).reduced (0, 3));
+
+        r.removeFromTop (8);
+        ampDividerY = r.getY();                         // second section divider (drawn in paint())
+        r.removeFromTop (8);
+        ampCap.setBounds (r.removeFromTop (14));
+        showTubesBtn.setBounds (r.removeFromTop (26));
     }
 
     void paint (juce::Graphics& g) override
     {
+        g.setColour (juce::Colour (0x22ffffff));
         if (dividerY > 0)                               // faint rule between the two scopes
-        {
-            g.setColour (juce::Colour (0x22ffffff));
             g.fillRect (14, dividerY, getWidth() - 28, 1);
-        }
+        if (ampDividerY > 0)                            // rule above the NAM section
+            g.fillRect (14, ampDividerY, getWidth() - 28, 1);
     }
 
 private:
@@ -129,10 +144,10 @@ private:
         addAndMakeVisible (l);
     }
 
-    juce::Label        title, sessionCap, globalCap, floorCap;
-    juce::ToggleButton head, dryWet, spectrum, waveLog;
+    juce::Label        title, sessionCap, globalCap, floorCap, ampCap;
+    juce::ToggleButton head, dryWet, spectrum, waveLog, showTubesBtn;
     juce::ComboBox     waveFloor;
-    int                dividerY = 0;   // y of the section divider (set in resized(), drawn in paint())
+    int                dividerY = 0, ampDividerY = 0;   // section dividers (set in resized(), drawn in paint())
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)
 };

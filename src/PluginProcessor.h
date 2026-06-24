@@ -8,6 +8,7 @@
 
 #include "core/CabEngine.h"
 #include "AppPreferences.h"
+#include "PowerampLibrary.h"
 #include "UpdateChecker.h"
 #include "Metadata.h"
 #include "StateModel.h"
@@ -134,6 +135,21 @@ public:
                            const juce::String& bundledName = {});
     void clearSlotB();                     // unload B (back to single-IR / full A)
     void clearSlotA();                     // empty A (no cab on A → dry passthrough on that slot)
+
+    // POWERAMP (NAM): a neural poweramp stage in front of the cab (input → AMP → cab), gated by
+    // the `ampOn` host param. WHICH model runs is a LIBRARY SELECTION (not a host param): the
+    // merged factory (BinaryData) + user (powerampDir) library, with the chosen entry's stable id
+    // persisted as the "ampSel" state property and loaded off the audio thread (applyPoweramp).
+    //
+    // The editor hides the whole POWERAMP UI when the library is empty (a public build ships no
+    // factory captures and an untouched machine has no user folder yet).
+    std::vector<orbitcab::PowerampEntry> powerampLibrary() const;          // factory + user, merged + sorted
+    bool         hasAnyPoweramps() const { return ! powerampLibrary().empty(); }
+    juce::String selectedPowerampId() const { return apvts.state.getProperty ("ampSel", juce::String()).toString(); }
+    void         selectPoweramp (const juce::String& id);                  // set "ampSel" + reload + bump (message thread)
+    juce::File   importPoweramp (const juce::File& src);                   // copy a .nam into powerampDir; {} on failure
+    bool         removePoweramp (const juce::String& id);                  // delete a USER model (factory: no-op → false)
+
     bool isSlotBLoaded() const { return slotAudioLoaded[1].load (std::memory_order_relaxed); }
     bool isSlotALoaded() const { return slotAudioLoaded[0].load (std::memory_order_relaxed); }
 
@@ -225,6 +241,7 @@ private:
     // Input trim + bypass parameter pointers (packed into cab::Params each block).
     std::atomic<float>* inputGainParam = nullptr;
     std::atomic<float>* bypassParam    = nullptr;
+    std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
 
     // Cached raw parameter pointers — RT-safe atomic reads in processBlock. Per-slot
     // params are [0]=A, [1]=B.
@@ -265,7 +282,20 @@ private:
     void timerCallback() override;
     std::atomic<bool> pendingTrimReloadA { false };
     std::atomic<bool> pendingTrimReloadB { false };
+    std::atomic<bool> pendingPowerampReload { false };   // ampOn toggled / selection changed → reload the .nam
     std::atomic<bool> enginePrepared     { false };
+
+    // Per-model output makeup (dB) applied on top of loudness normalisation — a single flat
+    // offset for every poweramp (the measured level match for the tested rigs). Was a per-tube
+    // table; now the library is free-form, so it's one constant.
+    static constexpr float kPowerampTrimDb = 3.0f;
+
+    // Resolve "ampSel" against the merged library + load that .nam into the amp stage off the
+    // audio thread (BinaryData or file read + atomic swap). Off / empty / unresolved => clears it.
+    void applyPoweramp();
+    // Report the rate-match latency to the host (PDC). 0 unless the amp is on AND resampling
+    // (host SR != model 48k) — so it's 0 in the common 48k case (no PDC churn).
+    void updateLatency();
 
     // One-shot startup fade (#48) — a host-side cosmetic that ramps the output up from
     // silence on the first non-silent block after prepare/release, masking the engine's

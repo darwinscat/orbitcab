@@ -6,17 +6,23 @@
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
 #include <cstddef>
+#include <string>
 
 #include "Params.h"
 #include "IRSlot.h"
+#include "AmpStage.h"
 #include "AutoLeveler.h"
 #include "SpectrumTap.h"
 
 //==============================================================================
 // cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
 //
-//   per slot (A/B):  in → HPF → LPF → Convolution → Phase → Dry/Wet(blend raw input)
+//   global (front): in → [AMP (NAM)]  — optional neural amp/poweramp in front of the cab
+//   per slot (A/B):  → HPF → LPF → Convolution → Phase → Dry/Wet(blend the amp output)
 //   then:            MIX crossfades the two slot outputs → Auto-level → Output Gain
+//
+// The AMP runs before the dry tap, so the dry/wet blend + the auto-level reference are the
+// amp's output (the thing being cab'd), not the clean DI. See cab::AmpStage.
 //
 // Two cab::IRSlot instances are the per-slot channels (filters + convolver + the IR
 // buffer + trim math); cab::AutoLeveler is the wet->dry match. No JUCE GUI, no APVTS,
@@ -64,6 +70,19 @@ public:
     const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
     double slotOriginalSampleRate (int slot) const;
 
+    //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStage ----------
+    // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
+    // is pumped by the processor's 30 Hz timer to reclaim swapped-out models safely.
+    bool   loadAmpModel       (const std::string& path) { return amp.loadModelFile (path); }
+    bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f) { return amp.loadModelFromMemory (data, size, trimDb); }
+    void   clearAmpModel()                              { amp.clearModel(); }
+    void   collectAmpGarbage()                          { amp.collectGarbage(); }
+    bool   ampHasModel()         const                  { return amp.hasModel(); }
+    double ampModelSampleRate()  const                  { return amp.modelSampleRate(); }
+    double ampModelLoudness()    const                  { return amp.modelLoudness(); }
+    bool   ampModelHasLoudness() const                  { return amp.modelHasLoudness(); }
+    int    ampLatencySamples()   const                  { return amp.latencySamples(); }
+
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
@@ -73,6 +92,7 @@ public:
     double sampleRate() const { return currentSampleRate; }
 
 private:
+    AmpStage    amp;                       // optional NAM amp/poweramp, front of chain
     IRSlot      slot[2];
     AutoLeveler autoLeveler;
     juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch

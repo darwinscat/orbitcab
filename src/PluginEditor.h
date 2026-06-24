@@ -14,6 +14,7 @@
 #include "ui/SpectrumAnalyser.h"
 #include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
+#include "ui/TubeDisplay.h"
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
@@ -113,6 +114,34 @@ private:
     juce::Slider mixABSlider;
     juce::Label  mixABLabel;
     std::unique_ptr<SAtt> mixABAtt;
+
+    // POWERAMP (NAM): a "POWERAMP" power checkbox sits in the bottom strip by the version; toggling
+    // it reveals a row below (window grows by ampRowH) carrying the symbolic amp + glowing tubes, a
+    // row of model buttons, and a 3-position mode switch (PP / SE / Other) where the old 2x checkbox
+    // sat. The mode switch FILTERS the model row: PP shows only push-pull models, SE only single-
+    // ended, Other the rest. ampOn drives the gate + reveal; the chosen model is library state
+    // ("ampSel"), not a host param; the active mode is derived from the selected model's category.
+    juce::ToggleButton    ampPowerBtn { "POWERAMP" };   // it's a poweramp, not a full amp (preamp+poweramp)
+    std::unique_ptr<BAtt> ampPowerAtt;
+    TubeDisplay           tubeDisplay;          // symbolic amp + glowing tubes (count by mode: PP 2 / SE 1 / Other 0)
+    std::vector<orbitcab::PowerampEntry>           ampLib;       // cached merged library (rebuilt on add/remove)
+    std::vector<std::unique_ptr<juce::TextButton>> ampSelBtns;   // one button per library entry (shown if cat == ampCat)
+    juce::TextButton      ampCatBtn[3];          // mode switch (push-pull / single / other); labels set in the ctor
+    int  ampCat = 0;                             // active mode index: 0=PP, 1=SE, 2=Other (view filter)
+    void rebuildAmpSelector();                   // rescan the library + (re)create the model buttons
+    void setAmpCategory (int cat);               // switch the visible mode + select its first model
+    void updateAmpRow();                         // show/hide the revealed row + resize the editor
+    void syncAmpTubes();                         // reflect the "ampSel" selection onto mode/buttons/tubes
+    int  ampCatCount (int cat) const;            // how many library models fall in a mode (0 → disable that switch)
+    juce::Rectangle<int>  ampRowBounds;          // painted panel region of the revealed row
+    bool ampOnCache = false;                     // detect ampOn change on the timer (host automation)
+    bool showTubesPref = true;                   // gear "Show tubes" view pref (default on)
+    bool hasPoweramps = false;                   // library non-empty (factory or user) → show the POWERAMP UI
+
+    static int         ampCatIndex (orbitcab::PowerampCat c)   // category → switch index (0/1/2)
+    { return c == orbitcab::PowerampCat::pushPull ? 0 : c == orbitcab::PowerampCat::singleEnded ? 1 : 2; }
+    static constexpr int  kBaseHeight = 620;
+    int ampRowH() const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
 
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B
 

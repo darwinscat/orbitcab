@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+
+#pragma once
+
+#include <cstddef>
+#include <memory>
+#include <string>
+
+//==============================================================================
+// cab::AmpStage — a neural amp (NAM) stage that runs IN FRONT of the cab convolution
+// (signal path: input → AMP → cab). Same "seam" discipline as cab::Convolver: the public
+// API speaks raw float* + sizes, and the Neural Amp Modeler inference engine (Eigen +
+// nlohmann/json) is hidden in the .cpp behind a pImpl — so NAM never leaks into the rest
+// of the Core, and the dependency stays swappable.
+//
+// Threading mirrors the IR path exactly:
+//   • prepare() / loadModelFile() / clearModel() / collectGarbage() — message thread.
+//   • process() — the ONLY thing the audio thread calls. 🔴 It never allocates, locks,
+//     does IO or throws. A freshly-loaded model is atomic-swapped into the live pointer;
+//     the replaced model is parked and freed on the message thread (collectGarbage) only
+//     once the audio thread has provably stepped past it — so no use-after-free and the
+//     audio thread never deletes.
+//
+// A guitar amp is mono: process() sums the input channels to mono, runs the model once,
+// and fans the result back across every channel (the cab IR downstream can still be stereo).
+//==============================================================================
+namespace cab
+{
+
+class AmpStage
+{
+public:
+    AmpStage();
+    ~AmpStage();
+
+    // Allocate the mono scratch for this stream and (re)configure a live model for the
+    // new sample-rate / block size. Message/host thread (prepareToPlay) — never the audio
+    // thread (it can allocate + prewarm the network).
+    void prepare (double sampleRate, int maxBlock);
+    void reset();
+
+    // 🔴 RT-safe, in place. No model loaded → clean passthrough (no-op).
+    // `normalize` applies the model's loudness makeup (output normalisation) when the model
+    // carries a loudness tag — brings raw model output to a consistent reference level.
+    void process (float* const* io, int numChannels, int numSamples, bool normalize);
+
+    //--- model lifecycle (message thread) ----------------------------------------
+    // Build a NAM model from a .nam file off the audio thread and atomic-swap it in.
+    // Returns false (and leaves the current model untouched) on a bad / unsupported /
+    // non-mono file. The replaced model is reclaimed later via collectGarbage().
+    // trimDb = per-model output offset (dB) folded into the loudness-normalisation makeup.
+    bool   loadModelFile (const std::string& path, float trimDb = 0.0f);
+    bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);   // bundled .nam bytes
+    void   clearModel();
+    void   collectGarbage();          // free models retired by a swap, once audio moved past them
+
+    bool   hasModel() const;
+    double modelSampleRate() const;   // the model's expected sample rate (<= 0 if none / unknown)
+    double modelLoudness()   const;   // the model's tagged loudness in dB (0 if none / no model)
+    bool   modelHasLoudness() const;  // whether the loaded model carries a loudness tag
+    int    latencySamples()  const;   // host-rate latency from rate-matching (0 if none / not resampling)
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
+
+} // namespace cab

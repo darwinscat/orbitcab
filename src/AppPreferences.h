@@ -75,6 +75,19 @@ public:
         return const_cast<AppPreferences*> (this)->props.getUserSettings();
     }
 
+    // System-wide poweramp .nam library folder (sibling of the settings file), per-machine, shared
+    // across instances. The user's managed amp captures live here; created on first ask.
+    juce::File powerampDir() const
+    {
+        auto* s = file();
+        auto dir = (s != nullptr ? s->getFile().getParentDirectory()
+                                 : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                       .getChildFile ("Darwin's Cat").getChildFile ("OrbitCab"))
+                       .getChildFile ("Poweramps");
+        dir.createDirectory();
+        return dir;
+    }
+
 private:
     juce::ApplicationProperties props;
 

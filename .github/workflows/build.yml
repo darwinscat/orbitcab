@@ -24,7 +24,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30          # safety cap for a hung build
+    timeout-minutes: 45          # safety cap for a hung build (NAM/Eigen add cold-compile time)
     steps:
       - uses: actions/checkout@v7
 

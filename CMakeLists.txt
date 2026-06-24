@@ -50,6 +50,54 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(clap-juce-extensions)
 
 # ----------------------------------------------------------------------------
+# NeuralAmpModelerCore (NAM) — neural amp/poweramp inference, run IN FRONT of the cab
+# (input → AMP → cab). PROTOTYPE (feat/nam-poweramp-prototype). Pinned to a commit like
+# JUCE/CLAP. Only the `eigen` submodule is needed — AudioDSPTools is plugin-only and never
+# referenced by the core sources; nlohmann/json is vendored in the repo. The repo ships no
+# usable library target, so we compile NAM/*.cpp into our own static lib `nam_core`.
+# NAM_SAMPLE_FLOAT makes NAM run in float (matches JUCE's buffers — no double conversion).
+# Licences are all AGPL-compatible: NAM = MIT, Eigen = MPL-2.0, nlohmann/json = MIT
+# (recorded in THIRD_PARTY_NOTICES.md).
+# ----------------------------------------------------------------------------
+set(ORBITCAB_NAM_TAG "b5a68c3ebed5035a91d9207219346c81e8e3ce8e" CACHE STRING "NeuralAmpModelerCore commit to build against")
+FetchContent_Declare(
+    nam_core_src
+    GIT_REPOSITORY https://github.com/sdatkinson/NeuralAmpModelerCore.git
+    GIT_TAG        ${ORBITCAB_NAM_TAG}
+    GIT_SUBMODULES "Dependencies/eigen"        # eigen only — skip the AudioDSPTools submodule
+    GIT_SHALLOW    FALSE                        # a SHA checkout + submodule needs full history
+    SOURCE_SUBDIR  Dependencies/nlohmann       # no CMakeLists there → populate sources WITHOUT building NAM's own project
+)
+FetchContent_MakeAvailable(nam_core_src)
+
+add_library(nam_core STATIC
+    ${nam_core_src_SOURCE_DIR}/NAM/activations.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/container.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/conv1d.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/convnet.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/dsp.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/get_dsp.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/linear.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/lstm.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/ring_buffer.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/util.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/a2_fast.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/model.cpp
+    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/slimmable.cpp
+)
+target_compile_features(nam_core PUBLIC cxx_std_20)
+set_target_properties(nam_core PROPERTIES POSITION_INDEPENDENT_CODE ON)   # linked into the shared plugin
+target_compile_definitions(nam_core PUBLIC NAM_SAMPLE_FLOAT)              # float pipeline, propagated to consumers
+# SYSTEM so OrbitCab's strict warning flags don't fire inside the Eigen / NAM headers.
+target_include_directories(nam_core SYSTEM PUBLIC
+    ${nam_core_src_SOURCE_DIR}
+    ${nam_core_src_SOURCE_DIR}/NAM
+    ${nam_core_src_SOURCE_DIR}/NAM/wavenet
+    ${nam_core_src_SOURCE_DIR}/Dependencies/eigen
+    ${nam_core_src_SOURCE_DIR}/Dependencies/nlohmann
+)
+
+# ----------------------------------------------------------------------------
 # The plugin target.
 #
 # 4-char codes (LOCKED post-release):
@@ -89,6 +137,7 @@ target_sources(OrbitCab PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
+    src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
 )
 
 # ----------------------------------------------------------------------------
@@ -104,6 +153,11 @@ target_sources(OrbitCab PRIVATE
 # (enumerated at runtime via BinaryData; the default first-start preset is "Roche Limit").
 # CONFIGURE_DEPENDS re-globs on build, so dropping a new preset in that folder ships it.
 file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/presets/*.orbitcab")
+
+# Bundled factory power-amp NAM models (prototype): every .nam in resources/poweramps/ is
+# embedded + exposed via BinaryData, selectable from the editor's poweramp radio buttons.
+# CONFIGURE_DEPENDS re-globs on build, so dropping in the trained .nam files ships them.
+file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.nam")
 
 juce_add_binary_data(OrbitCabData
     SOURCES
@@ -136,6 +190,8 @@ juce_add_binary_data(OrbitCabData
         resources/fonts/Michroma-Regular.ttf
         # Factory presets (.orbitcab) — see the glob above
         ${ORBITCAB_PRESET_FILES}
+        # Factory power-amp NAM models (.nam) — prototype, see the glob above
+        ${ORBITCAB_POWERAMP_FILES}
 )
 
 target_compile_definitions(OrbitCab PUBLIC
@@ -147,6 +203,11 @@ target_compile_definitions(OrbitCab PUBLIC
 
 target_link_libraries(OrbitCab PRIVATE
     OrbitCabData                # the embedded IR(s) — BinaryData::* symbols
+    # NAM (prototype amp stage). WHOLE_ARCHIVE keeps NAM's architecture self-registration:
+    # wavenet/lstm/convnet register via static initializers, and a plain static-lib link drops
+    # those (unreferenced) objects, so get_dsp() finds no architecture and every load fails.
+    # CMake 3.24+ maps this to -force_load (Apple) / --whole-archive (GNU) / /WHOLEARCHIVE (MSVC).
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -170,6 +231,7 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
 )
 target_compile_definitions(orbitcab_dsp_test PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -179,6 +241,7 @@ target_compile_definitions(orbitcab_dsp_test PRIVATE
 )
 target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
+    nam_core
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -201,6 +264,7 @@ target_sources(orbitcab_fade_measure PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
 )
 target_compile_definitions(orbitcab_fade_measure PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -210,6 +274,7 @@ target_compile_definitions(orbitcab_fade_measure PRIVATE
 )
 target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabData
+    nam_core
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -227,17 +292,20 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/CabEngineTests.cpp
     tests/IRSlotTests.cpp
     tests/AutoLevelerTests.cpp
+    tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
 )
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
