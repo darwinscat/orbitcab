@@ -164,10 +164,17 @@ polls on its 30 Hz timer — so a host-driven `setStateInformation` (or any non-
 re-syncs the slot display without a push callback. Restore is transactional: a slot whose bytes
 are gone resolves to **`missing`** (shown as "⚠ name") rather than leaving the previous IR live.
 
-Root tree carries a top-level `stateVersion` (now **4**). On load, a `<Workspace>` node is v4;
-a `<Sound>` node is a v4 portable preset (registers reset); a legacy flat `<IR>` (+ optional
-`<Snapshots>`) is migrated to v4, re-keying external path/hash refs to the content id from the
-embedded `<IRPool>`. Pre-1.1 `headTrim`-absent sessions still fall back to **off**.
+Root tree carries a top-level `stateVersion` (now **5**). On load, a `<Workspace>` node is the
+current session; a `<Sound>` node is a portable preset (registers reset); a legacy flat `<IR>`
+(+ optional `<Snapshots>`) is migrated, re-keying external path/hash refs to the content id from
+the embedded `<IRPool>`. Pre-1.1 `headTrim`-absent sessions still fall back to **off**. The
+version is informational — older builds ignore unknown nodes, so v4↔v5 load both ways.
+
+v5 adds `<PowerampPool>`: the selected NAM poweramp `.nam` is embedded (deflated, ~2–3×),
+keyed by its `ampSel` id, exactly mirroring `<IRPool>` — a session embeds the live amp plus any
+A/B/C/D register's, a portable preset only the live one. On restore `applyPoweramp` prefers the
+pool, else resolves from the library, so a project is **reproducible** even on a machine without
+that capture (or a public build with no factory amps).
 
 Two non-param settings ride alongside the APVTS params:
 

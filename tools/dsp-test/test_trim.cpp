@@ -753,11 +753,42 @@ int main()
             const bool bEmbeds  = b.exportEmbedsAmp();                // re-armed from the pool on the fresh instance
             const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;   // deflate actually compressed
 
-            const bool ampOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam && selRides && bEmbeds && shrank;
+            // the loaded amp renders cleanly in the full chain (finite — no NaN/Inf from the model
+            // or the rate-matcher). Proves the embedded model actually runs, not just deserialises.
+            bool rendersClean = true;
+            {
+                juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+                for (int k = 0; k < 24; ++k)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                    b.processBlock (bb, mm);
+                    for (int ch = 0; ch < 2 && rendersClean; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            if (! std::isfinite (bb.getSample (ch, i))) { rendersClean = false; break; }
+                }
+            }
+
+            // v4 back-compat: a save WITHOUT a <PowerampPool> (an older state, or a stripped one)
+            // must still resolve the amp from the library — the pool is an add-on, not a requirement.
+            bool v4Compat = false;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+            {
+                if (auto* pool = x->getChildByName ("PowerampPool")) x->removeChildElement (pool, true);
+                juce::MemoryBlock noPool; juce::AudioProcessor::copyXmlToBinary (*x, noPool);
+                OrbitCabAudioProcessor d; d.prepareToPlay (sr, block);
+                d.setStateInformation (noPool.getData(), (int) noPool.getSize());
+                pump (250);
+                v4Compat = d.selectedPowerampId() == ampId && d.exportEmbedsAmp();   // resolved from the library
+            }
+
+            const bool ampOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam
+                               && selRides && bEmbeds && shrank && rendersClean && v4Compat;
             allPass &= ampOk;
-            std::printf ("POWERAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d zip(%d->%d)\n",
-                         srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rawSz, deflSz);
-            std::printf ("RESULT: %s\n", ampOk ? "POWERAMP RIDES STATE (embedded, deflated, lossless, reproducible)"
+            std::printf ("POWERAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v4compat=%d zip(%d->%d)\n",
+                         srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rendersClean, v4Compat, rawSz, deflSz);
+            std::printf ("RESULT: %s\n", ampOk ? "POWERAMP RIDES STATE (embedded, deflated, lossless, reproducible, v4-compatible)"
                                                : "POWERAMP EMBED BROKEN");
         }
     }

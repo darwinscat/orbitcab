@@ -43,7 +43,9 @@ struct PowerampEntry
 // separated by space / dash / underscore. No token → category Other, name unchanged.
 inline void parsePowerampName (const juce::String& base, juce::String& nameOut, PowerampCat& catOut)
 {
-    catOut = PowerampCat::other;
+    catOut  = PowerampCat::other;
+    nameOut = base;   // default: no PP/SE tag → name unchanged. Set up front so the result never
+                      // depends on what the caller passed in (a reused out-string was returning stale).
     juce::StringArray words;
     words.addTokens (base, " -_", "");
     words.removeEmptyStrings();
