@@ -34,7 +34,9 @@ namespace orbitcab::state
 
 // Root <OrbitCabState> tree version this model reads/writes. v3 (and the param-only
 // pre-v3 form) are migrated on load; see migrateLegacySound().
-inline constexpr int kStateVersion = 4;
+// v5 adds <PowerampPool> (the selected .nam embedded, deflated) so a session/preset is
+// self-contained for the amp too — older builds ignore the pool and resolve from the library.
+inline constexpr int kStateVersion = 5;
 
 //============================================================ one slot's IR ====
 struct SlotIR

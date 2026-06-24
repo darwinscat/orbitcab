@@ -150,6 +150,11 @@ public:
     juce::File   importPoweramp (const juce::File& src);                   // copy a .nam into powerampDir; {} on failure
     bool         removePoweramp (const juce::String& id);                  // delete a USER model (factory: no-op → false)
 
+    // Does an exported preset ACTUALLY carry embedded audio (vs only bundled refs)? Drives the
+    // export heads-up. Keyed on the same pools buildStateTree embeds from, so they never disagree.
+    bool         exportEmbedsIR()  const;                                  // live uses an external IR whose bytes are embedded
+    bool         exportEmbedsAmp() const;                                  // live uses a poweramp whose .nam is embedded
+
     bool isSlotBLoaded() const { return slotAudioLoaded[1].load (std::memory_order_relaxed); }
     bool isSlotALoaded() const { return slotAudioLoaded[0].load (std::memory_order_relaxed); }
 
@@ -327,6 +332,12 @@ private:
     // (path → WAV blob, capped to kMaxIRSeconds) for every external IR loaded this session
     // and rehydrated from the saved IRPool on restore. Bundled IRs are never embedded.
     std::map<juce::String, juce::MemoryBlock> embeddedIRs;   // keyed by content id "ir-<hex>"
+
+    // Same idea for the poweramp: the raw .nam bytes of every model loaded this session, keyed
+    // by its ampSel id ("f:…"/"u:…"). buildStateTree deflates the referenced ones into a
+    // <PowerampPool> so a saved session/preset carries the amp (reproducible on any machine /
+    // public build); applyPoweramp prefers this pool over the library on restore.
+    std::map<juce::String, juce::MemoryBlock> embeddedPoweramps;
 
     // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
     // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as

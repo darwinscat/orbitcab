@@ -786,7 +786,28 @@ void OrbitCabAudioProcessorEditor::exportPreset()
     chooser->launchAsync (juce::FileBrowserComponent::saveMode
                               | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
-        [this] (const juce::FileChooser& fc) { presets.writeTo (fc.getResult()); });
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file == juce::File())
+                return;                                   // cancelled
+            presets.writeTo (file);
+
+            // Light, factual heads-up — only when the preset ACTUALLY carries embedded audio:
+            // an external (user) IR and/or the poweramp .nam (v5). A preset of only bundled refs
+            // with no amp embeds nothing → no popup. Wording reflects what's really in there.
+            const bool embIR  = processorRef.exportEmbedsIR();
+            const bool embAmp = processorRef.exportEmbedsAmp();
+            if (embIR || embAmp)
+            {
+                const juce::String what = (embIR && embAmp) ? "its IR and the poweramp capture"
+                                        : embAmp             ? "the poweramp capture"
+                                                             : "its IR audio";
+                juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                    "Preset carries embedded audio",
+                    "This preset embeds " + what + ", so it travels inside the .orbitcab file.");
+            }
+        });
 }
 
 void OrbitCabAudioProcessorEditor::importPreset()

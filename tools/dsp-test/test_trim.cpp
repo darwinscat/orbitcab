@@ -698,6 +698,70 @@ int main()
                                         : "FACTORY PRESETS BROKEN");
     }
 
+    // ---- POWERAMP embed (v5): the selected .nam rides the save, deflated + lossless ----
+    // The amp is a library SELECTION (ampSel), but for a REPRODUCIBLE project its bytes are
+    // embedded in a <PowerampPool> (like an external IR). Prove: (1) a saved session/preset
+    // embeds the model, (2) the deflated blob decodes back to a valid .nam (lossless), (3) ampSel
+    // rides into a fresh instance and the amp re-arms from the pool there.
+    {
+        auto powerPoolN = [] (const juce::MemoryBlock& mb)
+        { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+          auto* p = x ? x->getChildByName ("PowerampPool") : nullptr; return p ? p->getNumChildElements() : -1; };
+
+        juce::String ampId;   // first factory amp (the test build embeds the .nam; skip cleanly if none)
+        { OrbitCabAudioProcessor probe; for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        if (ampId.isEmpty())
+        {
+            std::printf ("POWERAMP EMBED TEST: skipped (no factory .nam in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            if (auto* p = a.apvts.getParameter ("ampOn")) p->setValueNotifyingHost (1.0f);
+            a.selectPoweramp (ampId);
+            pump (250);                                        // poll → applyPoweramp loads + stashes bytes
+
+            const bool srcEmbeds = a.exportEmbedsAmp();
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            juce::MemoryBlock pres; a.getStateForPreset  (pres);
+            const int sPool = powerPoolN (sess), pPool = powerPoolN (pres);
+
+            // base64 -> inflate -> must parse as a real .nam (proves deflate/inflate is lossless)
+            bool decodesToNam = false; int rawSz = 0, deflSz = 0;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+                if (auto* pool = x->getChildByName ("PowerampPool"))
+                    if (auto* e = pool->getFirstChildElement())
+                    {
+                        juce::MemoryOutputStream defl;
+                        if (juce::Base64::convertFromBase64 (defl, e->getStringAttribute ("nam")))
+                        {
+                            deflSz = (int) defl.getDataSize();
+                            juce::MemoryInputStream in (defl.getData(), defl.getDataSize(), false);
+                            juce::GZIPDecompressorInputStream gz (in);
+                            juce::MemoryBlock raw; gz.readIntoMemoryBlock (raw);
+                            rawSz = (int) raw.getSize();
+                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) raw.getData(), (int) raw.getSize()));
+                            decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
+                        }
+                    }
+
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+            b.setStateInformation (sess.getData(), (int) sess.getSize());
+            pump (250);
+            const bool selRides = b.selectedPowerampId() == ampId;   // ampSel rode the save
+            const bool bEmbeds  = b.exportEmbedsAmp();                // re-armed from the pool on the fresh instance
+            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;   // deflate actually compressed
+
+            const bool ampOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam && selRides && bEmbeds && shrank;
+            allPass &= ampOk;
+            std::printf ("POWERAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d zip(%d->%d)\n",
+                         srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rawSz, deflSz);
+            std::printf ("RESULT: %s\n", ampOk ? "POWERAMP RIDES STATE (embedded, deflated, lossless, reproducible)"
+                                               : "POWERAMP EMBED BROKEN");
+        }
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }

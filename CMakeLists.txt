@@ -241,7 +241,7 @@ target_compile_definitions(orbitcab_dsp_test PRIVATE
 )
 target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
-    nam_core
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags

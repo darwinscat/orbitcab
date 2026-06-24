@@ -7,7 +7,7 @@ This folder holds the **Neural Amp Modeler (`.nam`) poweramp captures** that the
 **The `.nam` files here are gitignored — they are NOT in the public repo, on purpose.** The amp-stage
 *code* (`cab::AmpStage`, NAM core, the UI, rate-match) is open-source AGPL and ships freely. The model
 *content* does not: captures can be of third-party / commercial gear, so — like the official Neural Amp
-Modeler plugin — the open-source build ships **without** bundled captures. You supply your own locally.
+Modeler plugin — the open-source build ships **without** bundled captures. You supply your own.
 
 A fresh clone builds fine with this folder empty; the POWERAMP feature simply hides itself when there
 are no models to load.
@@ -39,25 +39,6 @@ stripped (`6L6 PP-2.nam` still shows "6L6"), so old captures display cleanly wit
 Drop files here and rebuild — CMake re-globs this folder (`CONFIGURE_DEPENDS`) and embeds whatever's
 present. All factory captures are 48 kHz (the rate-matcher runs them at native rate on any host SR).
 
-Capture your own tube poweramp, or grab models you have the right to use (e.g. tone3000.com). Whatever
-you put here stays on your machine — it never leaves in a commit.
-
-## Bundled captures — provenance
-
-Every `.nam` carries its own metadata *inside* the file (`gear_make`, `modeled_by`, `tone_type`,
-capture `date`) — so "what is this" is self-documenting. What the file does **not** carry is **where it
-came from** (the download URL) and the fact that we **renamed** it for the selector. This table is that
-missing link: the embedded filename ↔ the original capture + its source. The `.nam` blobs themselves are
-gitignored (see above); this is credit + a pointer, not the model content.
-
-All three below are `tone_type: poweramp-only`, 48 kHz, `SlimmableContainer` architecture — exactly what
-the POWERAMP stage wants (it models the power section only, in front of the cab IR).
-
-| Embedded as | Gear (poweramp) | Captured by | Source | Original file |
-|---|---|---|---|---|
-| `Mark V PP.nam`     | Mesa Boogie Mark V                 | jsd1982      | [tone3000](https://www.tone3000.com/tones/mesa-boogie-mark-v-poweramp-68701)            | `Mark V poweramp Master 12oclock Presence 9oclock.nam` |
-| `Fryette PS1 PP.nam`| Fryette Powerstation PS-1 6L6 50W   | Slammin Mofo | [tone3000](https://www.tone3000.com/tones/fryette-powerstation-ps-1-6l6gc-poweramp-5075) | `PS_3_4_8.nam` (one of 17 knob settings) |
-| `Peavey 120 PP.nam` | Peavey Classic Series 120 (6L6GC)  | Slammin Mofo | [tone3000](https://www.tone3000.com/tones/peavey-classic-series-120-6l6gc-poweramp-5681) | `PVY_CLASSIC120_9.nam` |
-
-> The generic **6L6 / EL34 / EL84 / KT88** captures (PP & SE) shipped earlier have **no source recorded
-> yet** — fill in their origin here (or replace them) so the whole factory set is accounted for.
+You can capture your own tube poweramp, or download models you have the right to use (e.g.
+tone3000.com — the gear panel's **Manage library… → Get models…** opens it). Whatever you put here
+stays on your machine — it never leaves in a commit.

@@ -23,6 +23,32 @@ namespace
     // 20 s IR is a few MB, so this just stops a crafted/corrupt file from OOM-ing the host.
     constexpr size_t kMaxEmbeddedIRBytes = 64u * 1024u * 1024u;   // 64 MB / entry
 
+    // Same guard for an embedded poweramp .nam (raw, before deflate). A NAM capture is well
+    // under 1 MB; this caps a crafted/corrupt PowerampPool entry on load.
+    constexpr size_t kMaxEmbeddedPowerampBytes = 8u * 1024u * 1024u;   // 8 MB / entry
+
+    // Lossless deflate (zlib) of an arbitrary byte blob, and its inverse — used to shrink the
+    // embedded .nam (~300 KB of float text → ~100 KB) in the saved state. JUCE ships zlib.
+    juce::MemoryBlock deflateBytes (const void* data, size_t n)
+    {
+        juce::MemoryBlock out;
+        {
+            juce::MemoryOutputStream mos (out, false);
+            juce::GZIPCompressorOutputStream gz (mos, 9);   // level 9; finalises on scope exit
+            gz.write (data, n);
+        }
+        return out;
+    }
+
+    juce::MemoryBlock inflateBytes (const void* data, size_t n)
+    {
+        juce::MemoryInputStream in (data, n, false);
+        juce::GZIPDecompressorInputStream gz (in);
+        juce::MemoryBlock out;
+        gz.readIntoMemoryBlock (out);
+        return out;
+    }
+
     // Encode a (capped) IR buffer to a 24-bit WAV blob for self-contained sessions.
     bool encodeBufferToWav (const juce::AudioBuffer<float>& buf, double sr, juce::MemoryBlock& out)
     {
@@ -513,6 +539,28 @@ bool OrbitCabAudioProcessor::removePoweramp (const juce::String& id)
     return false;
 }
 
+bool OrbitCabAudioProcessor::exportEmbedsIR() const
+{
+    // True iff a slot holds an EXTERNAL (non-bundled) IR whose bytes are actually in the pool —
+    // exactly what IRPool would embed. Bundled IRs ride as refs (never embedded) → no warning.
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto& s = slotState[(size_t) i];
+        if (s.occupied() && ! s.bundled && s.ref.isNotEmpty() && embeddedIRs.count (s.ref) > 0)
+            return true;
+    }
+    return false;
+}
+
+bool OrbitCabAudioProcessor::exportEmbedsAmp() const
+{
+    // True iff the live amp is on, selected, AND its .nam is in the pool — exactly what
+    // PowerampPool would embed. (An on-but-unresolved selection embeds nothing → no warning.)
+    const bool ampOn = ampOnParam != nullptr && ampOnParam->load() > 0.5f;
+    const auto sel   = selectedPowerampId();
+    return ampOn && sel.isNotEmpty() && embeddedPoweramps.count (sel) > 0;
+}
+
 void OrbitCabAudioProcessor::applyPoweramp()
 {
     // Message thread (poll timer). Resolve "ampSel" against the merged library and load that
@@ -526,9 +574,20 @@ void OrbitCabAudioProcessor::applyPoweramp()
 
     const auto sel = selectedPowerampId();
     if (sel.isNotEmpty())
+    {
+        // 1) Prefer an embedded blob: a restored session/preset carries the .nam in its
+        //    PowerampPool, so it loads even if the model isn't in this machine's library
+        //    (moved project / public build with no factory amps). Self-contained.
+        if (auto it = embeddedPoweramps.find (sel); it != embeddedPoweramps.end() && it->second.getSize() > 0)
+            if (engine.loadAmpModelBytes (it->second.getData(), it->second.getSize(), kPowerampTrimDb))
+                return;
+
+        // 2) Else resolve from the merged library, and stash the raw bytes into the pool so a
+        //    later save can embed them (the only place the pool gets populated from disk).
         for (const auto& e : powerampLibrary())
             if (e.id == sel)
             {
+                juce::MemoryBlock mb;
                 if (e.factory)
                 {
                     const juce::String fn = sel.fromFirstOccurrenceOf ("f:", false, false) + ".nam";
@@ -537,18 +596,23 @@ void OrbitCabAudioProcessor::applyPoweramp()
                         {
                             int sz = 0;
                             if (const char* d = BinaryData::getNamedResource (BinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
-                                if (engine.loadAmpModelBytes (d, (size_t) sz, kPowerampTrimDb))
-                                    return;
+                                mb.append (d, (size_t) sz);
                             break;
                         }
                 }
-                else if (juce::MemoryBlock mb; e.file.existsAsFile() && e.file.loadFileAsData (mb) && mb.getSize() > 0)
+                else if (e.file.existsAsFile())
                 {
-                    if (engine.loadAmpModelBytes (mb.getData(), mb.getSize(), kPowerampTrimDb))
-                        return;
+                    e.file.loadFileAsData (mb);
+                }
+
+                if (mb.getSize() > 0 && engine.loadAmpModelBytes (mb.getData(), mb.getSize(), kPowerampTrimDb))
+                {
+                    embeddedPoweramps[sel] = std::move (mb);   // remember for embedding in saves
+                    return;
                 }
                 break;
             }
+    }
 
     engine.clearAmpModel();
 }
@@ -972,6 +1036,36 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
         root.appendChild (pool, nullptr);
     }
 
+    // PowerampPool (v5): embed the .nam of every poweramp referenced by the live sound (and, for
+    // a session, by any A/B/C/D register), keyed by ampSel id, deflated. The amp now travels with
+    // the save like an external IR — reproducible on another machine or a public build with no
+    // factory amps. forPreset → live only (no registers).
+    {
+        juce::StringArray ampIds;
+        auto addAmp = [&] (const juce::ValueTree& params)
+        {
+            const auto id = params.getProperty ("ampSel", juce::String()).toString();
+            if (id.isNotEmpty()) ampIds.addIfNotAlreadyThere (id);
+        };
+        addAmp (apvts.state);                                   // live (its ampSel == captureLive()'s)
+        if (! forPreset)
+            for (int i = 0; i < kNumSnapshots; ++i)
+                if (snapshots[(size_t) i].has_value())
+                    addAmp (snapshots[(size_t) i]->params);
+
+        juce::ValueTree pool ("PowerampPool");
+        for (const auto& id : ampIds)
+            if (auto it = embeddedPoweramps.find (id); it != embeddedPoweramps.end() && it->second.getSize() > 0)
+            {
+                const auto deflated = deflateBytes (it->second.getData(), it->second.getSize());
+                juce::ValueTree e ("E");
+                e.setProperty ("id",  id, nullptr);
+                e.setProperty ("nam", juce::Base64::toBase64 (deflated.getData(), deflated.getSize()), nullptr);
+                pool.appendChild (e, nullptr);
+            }
+        root.appendChild (pool, nullptr);
+    }
+
     return root;
 }
 
@@ -1054,6 +1148,26 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                 if (juce::Base64::convertFromBase64 (mos, b64) && mos.getDataSize() <= kMaxEmbeddedIRBytes)
                     embeddedIRs[key] = juce::MemoryBlock (mos.getData(), mos.getDataSize());
             }
+
+        // PowerampPool (v5): rehydrate the embedded .nam blobs (deflated) so applyPoweramp can
+        // load the amp from the save itself. Absent in a v4 state → empty → applyPoweramp resolves
+        // from the library, as before. Flag a reload so the restored ampSel actually re-loads.
+        embeddedPoweramps.clear();
+        if (auto pool = root.getChildWithName ("PowerampPool"); pool.isValid())
+            for (auto e : pool)
+            {
+                const juce::String key = e.getProperty ("id", {}).toString();
+                const juce::String b64 = e.getProperty ("nam", {}).toString();
+                if (key.isEmpty() || b64.isEmpty())
+                    continue;
+                juce::MemoryOutputStream defl;
+                if (! juce::Base64::convertFromBase64 (defl, b64))
+                    continue;
+                auto raw = inflateBytes (defl.getData(), defl.getDataSize());
+                if (raw.getSize() > 0 && raw.getSize() <= kMaxEmbeddedPowerampBytes)
+                    embeddedPoweramps[key] = std::move (raw);
+            }
+        pendingPowerampReload.store (true, std::memory_order_relaxed);   // re-load the restored amp
 
         if (auto ws = root.getChildWithName ("Workspace"); ws.isValid())
         {

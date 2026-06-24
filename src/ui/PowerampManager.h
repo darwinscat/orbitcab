@@ -71,6 +71,11 @@ public:
         revealBtn.onClick = [this] { proc.appPreferences().powerampDir().revealToUser(); };
         addAndMakeVisible (revealBtn);
 
+        getBtn.setButtonText (juce::String::fromUTF8 ("Get models\xe2\x80\xa6"));
+        getBtn.setTooltip ("Open tone3000.com to download poweramp captures (.nam) you have the right to use.");
+        getBtn.onClick = [this] { getModelsClicked(); };
+        addAndMakeVisible (getBtn);
+
         rebuild();   // populate rows + size the panel
     }
 
@@ -84,9 +89,11 @@ public:
         r.removeFromTop (6);
 
         auto toolbar = r.removeFromBottom (30);
-        addBtn.setBounds    (toolbar.removeFromLeft (84));
-        toolbar.removeFromLeft (8);
-        revealBtn.setBounds (toolbar.removeFromLeft (108));
+        addBtn.setBounds    (toolbar.removeFromLeft (76));
+        toolbar.removeFromLeft (6);
+        revealBtn.setBounds (toolbar.removeFromLeft (104));
+        toolbar.removeFromLeft (6);
+        getBtn.setBounds    (toolbar.removeFromLeft (100));
         r.removeFromBottom (8);
 
         viewport.setBounds (r);
@@ -266,6 +273,30 @@ private:
             rows[(size_t) i]->setBounds (0, i * kRowH, w, kRowH);
     }
 
+    // "Get models…" → a popup of download sources. tone3000 hosts NAM captures; the named entries
+    // are the poweramp tones we tested against. All open in the default browser (user-initiated).
+    void getModelsClicked()
+    {
+        juce::PopupMenu m;
+        m.addSectionHeader ("Download poweramp captures (.nam)");
+        m.addItem (1, juce::String::fromUTF8 ("Browse tone3000.com\xe2\x80\xa6"));
+        m.addSeparator();
+        m.addItem (2, "Mesa Boogie Mark V \xe2\x80\x94 tone3000");
+        m.addItem (3, "Fryette Power Station PS-1 \xe2\x80\x94 tone3000");
+        m.addItem (4, "Peavey Classic 120 \xe2\x80\x94 tone3000");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (getBtn),
+            [] (int r)
+            {
+                const char* url = r == 1 ? "https://www.tone3000.com"
+                                : r == 2 ? "https://www.tone3000.com/tones/mesa-boogie-mark-v-poweramp-68701"
+                                : r == 3 ? "https://www.tone3000.com/tones/fryette-powerstation-ps-1-6l6gc-poweramp-5075"
+                                : r == 4 ? "https://www.tone3000.com/tones/peavey-classic-series-120-6l6gc-poweramp-5681"
+                                         : nullptr;
+                if (url != nullptr)
+                    juce::URL (url).launchInDefaultBrowser();
+            });
+    }
+
     void addClicked()
     {
         chooser = std::make_unique<juce::FileChooser> ("Add poweramp captures",
@@ -313,7 +344,7 @@ private:
     juce::Viewport   viewport;
     juce::Component  listContent;                  // sized to rows; lives inside the viewport
     std::vector<std::unique_ptr<Row>> rows;
-    juce::TextButton addBtn, revealBtn;
+    juce::TextButton addBtn, revealBtn, getBtn;
     std::unique_ptr<juce::FileChooser> chooser;
     bool             dragOver = false;
 

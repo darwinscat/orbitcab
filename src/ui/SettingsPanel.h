@@ -86,7 +86,7 @@ public:
         // Always present, even with an empty library — it's how the first user model gets added.
         manageBtn.setButtonText (juce::String::fromUTF8 ("Manage library\xe2\x80\xa6"));
         manageBtn.setTooltip ("Add or remove your poweramp captures (the .nam models the selector lists).");
-        manageBtn.onClick = [this, fn = std::move (onManageAmp)] { if (fn) fn(); };
+        manageBtn.onClick = [fn = std::move (onManageAmp)] { if (fn) fn(); };
         addAndMakeVisible (manageBtn);
 
         // Two scopes: HEAD trim is audio-affecting and rides the DAW session; Dry/Wet +
