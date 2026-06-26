@@ -959,6 +959,16 @@ void OrbitCabAudioProcessor::releaseResources()
 bool OrbitCabAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     // Accept matching mono->mono or stereo->stereo only; reject the rest.
+    //
+    // mono/stereo is a DELIBERATE product ceiling, not a TODO. A guitar is a mono or (double-tracked)
+    // stereo source, and the chain is genuinely true-stereo: each channel runs its OWN independent NAM
+    // instance + cab convolution (see cab::AmpStage / CabEngine), so a stereo bus is two independent
+    // L/R guitars, not a mono sum. Going wider (5.1/7.1/Atmos) would mean one NAM instance PER channel —
+    // N× the heaviest cost in the plugin (neural inference) — for a use case that doesn't exist for a
+    // guitar cab (surround guitar is processed in stereo first, then up-mixed downstream). Most amp
+    // sims (incl. NAM, Helix Native) are mono/stereo for the same reason. If a generic N-channel path
+    // is ever genuinely needed: make cab::AmpStage hold a vector of instances sized to numChannels in
+    // prepare(), give IRSlot N-channel convolution, and relax the check below to any in==out layout.
     const auto& mainOut = layouts.getMainOutputChannelSet();
     const auto& mainIn  = layouts.getMainInputChannelSet();
 
