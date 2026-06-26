@@ -229,12 +229,35 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         ampModeBtn[m].setButtonText (kModeNames[m]);
         ampModeBtn[m].setClickingTogglesState (false);
         ampModeBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull capture \xe2\x80\x94 a pair of power tubes."
-                                         : "Single-ended capture \xe2\x80\x94 one power tube.");
+        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull \xe2\x80\x94 tighter, more headroom & punch. Better for rhythm."
+                                         : "Single-ended \xe2\x80\x94 sweeter even-harmonic compression that sings. Better for melodic solos.");
         ampModeBtn[m].onClick = [this, m] { selectAmpMode (m == 0 ? orbitcab::PowerampCat::pushPull
                                                                    : orbitcab::PowerampCat::singleEnded); };
         addChildComponent (ampModeBtn[m]);
     }
+
+    // Contextual hours: a horizontal discrete slider snapping to the available "<N>h" positions of the
+    // current name+mode. The slider value is the INDEX into ampHourVals (so non-uniform clock stops
+    // like 9/12/15/16 snap cleanly); the text box shows the hour. Rebuilt by configureHourSlider.
+    ampHourSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    ampHourSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 38, 22);   // read-only, shows "12h"
+    ampHourSlider.setColour (juce::Slider::trackColourId,        juce::Colour (OrbitCabLookAndFeel::kAccent));
+    ampHourSlider.setColour (juce::Slider::thumbColourId,        juce::Colour (OrbitCabLookAndFeel::kAccent));
+    ampHourSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0x00000000));
+    ampHourSlider.setTooltip ("Knob position the capture was taken at (o'clock).");
+    ampHourSlider.textFromValueFunction = [this] (double v)
+    {
+        const int i = (int) std::lround (v);
+        return juce::isPositiveAndBelow (i, (int) ampHourVals.size()) ? juce::String (ampHourVals[(size_t) i]) + "h" : juce::String();
+    };
+    ampHourSlider.valueFromTextFunction = [] (const juce::String& t) { return (double) t.getIntValue(); };   // unused (read-only)
+    ampHourSlider.onValueChange = [this]
+    {
+        const int i = (int) std::lround (ampHourSlider.getValue());
+        if (juce::isPositiveAndBelow (i, (int) ampHourVals.size()))
+            selectAmpHours (ampHourVals[(size_t) i]);
+    };
+    addChildComponent (ampHourSlider);
 
     // Singletons combo (one-off amps by full filename). Selecting an item picks that capture.
     ampSingleBox.setTextWhenNothingSelected ("Amps\xe2\x80\xa6");
@@ -605,29 +628,21 @@ void OrbitCabAudioProcessorEditor::selectAmpHours (int hours)
     if (id.isNotEmpty()) { processorRef.selectPoweramp (id); syncAmpSelector(); }
 }
 
-// (Re)create the hour segment buttons for the current name+mode (only when ≥2 positions exist).
-void OrbitCabAudioProcessorEditor::rebuildHourSegments()
+// Point the hours slider at the current name+mode's positions (its stops = ampHourVals indices).
+// Leaves ampHourVals empty when there are <2 positions (caller hides the slider then).
+void OrbitCabAudioProcessorEditor::configureHourSlider()
 {
-    for (auto& b : ampHourBtns) removeChildComponent (b.get());
-    ampHourBtns.clear();
     ampHourVals.clear();
-
     auto* cur = ampEntryById (processorRef.selectedPowerampId());
     if (cur == nullptr) return;
     const auto hrs = hoursForNameCat (cur->name, cur->cat);
-    if (hrs.size() < 2) return;   // 0/1 position → no segments
+    if (hrs.size() < 2) return;                       // 0/1 position → no slider
+    ampHourVals = hrs;                                // sorted; slider index i → ampHourVals[i] o'clock
 
-    for (int h : hrs)
-    {
-        auto b = std::make_unique<juce::TextButton> (juce::String (h) + "h");
-        b->setClickingTogglesState (false);
-        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        b->setTooltip ("Knob at " + juce::String (h) + " o'clock.");
-        b->onClick = [this, h] { selectAmpHours (h); };
-        addChildComponent (*b);
-        ampHourBtns.push_back (std::move (b));
-        ampHourVals.push_back (h);
-    }
+    ampHourSlider.setRange (0.0, (double) (ampHourVals.size() - 1), 1.0);   // discrete: snaps to each stop
+    const int idx = (int) (std::find (ampHourVals.begin(), ampHourVals.end(), cur->hours) - ampHourVals.begin());
+    ampHourSlider.setValue (juce::isPositiveAndBelow (idx, (int) ampHourVals.size()) ? idx : 0,
+                            juce::dontSendNotification);
 }
 
 // Reflect the "ampSel" selection onto the whole selector: highlight the right name button (or the
@@ -663,13 +678,9 @@ void OrbitCabAudioProcessorEditor::syncAmpSelector()
         ampModeBtn[m].setToggleState (cur != nullptr && cur->cat == mc, juce::dontSendNotification);
     }
 
-    // contextual hours segments — rebuilt for this name+mode (only when ≥2 positions)
-    rebuildHourSegments();
-    for (size_t i = 0; i < ampHourBtns.size(); ++i)
-    {
-        ampHourBtns[i]->setVisible (on && group);
-        ampHourBtns[i]->setToggleState (cur != nullptr && cur->hours == ampHourVals[i], juce::dontSendNotification);
-    }
+    // contextual hours slider — pointed at this name+mode's positions (hidden when <2 exist)
+    configureHourSlider();
+    ampHourSlider.setVisible (on && group && ampHourVals.size() >= 2);
 
     // tubes: silhouette from the name, count from the mode (PP 2 / SE 1 / Other 0)
     tubeDisplay.setSelection (cur != nullptr ? tubeTypeFromName (cur->name) : 0,
@@ -1207,16 +1218,11 @@ void OrbitCabAudioProcessorEditor::resized()
             ampSingleBox.setBounds (row.removeFromRight (160).withSizeKeepingCentre (160, 28));
             row.removeFromRight (14);
         }
-        // hours segments (visible ones)
+        // hours slider (discrete, horizontal) — track + a "12h" read-out box on its right
+        if (ampHourSlider.isVisible())
         {
-            int nh = 0; for (auto& b : ampHourBtns) if (b->isVisible()) ++nh;
-            if (nh > 0)
-            {
-                constexpr int hw = 42, hg = 3;
-                auto ha = row.removeFromRight (nh * hw + (nh - 1) * hg).withSizeKeepingCentre (nh * hw + (nh - 1) * hg, 26);
-                for (auto& b : ampHourBtns) if (b->isVisible()) { b->setBounds (ha.removeFromLeft (hw)); ha.removeFromLeft (hg); }
-                row.removeFromRight (12);
-            }
+            ampHourSlider.setBounds (row.removeFromRight (132).withSizeKeepingCentre (132, 26));
+            row.removeFromRight (12);
         }
         // PP / SE toggle (visible ones)
         {

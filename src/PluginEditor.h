@@ -132,15 +132,15 @@ private:
     std::vector<juce::String>                      ampGroupNames;   // distinct names with ≥2 variants (ordered)
     std::vector<std::unique_ptr<juce::TextButton>> ampNameBtns;     // one per group name
     juce::TextButton      ampModeBtn[2];         // contextual PP / SE toggle (shown when the name has both)
-    std::vector<std::unique_ptr<juce::TextButton>> ampHourBtns;     // contextual hours segments (rebuilt per name+mode)
-    std::vector<int>      ampHourVals;           // hour value parallel to ampHourBtns
+    juce::Slider          ampHourSlider;         // contextual horizontal discrete slider over the available <N>h
+    std::vector<int>      ampHourVals;           // hour value at each slider index (sorted; snaps to these stops)
     juce::ComboBox        ampSingleBox;          // SINGLETONS (one-off amps) listed by full filename
 
     void rebuildAmpSelector();                   // rescan library → groups/singletons → (re)create controls
     void selectAmpName   (const juce::String& name);          // pick a group (keep mode/hours if they exist there)
     void selectAmpMode   (orbitcab::PowerampCat c);           // switch PP/SE within the current name
     void selectAmpHours  (int hours);                         // switch position within the current name+mode
-    void rebuildHourSegments();                  // (re)create the hour buttons for the current name+mode
+    void configureHourSlider();                  // set the slider's stops to the current name+mode positions
     void updateAmpRow();                         // show/hide the revealed row + resize the editor
     void syncAmpSelector();                      // reflect "ampSel" → highlight + contextual controls + tubes
 
