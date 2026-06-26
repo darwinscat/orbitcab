@@ -39,6 +39,20 @@ The bundled content (IRs, font) is ledgered in
   a CLAP) which pulls in https://github.com/free-audio/clap (the CLAP SDK). Fetched via
   CMake `FetchContent` at a pinned tag; not vendored.
 
+### NeuralAmpModelerCore (NAM — neural amp/poweramp inference)
+- **License:** MIT.
+- **Copyright:** © Steven Atkinson and the Neural Amp Modeler contributors.
+- **Source:** https://github.com/sdatkinson/NeuralAmpModelerCore — fetched via CMake
+  `FetchContent` at a pinned commit (see `ORBITCAB_NAM_TAG` in [`CMakeLists.txt`](CMakeLists.txt));
+  the `NAM/*.cpp` sources are compiled into a `nam_core` static library. Used for the
+  optional amp stage that runs in front of the cab. Bundles no `.nam` models — those are
+  user-supplied captures with their own licenses.
+- **Bundled deps it pulls in:**
+  - **Eigen** (linear algebra, header-only) — **MPL-2.0** — © the Eigen authors —
+    https://gitlab.com/libeigen/eigen (NAM git submodule).
+  - **nlohmann/json** (`json.hpp`, header-only) — **MIT** — © Niels Lohmann —
+    https://github.com/nlohmann/json (vendored in the NAM repo).
+
 ---
 
 ## Bundled content (embedded in the binary)

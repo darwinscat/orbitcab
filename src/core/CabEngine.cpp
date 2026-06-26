@@ -19,6 +19,8 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 {
     currentSampleRate = sampleRate;
 
+    amp.prepare (sampleRate, maxBlock);
+
     for (int i = 0; i < 2; ++i)
         slot[i].prepare (sampleRate, maxBlock, numChannels);
 
@@ -51,6 +53,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 
 void CabEngine::reset()
 {
+    amp.reset();
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
     autoLeveler.reset();
@@ -143,7 +146,14 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     mixABSmoothed.setTargetValue (abTarget);
     muteGateSmoothed.setTargetValue ((aOn || bOn) ? 1.0f : 0.0f);
 
-    // --- stash the dry (raw input) for the per-slot Dry/Wet blend, before the filters ---
+    // --- AMP (NAM): nonlinear amp/poweramp stage in front of the cab. Runs on the (mono-
+    // summed) signal BEFORE the dry tap, so the amp output becomes the "dry" reference for
+    // both the per-slot Dry/Wet blend and the auto-level match — i.e. we cab the amp, not the
+    // clean DI. No-op passthrough when off or no model is loaded. ---
+    if (p.ampOn)
+        amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+
+    // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---
     for (int ch = 0; ch < numCh; ++ch)
         dryBuffer.copyFrom (ch, 0, buffer, ch, 0, numSamples);
 

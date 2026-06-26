@@ -27,10 +27,11 @@ Three layers; dependencies point **one way only: GUI → Adapter → Core.**
    │ CORE  (src/core/, namespace cab::)  — headless, juce_dsp + juce_audio_basics only │
    │   prepare(sr,maxBlock,ch,Params) ;  process(float** io, n, Params, bool) │
    │                                                                           │
-   │   CabEngine ── IRSlot[2] (HPF → LPF → Convolver) ── A/B crossfade         │
-   │            └─ AutoLeveler (wet→dry RMS match)  └─ master gain ── meters    │
-   │            └─ SpectrumTap[2] (lock-free SPSC → GUI)                        │
-   │   Convolver  = juce::dsp::Convolution behind JUCE-FREE float* signatures   │
+   │   CabEngine ── AmpStage (NAM poweramp, front) ── IRSlot[2] (HPF→LPF→Conv) ─┐│
+   │            ── A/B crossfade ── AutoLeveler (wet→dry RMS) ── master gain ──┘│
+   │            └─ SpectrumTap[2] (lock-free SPSC → GUI)  └─ meters             │
+   │   Convolver = juce::dsp::Convolution ; AmpStage = NeuralAmpModelerCore     │
+   │   behind JUCE-FREE float* signatures (StreamResampler for host↔48k rate-match) │
    └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,8 +63,10 @@ convergence/clamp/gate). `tools/dsp-test` drives the full processor for integrat
 round-trip. Both are CI gates.
 
 **File map.** `src/core/` = `Params.h · CabEngine.{h,cpp} · IRSlot.{h,cpp} · Convolver.h ·
-AutoLeveler.h · SpectrumTap.h`. `src/` (adapter) = `PluginProcessor.{h,cpp} · Parameters.{h,cpp}
-· IRLibrary.h`. `src/ui/` = the draw-only leaves. `tests/` = the headless core tests.
+AmpStage.{h,cpp} (NAM poweramp seam) · StreamResampler.h (rate-match) · AutoLeveler.h ·
+SpectrumTap.h`. `src/` (adapter) = `PluginProcessor.{h,cpp} · Parameters.{h,cpp} · IRLibrary.h`.
+`src/ui/` = the draw-only leaves (incl. `TubeDisplay.h` — the glowing poweramp tubes).
+`tests/` = the headless core tests (incl. `AmpStageTests.cpp`).
 
 ---
 
@@ -88,9 +91,13 @@ v1 (MVP):
   input ─▶ [HPF] ─▶ [LPF] ─▶ [Convolution (IR)] ─▶ [phase invert] ─▶ [dry/wet mix] ─▶ [output gain] ─▶ out
                                     ▲
                               loaded IR .wav
-v2 (planned):
-  input ─▶ [PowerAmp (non-linear)] ─▶ [oversample ↑] ... [↓] ─▶ [HPF/LPF] ─▶ [Convolution] ─▶ [mix] ─▶ [gain]
-           (oversample ONLY wraps the non-linear stage; convolution is linear)
+v2 (NAM poweramp — implemented, branch feat/nam-poweramp-prototype):
+  input ─▶ [AMP: NAM poweramp, host↔48k rate-match] ─▶ [HPF/LPF ─▶ Convolution] ─▶ [mix] ─▶ [gain]
+           cab::AmpStage runs a bundled .nam (6L6/EL34/EL84/KT88 × single/push-pull) in front of
+           the cab; gated by the `ampOn` param, off by default. NAM is rate-locked, so a streaming
+           cubic resampler (cab::StreamResampler) runs it at its native 48k on any host rate — NOT
+           oversampling (the cab convolution is linear and doesn't alias). Mono track → 1 instance,
+           stereo → 2 (true stereo). Output loudness-normalised (per-model tag) + a per-amp trim.
 v3 (planned):
   IR editor/mixer = offline processing of the IR buffer BEFORE it's handed to
   juce::dsp::Convolution. Doesn't change the realtime chain shape.
@@ -157,10 +164,17 @@ polls on its 30 Hz timer — so a host-driven `setStateInformation` (or any non-
 re-syncs the slot display without a push callback. Restore is transactional: a slot whose bytes
 are gone resolves to **`missing`** (shown as "⚠ name") rather than leaving the previous IR live.
 
-Root tree carries a top-level `stateVersion` (now **4**). On load, a `<Workspace>` node is v4;
-a `<Sound>` node is a v4 portable preset (registers reset); a legacy flat `<IR>` (+ optional
-`<Snapshots>`) is migrated to v4, re-keying external path/hash refs to the content id from the
-embedded `<IRPool>`. Pre-1.1 `headTrim`-absent sessions still fall back to **off**.
+Root tree carries a top-level `stateVersion` (now **5**). On load, a `<Workspace>` node is the
+current session; a `<Sound>` node is a portable preset (registers reset); a legacy flat `<IR>`
+(+ optional `<Snapshots>`) is migrated, re-keying external path/hash refs to the content id from
+the embedded `<IRPool>`. Pre-1.1 `headTrim`-absent sessions still fall back to **off**. The
+version is informational — older builds ignore unknown nodes, so v4↔v5 load both ways.
+
+v5 adds `<PowerampPool>`: the selected NAM poweramp `.nam` is embedded (deflated, ~2–3×),
+keyed by its `ampSel` id, exactly mirroring `<IRPool>` — a session embeds the live amp plus any
+A/B/C/D register's, a portable preset only the live one. On restore `applyPoweramp` prefers the
+pool, else resolves from the library, so a project is **reproducible** even on a machine without
+that capture (or a public build with no factory amps).
 
 Two non-param settings ride alongside the APVTS params:
 

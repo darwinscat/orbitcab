@@ -41,6 +41,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
     layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "autoLevel", kParamVersion }, "Auto Level", true));
+    // POWERAMP (NAM) — `ampOn` is the only host param here: the master gate / bypass for the
+    // neural poweramp stage in front of the cab (off by default, shapers-off policy). WHICH model
+    // is loaded is NOT a host param — it's a library selection persisted as the "ampSel" property
+    // on the state tree (rides session / A-B-C-D / undo / presets, like "headTrim"), resolved from
+    // the merged factory+user library and loaded off the audio thread (PluginProcessor::applyPoweramp).
+    // (Output loudness-normalisation is always on — there's no user reason to hear models at
+    // mismatched levels — so no param/toggle for it either.)
+    layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "ampOn", kParamVersion }, "Amp (NAM)", false));
 
     // ---- per slot (A/B): HPF + LPF + Phase + Dry/Wet + Trim-enable ----
     // Cutoff ranges (widened per user): HPF 30–400 Hz (def 80), LPF 2–12 kHz (def 7k);

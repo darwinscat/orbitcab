@@ -46,5 +46,10 @@ notarize-credentials*
 CLAUDE.md
 .claude/
 
+# Poweramp NAM captures — the amp-stage CODE is public/AGPL, but the .nam model files stay
+# LOCAL (your own build embeds them). The open-source plugin ships without bundled third-party
+# captures, like the official NAM plugin. Keep resources/poweramps/README.md tracked; ignore the models.
+resources/poweramps/*.nam
+
 # Stray build/tool logs
 *.log
