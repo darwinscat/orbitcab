@@ -213,7 +213,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     styleLabel (mixABLabel, juce::String::fromUTF8 ("I    \xe2\x80\x94    MIX    \xe2\x80\x94    II"));
 
     // ---- POWERAMP (NAM): power checkbox (bottom strip) + revealed selector row ----
-    ampPowerBtn.setTooltip ("Power the NAM poweramp stage in front of the cab \xe2\x80\x94 reveals the model selector below.");
+    ampPowerBtn.setTooltip (juce::String::fromUTF8 ("Power the NAM poweramp stage in front of the cab \xe2\x80\x94 reveals the model selector below."));
     ampPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
     addAndMakeVisible (ampPowerBtn);
     ampPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "ampOn", ampPowerBtn);
@@ -229,8 +229,9 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         ampModeBtn[m].setButtonText (kModeNames[m]);
         ampModeBtn[m].setClickingTogglesState (false);
         ampModeBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull: tighter, punchy \xe2\x80\x94 better for rhythm"
-                                         : "Single-ended: sweeter, singing \xe2\x80\x94 better for melodic solos");
+        ampModeBtn[m].setTooltip (juce::String::fromUTF8 (
+                                      m == 0 ? "Push-pull: tighter, punchy \xe2\x80\x94 better for rhythm"
+                                             : "Single-ended: sweeter, singing \xe2\x80\x94 better for melodic solos"));
         ampModeBtn[m].onClick = [this, m] { selectAmpMode (m == 0 ? orbitcab::PowerampCat::pushPull
                                                                    : orbitcab::PowerampCat::singleEnded); };
         addChildComponent (ampModeBtn[m]);
@@ -260,7 +261,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     addChildComponent (ampHourSlider);
 
     // Singletons combo (one-off amps by full filename). Selecting an item picks that capture.
-    ampSingleBox.setTextWhenNothingSelected ("Amps\xe2\x80\xa6");
+    ampSingleBox.setTextWhenNothingSelected (juce::String::fromUTF8 ("Amps\xe2\x80\xa6"));
     ampSingleBox.setTooltip ("One-off poweramp captures (not part of a tube family).");
     ampSingleBox.onChange = [this]
     {

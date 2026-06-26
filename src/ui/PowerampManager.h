@@ -281,9 +281,9 @@ private:
         m.addSectionHeader ("Download poweramp captures (.nam)");
         m.addItem (1, juce::String::fromUTF8 ("Browse tone3000.com\xe2\x80\xa6"));
         m.addSeparator();
-        m.addItem (2, "Mesa Boogie Mark V \xe2\x80\x94 tone3000");
-        m.addItem (3, "Fryette Power Station PS-1 \xe2\x80\x94 tone3000");
-        m.addItem (4, "Peavey Classic 120 \xe2\x80\x94 tone3000");
+        m.addItem (2, juce::String::fromUTF8 ("Mesa Boogie Mark V \xe2\x80\x94 tone3000"));
+        m.addItem (3, juce::String::fromUTF8 ("Fryette Power Station PS-1 \xe2\x80\x94 tone3000"));
+        m.addItem (4, juce::String::fromUTF8 ("Peavey Classic 120 \xe2\x80\x94 tone3000"));
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (getBtn),
             [] (int r)
             {
