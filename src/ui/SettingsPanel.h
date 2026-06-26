@@ -30,7 +30,8 @@ public:
                    std::function<void (bool)> onWaveLog,
                    std::function<void (int)>  onWaveFloor,
                    std::function<void (bool)> onShowTubes,
-                   std::function<void ()>     onManageAmp)
+                   std::function<void ()>     onManageAmp,
+                   std::function<void ()>     onManagePreamp)
     {
         title.setText ("Settings", juce::dontSendNotification);
         title.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -75,17 +76,22 @@ public:
         };
         addAndMakeVisible (waveFloor);
 
-        // POWERAMP (NAM): the tube is picked from the bottom-strip radio cluster; this panel
-        // just carries the output level-normalisation toggle (loudness matching across tubes).
-        setCaption (ampCap, "POWERAMP (NAM)");
+        // NAM stages (PREAMP / POWERAMP): the model is picked from the bottom-strip selectors; this
+        // panel just carries the shared "show tubes" view toggle + the two library managers.
+        setCaption (ampCap, "NAM STAGES (PREAMP / POWERAMP)");
         setUp (showTubesBtn, "Show tubes", showTubes,
-               "Draw the glowing schematic tubes in the POWERAMP row. Off = just the controls.",
+               "Draw the glowing schematic tubes in the PREAMP / POWERAMP rows. Off = just the controls.",
                std::move (onShowTubes));
 
-        // "Manage library…" → the PowerampManager pop-over (Add / Remove your .nam captures).
+        // "Manage library…" → the Preamp/Poweramp manager pop-overs (Add / Remove your .nam captures).
         // Always present, even with an empty library — it's how the first user model gets added.
-        manageBtn.setButtonText (juce::String::fromUTF8 ("Manage library\xe2\x80\xa6"));
-        manageBtn.setTooltip ("Add or remove your poweramp captures (the .nam models the selector lists).");
+        managePreampBtn.setButtonText (juce::String::fromUTF8 ("Preamp library\xe2\x80\xa6"));
+        managePreampBtn.setTooltip ("Add or remove your preamp captures (the .nam models the PREAMP selector lists).");
+        managePreampBtn.onClick = [fn = std::move (onManagePreamp)] { if (fn) fn(); };
+        addAndMakeVisible (managePreampBtn);
+
+        manageBtn.setButtonText (juce::String::fromUTF8 ("Poweramp library\xe2\x80\xa6"));
+        manageBtn.setTooltip ("Add or remove your poweramp captures (the .nam models the POWERAMP selector lists).");
         manageBtn.onClick = [fn = std::move (onManageAmp)] { if (fn) fn(); };
         addAndMakeVisible (manageBtn);
 
@@ -95,7 +101,7 @@ public:
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 338);
+        setSize (264, 372);
     }
 
     void resized() override
@@ -122,7 +128,9 @@ public:
         ampCap.setBounds (r.removeFromTop (14));
         showTubesBtn.setBounds (r.removeFromTop (26));
         r.removeFromTop (4);
-        manageBtn.setBounds (r.removeFromTop (26).removeFromLeft (140));
+        managePreampBtn.setBounds (r.removeFromTop (26).removeFromLeft (160));
+        r.removeFromTop (4);
+        manageBtn.setBounds (r.removeFromTop (26).removeFromLeft (160));
     }
 
     void paint (juce::Graphics& g) override
@@ -156,7 +164,7 @@ private:
 
     juce::Label        title, sessionCap, globalCap, floorCap, ampCap;
     juce::ToggleButton head, dryWet, spectrum, waveLog, showTubesBtn;
-    juce::TextButton   manageBtn;
+    juce::TextButton   manageBtn, managePreampBtn;
     juce::ComboBox     waveFloor;
     int                dividerY = 0, ampDividerY = 0;   // section dividers (set in resized(), drawn in paint())
 

@@ -793,6 +793,145 @@ int main()
         }
     }
 
+    // ---- PREAMP embed (v6): the selected preamp .nam rides the save, deflated + lossless ----
+    // Exact mirror of the POWERAMP embed test, against the second NAM stage (preampOn / preampSel /
+    // <PreampPool> / exportEmbedsPreamp). Proves the preamp embeds, decodes back losslessly, rides
+    // into a fresh instance, re-arms there, renders cleanly, and stays v5-compatible (no pool).
+    {
+        auto preampPoolN = [] (const juce::MemoryBlock& mb)
+        { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+          auto* p = x ? x->getChildByName ("PreampPool") : nullptr; return p ? p->getNumChildElements() : -1; };
+
+        juce::String preId;   // first factory preamp (the test build embeds the .nam; skip cleanly if none)
+        { OrbitCabAudioProcessor probe; for (const auto& e : probe.preampLibrary()) if (e.factory) { preId = e.id; break; } }
+
+        if (preId.isEmpty())
+        {
+            std::printf ("PREAMP EMBED TEST: skipped (no factory .nam in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            if (auto* p = a.apvts.getParameter ("preampOn")) p->setValueNotifyingHost (1.0f);
+            a.selectPreamp (preId);
+            pump (250);                                        // poll → applyPreamp loads + stashes bytes
+
+            const bool srcEmbeds = a.exportEmbedsPreamp();
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            juce::MemoryBlock pres; a.getStateForPreset  (pres);
+            const int sPool = preampPoolN (sess), pPool = preampPoolN (pres);
+
+            bool decodesToNam = false; int rawSz = 0, deflSz = 0;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+                if (auto* pool = x->getChildByName ("PreampPool"))
+                    if (auto* e = pool->getFirstChildElement())
+                    {
+                        juce::MemoryOutputStream defl;
+                        if (juce::Base64::convertFromBase64 (defl, e->getStringAttribute ("nam")))
+                        {
+                            deflSz = (int) defl.getDataSize();
+                            juce::MemoryInputStream in (defl.getData(), defl.getDataSize(), false);
+                            juce::GZIPDecompressorInputStream gz (in);
+                            juce::MemoryBlock raw; gz.readIntoMemoryBlock (raw);
+                            rawSz = (int) raw.getSize();
+                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) raw.getData(), (int) raw.getSize()));
+                            decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
+                        }
+                    }
+
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+            b.setStateInformation (sess.getData(), (int) sess.getSize());
+            pump (250);
+            const bool selRides = b.selectedPreampId() == preId;
+            const bool bEmbeds  = b.exportEmbedsPreamp();
+            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;
+
+            bool rendersClean = true;
+            {
+                juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+                for (int k = 0; k < 24; ++k)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                    b.processBlock (bb, mm);
+                    for (int ch = 0; ch < 2 && rendersClean; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            if (! std::isfinite (bb.getSample (ch, i))) { rendersClean = false; break; }
+                }
+            }
+
+            // v5 back-compat: a save WITHOUT a <PreampPool> must still resolve the preamp from the library.
+            bool v5Compat = false;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+            {
+                if (auto* pool = x->getChildByName ("PreampPool")) x->removeChildElement (pool, true);
+                juce::MemoryBlock noPool; juce::AudioProcessor::copyXmlToBinary (*x, noPool);
+                OrbitCabAudioProcessor d; d.prepareToPlay (sr, block);
+                d.setStateInformation (noPool.getData(), (int) noPool.getSize());
+                pump (250);
+                v5Compat = d.selectedPreampId() == preId && d.exportEmbedsPreamp();
+            }
+
+            const bool preOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam
+                               && selRides && bEmbeds && shrank && rendersClean && v5Compat;
+            allPass &= preOk;
+            std::printf ("PREAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v5compat=%d zip(%d->%d)\n",
+                         srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rendersClean, v5Compat, rawSz, deflSz);
+            std::printf ("RESULT: %s\n", preOk ? "PREAMP RIDES STATE (embedded, deflated, lossless, reproducible, v5-compatible)"
+                                                : "PREAMP EMBED BROKEN");
+        }
+    }
+
+    // ---- PREAMP + POWERAMP together: both stages on, both render finite through the full chain ----
+    // Proves the two NAM instances coexist (input → preamp → poweramp → cab) without NaN/Inf and that
+    // both selections ride a save independently.
+    {
+        juce::String preId, ampId;
+        { OrbitCabAudioProcessor probe;
+          for (const auto& e : probe.preampLibrary())   if (e.factory) { preId = e.id; break; }
+          for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        if (preId.isEmpty() || ampId.isEmpty())
+        {
+            std::printf ("PRE+POWER TEST: skipped (need a factory preamp AND poweramp in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            if (auto* p = a.apvts.getParameter ("preampOn")) p->setValueNotifyingHost (1.0f);
+            if (auto* p = a.apvts.getParameter ("ampOn"))    p->setValueNotifyingHost (1.0f);
+            a.selectPreamp (preId);
+            a.selectPoweramp (ampId);
+            pump (250);
+
+            bool rendersClean = true;
+            juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+            for (int k = 0; k < 24; ++k)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < block; ++i)
+                        bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                a.processBlock (bb, mm);
+                for (int ch = 0; ch < 2 && rendersClean; ++ch)
+                    for (int i = 0; i < block; ++i)
+                        if (! std::isfinite (bb.getSample (ch, i))) { rendersClean = false; break; }
+            }
+
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+            b.setStateInformation (sess.getData(), (int) sess.getSize());
+            pump (250);
+            const bool bothRide = b.selectedPreampId() == preId && b.selectedPowerampId() == ampId;
+
+            const bool ok = rendersClean && bothRide;
+            allPass &= ok;
+            std::printf ("PRE+POWER TEST: render=%d bothRide=%d\n", rendersClean, bothRide);
+            std::printf ("RESULT: %s\n", ok ? "PREAMP + POWERAMP COEXIST (both render finite + ride state)"
+                                            : "PREAMP + POWERAMP BROKEN");
+        }
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }

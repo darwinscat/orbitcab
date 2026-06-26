@@ -273,6 +273,74 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     rebuildAmpSelector();              // scan the merged library → name buttons + combo + hasPoweramps + power-btn visibility
 
+    // ---- PREAMP (NAM): power checkbox (bottom strip) + revealed selector row (above the poweramp) ----
+    preampPowerBtn.setTooltip (juce::String::fromUTF8 ("Power the NAM preamp stage \xe2\x80\x94 the first neural stage, in front of the poweramp. Reveals the model selector below."));
+    preampPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+    addAndMakeVisible (preampPowerBtn);
+    preampPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "preampOn", preampPowerBtn);
+    preampPowerBtn.onClick = [this] { updatePreampRow(); };       // reveal/hide the row + resize on toggle
+
+    addAndMakeVisible (preampTubeDisplay);   // symbolic amp + glowing tube in the revealed row
+
+    // Contextual channel switch (ch1/ch2/ch3) — shown only for the channels the selected NAME has
+    // (and only when ≥2 exist). Param-free, driven by syncPreampSelector (no self-toggle).
+    for (int m = 0; m < 3; ++m)
+    {
+        preampChannelBtn[m].setButtonText ("CH " + juce::String (m + 1));
+        preampChannelBtn[m].setClickingTogglesState (false);
+        preampChannelBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        preampChannelBtn[m].setTooltip ("Preamp channel " + juce::String (m + 1) + ".");
+        preampChannelBtn[m].onClick = [this, m] { selectPreampChannel (m + 1); };
+        addChildComponent (preampChannelBtn[m]);
+    }
+
+    // Contextual gain: a horizontal discrete slider snapping to the available "<N>h" positions of the
+    // current name+channel. One-for-one with the poweramp's hour slider, just labelled "gain".
+    preampGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    preampGainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 38, 22);   // read-only, shows "12h"
+    preampGainSlider.setColour (juce::Slider::trackColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
+    preampGainSlider.setColour (juce::Slider::thumbColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
+    preampGainSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0x00000000));
+    preampGainSlider.setTooltip ("Preamp gain — the knob position the capture was taken at (o'clock).");
+    preampGainSlider.textFromValueFunction = [this] (double v)
+    {
+        const int i = (int) std::lround (v);
+        return juce::isPositiveAndBelow (i, (int) preampGainVals.size()) ? juce::String (preampGainVals[(size_t) i]) + "h" : juce::String();
+    };
+    preampGainSlider.valueFromTextFunction = [] (const juce::String& t) { return (double) t.getIntValue(); };   // unused (read-only)
+    preampGainSlider.onValueChange = [this]
+    {
+        const int i = (int) std::lround (preampGainSlider.getValue());
+        if (juce::isPositiveAndBelow (i, (int) preampGainVals.size()))
+            selectPreampGain (preampGainVals[(size_t) i]);
+    };
+    addChildComponent (preampGainSlider);
+
+    // Contextual boost toggle — shown only when the current name+channel+gain has BOTH an on- and an
+    // off-capture. Param-free (it switches between two captures, like the channel switch).
+    preampBoostBtn.setClickingTogglesState (false);
+    preampBoostBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+    preampBoostBtn.setTooltip ("Boost — switch to the boosted (or clean) capture of this preamp.");
+    preampBoostBtn.onClick = [this]
+    {
+        if (auto* cur = preampEntryById (processorRef.selectedPreampId()))
+            selectPreampBoost (! cur->boost);
+    };
+    addChildComponent (preampBoostBtn);
+
+    // Singletons combo (one-off preamps by full filename). Selecting an item picks that capture.
+    preampSingleBox.setTextWhenNothingSelected (juce::String::fromUTF8 ("Preamps\xe2\x80\xa6"));
+    preampSingleBox.setTooltip ("One-off preamp captures (not part of a model family).");
+    preampSingleBox.onChange = [this]
+    {
+        const int idx = preampSingleBox.getSelectedId() - 1;          // ids are 1-based → entry index
+        if (juce::isPositiveAndBelow (idx, (int) preampLib.size()))
+        { processorRef.selectPreamp (preampLib[(size_t) idx].id); syncPreampSelector(); }
+    };
+    addChildComponent (preampSingleBox);
+
+    rebuildPreampSelector();           // scan the merged preamp library → name buttons + combo + hasPreamps + power-btn visibility
+
     // ---- IR library + restore display ----
     slots[0].rebuildList();
     slots[1].rebuildList();
@@ -291,7 +359,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     lastUserIRRev    = processorRef.userIRRevision();
 
     startTimerHz (30);
-    updateAmpRow();   // initial reveal state + window size (amp off by default → 620)
+    updatePreampRow();   // initial reveal state for the preamp row
+    updateAmpRow();      // + the poweramp row; resizeForAmpRows sizes the window for both (off → 620)
 }
 
 OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
@@ -321,6 +390,15 @@ void OrbitCabAudioProcessorEditor::timerCallback()
             syncAmpSelector();                     // selection changed externally (automation / restore) → re-sync
         if (ampPowerBtn.getToggleState())
             tubeDisplay.tick();                    // advance the warm heater flicker (~30 Hz)
+    }
+    if (hasPreamps)                                // same, for the PREAMP stage
+    {
+        if ((processorRef.apvts.getRawParameterValue ("preampOn")->load() > 0.5f) != preampOnCache)
+            updatePreampRow();                     // preampOn flipped → reveal/hide + resize
+        else if (processorRef.selectedPreampId() != preampSyncedId)
+            syncPreampSelector();                  // selection changed externally (automation / restore) → re-sync
+        if (preampPowerBtn.getToggleState())
+            preampTubeDisplay.tick();              // advance the warm heater flicker (~30 Hz)
     }
 
     processorRef.undoTick();                       // coalesce edits into undo steps
@@ -457,13 +535,20 @@ void OrbitCabAudioProcessorEditor::openSettings()
         {
             showTubesPref = on;
             processorRef.appPreferences().setFlag ("showTubes", on);
-            updateAmpRow();                                // re-flow + resize the row (tall ↔ slim strip)
+            updatePreampRow();                             // re-flow + resize BOTH NAM rows (tall ↔ slim strip)
+            updateAmpRow();                                // — each sets its own tube display's show-tubes flag
         },
-        [this]                                             // Manage library…: open the poweramp manager
+        [this]                                             // Poweramp library…: open the poweramp manager
         {
             if (settingsCallout != nullptr)
                 settingsCallout->dismiss();                // close the settings pop-over first (no nested call-outs)
             openPowerampManager();
+        },
+        [this]                                             // Preamp library…: open the preamp manager
+        {
+            if (settingsCallout != nullptr)
+                settingsCallout->dismiss();
+            openPreampManager();
         });
 
     // Parent the pop-over to the editor (not the desktop) so it can't outlive the window
@@ -710,8 +795,277 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
     for (auto& b : ampNameBtns) b->setVisible (on);                       // name buttons always visible when on
     ampSingleBox.setVisible (on && ampSingleBox.getNumItems() > 0);       // combo only if there are singletons
 
-    setSize (1040, kBaseHeight + (on ? ampRowH() : 0));   // grow/shrink (triggers resized when size changes)
-    syncAmpSelector();                                    // contextual controls + tubes + final re-flow
+    resizeForAmpRows();                                  // grow/shrink for both NAM rows (triggers resized on change)
+    syncAmpSelector();                                   // contextual controls + tubes + final re-flow
+}
+
+//==============================================================================
+// PREAMP selector — an exact sibling of the poweramp selector above, generalised to the preamp's
+// richer dimension set (channel / gain / boost instead of PP-SE / hours). Each contextual control
+// is shown only when the current selection has ≥2 values for that dimension. Picking a value in one
+// dimension keeps the others if they still exist under the new choice, else falls back to a default.
+//==============================================================================
+
+// Default gain position when the current gain doesn't exist in the target group: prefer noon (12h),
+// else the middle of the available sweep, else 0 (no gain).
+static int defaultPreampGain (const std::vector<int>& hrs)
+{
+    if (hrs.empty()) return 0;
+    for (int h : hrs) if (h == 12) return 12;
+    return hrs[hrs.size() / 2];
+}
+
+// Default channel: keep "none" (0) if that's all there is, else the lowest available channel.
+static int defaultPreampChannel (const std::vector<int>& chs)
+{
+    return chs.empty() ? 0 : chs.front();
+}
+
+// Default boost: prefer OFF (the cleaner capture) when available, else whatever's there.
+static bool defaultPreampBoost (const std::vector<bool>& bs)
+{
+    if (bs.empty()) return false;
+    for (bool b : bs) if (! b) return false;
+    return bs.front();
+}
+
+const orbitcab::PreampEntry* OrbitCabAudioProcessorEditor::preampEntryById (const juce::String& id) const
+{
+    for (const auto& e : preampLib) if (e.id == id) return &e;
+    return nullptr;
+}
+
+bool OrbitCabAudioProcessorEditor::isPreampGroupName (const juce::String& name) const
+{
+    int n = 0;
+    for (const auto& e : preampLib) if (e.name == name && ++n >= 2) return true;
+    return false;
+}
+
+std::vector<int> OrbitCabAudioProcessorEditor::channelsForName (const juce::String& name) const
+{
+    std::vector<int> out;
+    for (const auto& e : preampLib)
+        if (e.name == name && std::find (out.begin(), out.end(), e.channel) == out.end())
+            out.push_back (e.channel);
+    std::sort (out.begin(), out.end());
+    return out;
+}
+
+std::vector<int> OrbitCabAudioProcessorEditor::gainsForNameChannel (const juce::String& name, int channel) const
+{
+    std::vector<int> out;
+    for (const auto& e : preampLib)
+        if (e.name == name && e.channel == channel && std::find (out.begin(), out.end(), e.hours) == out.end())
+            out.push_back (e.hours);
+    std::sort (out.begin(), out.end());
+    return out;
+}
+
+std::vector<bool> OrbitCabAudioProcessorEditor::boostsForNameChGain (const juce::String& name, int channel, int hours) const
+{
+    std::vector<bool> out;
+    for (const auto& e : preampLib)
+        if (e.name == name && e.channel == channel && e.hours == hours
+            && std::find (out.begin(), out.end(), e.boost) == out.end())
+            out.push_back (e.boost);
+    std::sort (out.begin(), out.end());   // false (clean) before true (boost)
+    return out;
+}
+
+juce::String OrbitCabAudioProcessorEditor::findPreampId (const juce::String& name, int channel, int hours, bool boost) const
+{
+    for (const auto& e : preampLib)
+        if (e.name == name && e.channel == channel && e.hours == hours && e.boost == boost) return e.id;
+    return {};
+}
+
+void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
+{
+    for (auto& b : preampNameBtns) removeChildComponent (b.get());
+    preampNameBtns.clear();
+    preampGroupNames.clear();
+
+    preampLib  = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
+    hasPreamps = ! preampLib.empty();
+
+    // GROUPS: a display name shared by ≥2 captures → one name button (model families).
+    {
+        juce::StringArray seen;
+        for (const auto& e : preampLib)
+            if (isPreampGroupName (e.name) && ! seen.contains (e.name))
+            { seen.add (e.name); preampGroupNames.push_back (e.name); }
+    }
+    for (const auto& nm : preampGroupNames)
+    {
+        auto b = std::make_unique<juce::TextButton> (nm);
+        b->setClickingTogglesState (false);   // visual state driven by syncPreampSelector (no stuck-fill bug)
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        b->setTooltip ("Preamp capture family (pick channel / gain / boost below).");
+        const auto name = nm;
+        b->onClick = [this, name] { selectPreampName (name); };
+        addChildComponent (*b);
+        preampNameBtns.push_back (std::move (b));
+    }
+
+    // SINGLETONS: a one-off capture → the combo, shown by its full filename. Item id = entry index + 1.
+    preampSingleBox.clear (juce::dontSendNotification);
+    for (int i = 0; i < (int) preampLib.size(); ++i)
+        if (! isPreampGroupName (preampLib[(size_t) i].name))
+            preampSingleBox.addItem (preampLib[(size_t) i].id.fromFirstOccurrenceOf (":", false, false), i + 1);
+
+    preampPowerBtn.setVisible (hasPreamps);
+}
+
+// Pick a GROUP by name — keep the current channel/gain/boost if they exist there, else defaults.
+void OrbitCabAudioProcessorEditor::selectPreampName (const juce::String& name)
+{
+    const auto chs = channelsForName (name);
+    if (chs.empty()) return;
+    int  channel  = defaultPreampChannel (chs);
+    int  curHours = 0;
+    bool curBoost = false;
+    if (auto* cur = preampEntryById (processorRef.selectedPreampId()))
+    {
+        if (std::find (chs.begin(), chs.end(), cur->channel) != chs.end()) channel = cur->channel;
+        curHours = cur->hours; curBoost = cur->boost;
+    }
+    const auto hrs   = gainsForNameChannel (name, channel);
+    const int  hours = (std::find (hrs.begin(), hrs.end(), curHours) != hrs.end()) ? curHours : defaultPreampGain (hrs);
+    const auto bs    = boostsForNameChGain (name, channel, hours);
+    const bool boost = (std::find (bs.begin(), bs.end(), curBoost) != bs.end()) ? curBoost : defaultPreampBoost (bs);
+    const auto id = findPreampId (name, channel, hours, boost);
+    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+}
+
+void OrbitCabAudioProcessorEditor::selectPreampChannel (int channel)
+{
+    auto* cur = preampEntryById (processorRef.selectedPreampId());
+    if (cur == nullptr) return;
+    const auto hrs   = gainsForNameChannel (cur->name, channel);
+    const int  hours = (std::find (hrs.begin(), hrs.end(), cur->hours) != hrs.end()) ? cur->hours : defaultPreampGain (hrs);
+    const auto bs    = boostsForNameChGain (cur->name, channel, hours);
+    const bool boost = (std::find (bs.begin(), bs.end(), cur->boost) != bs.end()) ? cur->boost : defaultPreampBoost (bs);
+    const auto id = findPreampId (cur->name, channel, hours, boost);
+    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+}
+
+void OrbitCabAudioProcessorEditor::selectPreampGain (int hours)
+{
+    auto* cur = preampEntryById (processorRef.selectedPreampId());
+    if (cur == nullptr) return;
+    const auto bs    = boostsForNameChGain (cur->name, cur->channel, hours);
+    const bool boost = (std::find (bs.begin(), bs.end(), cur->boost) != bs.end()) ? cur->boost : defaultPreampBoost (bs);
+    const auto id = findPreampId (cur->name, cur->channel, hours, boost);
+    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+}
+
+void OrbitCabAudioProcessorEditor::selectPreampBoost (bool boost)
+{
+    auto* cur = preampEntryById (processorRef.selectedPreampId());
+    if (cur == nullptr) return;
+    const auto id = findPreampId (cur->name, cur->channel, cur->hours, boost);
+    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+}
+
+// Point the gain slider at the current name+channel's positions (its stops = preampGainVals indices).
+// Leaves preampGainVals empty when there are <2 positions (caller hides the slider then).
+void OrbitCabAudioProcessorEditor::configurePreampGainSlider()
+{
+    preampGainVals.clear();
+    auto* cur = preampEntryById (processorRef.selectedPreampId());
+    if (cur == nullptr) return;
+    const auto hrs = gainsForNameChannel (cur->name, cur->channel);
+    if (hrs.size() < 2) return;                       // 0/1 position → no slider
+    preampGainVals = hrs;                             // sorted; slider index i → preampGainVals[i] o'clock
+
+    preampGainSlider.setRange (0.0, (double) (preampGainVals.size() - 1), 1.0);   // discrete: snaps to each stop
+    const int idx = (int) (std::find (preampGainVals.begin(), preampGainVals.end(), cur->hours) - preampGainVals.begin());
+    preampGainSlider.setValue (juce::isPositiveAndBelow (idx, (int) preampGainVals.size()) ? idx : 0,
+                               juce::dontSendNotification);
+}
+
+// Reflect the "preampSel" selection onto the whole selector: highlight the name button (or the combo),
+// show the contextual channel switch (channels the name has, ≥2), the gain slider (name+channel has
+// several), and the boost toggle (both on+off captures exist), plus the tube. Then re-flow.
+void OrbitCabAudioProcessorEditor::syncPreampSelector()
+{
+    preampSyncedId = processorRef.selectedPreampId();
+    const bool on  = preampPowerBtn.getToggleState();
+    auto* cur = preampEntryById (preampSyncedId);
+    const bool group = cur != nullptr && isPreampGroupName (cur->name);
+
+    // name buttons — highlight the selected group's name
+    for (size_t i = 0; i < preampNameBtns.size(); ++i)
+        preampNameBtns[i]->setToggleState (group && cur->name == preampGroupNames[i], juce::dontSendNotification);
+
+    // singletons combo — reflect (or clear) the selection
+    if (cur != nullptr && ! group)
+    {
+        for (int i = 0; i < (int) preampLib.size(); ++i)
+            if (preampLib[(size_t) i].id == cur->id) { preampSingleBox.setSelectedId (i + 1, juce::dontSendNotification); break; }
+    }
+    else
+        preampSingleBox.setSelectedId (0, juce::dontSendNotification);
+
+    // contextual channel switch — a button per channel the name has, shown only when ≥2 exist
+    const auto chs = (group ? channelsForName (cur->name) : std::vector<int>{});
+    const bool showChannels = on && group && chs.size() >= 2;
+    for (int m = 0; m < 3; ++m)
+    {
+        const int channel = m + 1;
+        const bool exists  = std::find (chs.begin(), chs.end(), channel) != chs.end();
+        preampChannelBtn[m].setVisible (showChannels && exists);
+        preampChannelBtn[m].setToggleState (cur != nullptr && cur->channel == channel, juce::dontSendNotification);
+    }
+
+    // contextual gain slider — pointed at this name+channel's positions (hidden when <2 exist)
+    configurePreampGainSlider();
+    preampGainSlider.setVisible (on && group && preampGainVals.size() >= 2);
+
+    // contextual boost toggle — only when both an on- and an off-capture exist for name+channel+gain
+    const auto bs = (cur != nullptr ? boostsForNameChGain (cur->name, cur->channel, cur->hours) : std::vector<bool>{});
+    const bool hasOff = std::find (bs.begin(), bs.end(), false) != bs.end();
+    const bool hasOn  = std::find (bs.begin(), bs.end(), true)  != bs.end();
+    preampBoostBtn.setVisible (on && group && hasOff && hasOn);
+    preampBoostBtn.setToggleState (cur != nullptr && cur->boost, juce::dontSendNotification);
+
+    // tube: a single slim preamp tube (12AX7-ish), glowing when on
+    preampTubeDisplay.setSelection (2 /*slim silhouette*/, cur != nullptr ? 1 : 0, on);
+
+    resized();   // contextual controls appeared/disappeared → re-flow the row
+}
+
+void OrbitCabAudioProcessorEditor::updatePreampRow()
+{
+    const bool on = hasPreamps && preampPowerBtn.getToggleState();   // empty library → never reveal
+    preampOnCache = preampPowerBtn.getToggleState();
+
+    // Powering on with no resolvable selection → default to the first library entry (never "on but
+    // silent"). A restored session that already carries a valid "preampSel" keeps it.
+    if (on && ! preampLib.empty() && processorRef.selectedPreampId().isEmpty())
+        processorRef.selectPreamp (preampLib.front().id);
+
+    preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
+    preampTubeDisplay.setVisible (on);
+
+    for (auto& b : preampNameBtns) b->setVisible (on);                       // name buttons always visible when on
+    preampSingleBox.setVisible (on && preampSingleBox.getNumItems() > 0);    // combo only if there are singletons
+
+    resizeForAmpRows();                               // grow/shrink for both NAM rows (triggers resized on change)
+    syncPreampSelector();                             // contextual controls + tube + final re-flow
+}
+
+void OrbitCabAudioProcessorEditor::openPreampManager()
+{
+    // The preamp library manager: Add / Remove the user .nam captures (preampDir). On any change it
+    // rebuilds the bottom-strip selector + re-flows the row.
+    auto mgr = std::make_unique<PreampManager> (processorRef, [this]
+    {
+        rebuildPreampSelector();   // rescan merged library → model buttons + hasPreamps + power-btn visibility
+        updatePreampRow();         // reveal/hide + resize to match the new library / selection
+    });
+    juce::CallOutBox::launchAsynchronously (std::move (mgr), settingsBtn.getBounds(), this);
 }
 
 void OrbitCabAudioProcessorEditor::pushFiltersToWave()
@@ -910,16 +1264,20 @@ void OrbitCabAudioProcessorEditor::exportPreset()
                 return;                                   // cancelled
             presets.writeTo (file);
 
-            // Light, factual heads-up — only when the preset ACTUALLY carries embedded audio:
-            // an external (user) IR and/or the poweramp .nam (v5). A preset of only bundled refs
-            // with no amp embeds nothing → no popup. Wording reflects what's really in there.
+            // Light, factual heads-up — only when the preset ACTUALLY carries embedded audio: an
+            // external (user) IR and/or the preamp/poweramp .nam (v5/v6). A preset of only bundled
+            // refs with no amp embeds nothing → no popup. Wording reflects what's really in there.
             const bool embIR  = processorRef.exportEmbedsIR();
             const bool embAmp = processorRef.exportEmbedsAmp();
-            if (embIR || embAmp)
+            const bool embPre = processorRef.exportEmbedsPreamp();
+            if (embIR || embAmp || embPre)
             {
-                const juce::String what = (embIR && embAmp) ? "its IR and the poweramp capture"
-                                        : embAmp             ? "the poweramp capture"
-                                                             : "its IR audio";
+                juce::StringArray bits;
+                if (embIR)  bits.add ("its IR audio");
+                if (embPre) bits.add ("the preamp capture");
+                if (embAmp) bits.add ("the poweramp capture");
+                juce::String what = bits.size() == 1 ? bits[0]
+                                  : bits.joinIntoString (", ", 0, bits.size() - 1) + " and " + bits[bits.size() - 1];
                 juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
                     "Preset carries embedded audio",
                     "This preset embeds " + what + ", so it travels inside the .orbitcab file.");
@@ -1132,6 +1490,8 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
             0xff24242b, 0xff17171c, 0.0f);
     if (! ampRowBounds.isEmpty())                                  // revealed poweramp row (darker shade)
         vpanel (ampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
+    if (! preampRowBounds.isEmpty())                               // revealed preamp row (same shade)
+        vpanel (preampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
 
     // INPUT / OUTPUT side panels (rounded, gradient, faint border)
     for (auto rect : { inBlockBounds, outBlockBounds })
@@ -1207,7 +1567,10 @@ void OrbitCabAudioProcessorEditor::resized()
     redoBtn.setBounds (leftBar.removeFromLeft (34).reduced (3, 8));
 
     // ---- MIX strip (bottom centre) ----
-    // Revealed POWERAMP row at the very bottom — present only when AMP power is on.
+    // Revealed NAM rows at the very bottom: POWERAMP lowest, PREAMP just above it, so the window
+    // reads top→bottom in signal order (… MIX strip, PREAMP, POWERAMP). removeFromBottom peels the
+    // lowest band first, so the poweramp row is removed before the preamp row. Each present only
+    // when its stage is powered.
     if (hasPoweramps && ampPowerBtn.getToggleState())
     {
         ampRowBounds = r.removeFromBottom (ampRowH());
@@ -1258,11 +1621,75 @@ void OrbitCabAudioProcessorEditor::resized()
     else
         ampRowBounds = {};
 
+    // Revealed PREAMP row (above the poweramp row). Same geometry as the poweramp row, but with the
+    // preamp's contextual controls laid out from the right: singletons combo, boost, gain, channel.
+    if (hasPreamps && preampPowerBtn.getToggleState())
+    {
+        preampRowBounds = r.removeFromBottom (preampRowH());
+        auto row = preampRowBounds.reduced (16, 10);
+        preampTubeDisplay.setBounds (row.removeFromLeft (showTubesPref ? 152 : 52));
+        row.removeFromLeft (16);
+
+        if (preampSingleBox.isVisible())
+        {
+            preampSingleBox.setBounds (row.removeFromRight (160).withSizeKeepingCentre (160, 28));
+            row.removeFromRight (14);
+        }
+        if (preampBoostBtn.isVisible())
+        {
+            preampBoostBtn.setBounds (row.removeFromRight (60).withSizeKeepingCentre (60, 26));
+            row.removeFromRight (12);
+        }
+        if (preampGainSlider.isVisible())
+        {
+            preampGainSlider.setBounds (row.removeFromRight (132).withSizeKeepingCentre (132, 26));
+            row.removeFromRight (12);
+        }
+        {
+            int nc = 0; for (auto& b : preampChannelBtn) if (b.isVisible()) ++nc;
+            if (nc > 0)
+            {
+                constexpr int cw = 46, cg = 3;
+                auto ca = row.removeFromRight (nc * cw + (nc - 1) * cg).withSizeKeepingCentre (nc * cw + (nc - 1) * cg, 26);
+                for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (ca.removeFromLeft (cw)); ca.removeFromLeft (cg); }
+                row.removeFromRight (14);
+            }
+        }
+
+        auto ctl = row.withSizeKeepingCentre (row.getWidth(), 30);
+        const int n = (int) preampNameBtns.size();
+        if (n > 0)
+        {
+            const int gap = 6;
+            const int bw  = juce::jlimit (44, 132, (ctl.getWidth() - gap * (n - 1)) / n);
+            for (auto& b : preampNameBtns)
+            {
+                b->setBounds (ctl.removeFromLeft (bw).reduced (1, 0));
+                ctl.removeFromLeft (gap);
+            }
+        }
+    }
+    else
+        preampRowBounds = {};
+
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient
     versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 15));   // version always bottom-right
-    if (hasPoweramps)
-        ampPowerBtn.setBounds (strip.removeFromLeft (108).reduced (12, 12));   // bottom-left POWERAMP checkbox
+    // Bottom-left power checkboxes: PREAMP above POWERAMP (signal order). Share one 108-wide column;
+    // when only one library exists, that single checkbox is centred in the column.
+    if (hasPreamps || hasPoweramps)
+    {
+        auto amps = strip.removeFromLeft (108).reduced (12, 2);
+        if (hasPreamps && hasPoweramps)
+        {
+            preampPowerBtn.setBounds (amps.removeFromTop (amps.getHeight() / 2));
+            ampPowerBtn.setBounds    (amps);
+        }
+        else if (hasPreamps)
+            preampPowerBtn.setBounds (amps.withSizeKeepingCentre (amps.getWidth(), 22));
+        else
+            ampPowerBtn.setBounds    (amps.withSizeKeepingCentre (amps.getWidth(), 22));
+    }
     mixABLabel.setBounds   (strip.removeFromLeft (146).reduced (10, 0));
     mixABSlider.setBounds  (strip.reduced (40, 12));
     // With snap-to-mouse off the drag is relative; default sensitivity (250 px = full

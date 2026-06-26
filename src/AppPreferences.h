@@ -77,18 +77,26 @@ public:
 
     // System-wide poweramp .nam library folder (sibling of the settings file), per-machine, shared
     // across instances. The user's managed amp captures live here; created on first ask.
-    juce::File powerampDir() const
+    juce::File powerampDir() const { return namSubDir ("Poweramps"); }
+
+    // Same, for the PREAMP stage's user .nam captures — a separate sibling folder so the two
+    // libraries never mix (preamp models in front of poweramp models).
+    juce::File preampDir() const { return namSubDir ("Preamps"); }
+
+private:
+    // A per-machine NAM library sub-folder next to the settings file (created on first ask).
+    // Shared by powerampDir()/preampDir() so the two stay siblings with identical resolution.
+    juce::File namSubDir (const juce::String& sub) const
     {
         auto* s = file();
         auto dir = (s != nullptr ? s->getFile().getParentDirectory()
                                  : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                                        .getChildFile ("Darwin's Cat").getChildFile ("OrbitCab"))
-                       .getChildFile ("Poweramps");
+                       .getChildFile (sub);
         dir.createDirectory();
         return dir;
     }
 
-private:
     juce::ApplicationProperties props;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AppPreferences)

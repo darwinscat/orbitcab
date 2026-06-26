@@ -16,6 +16,7 @@
 #include "ui/SlotComponent.h"
 #include "ui/TubeDisplay.h"
 #include "ui/PowerampManager.h"
+#include "ui/PreampManager.h"
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
@@ -154,16 +155,64 @@ private:
     juce::Rectangle<int>  ampRowBounds;          // painted panel region of the revealed row
     juce::String ampSyncedId;                    // last selection reflected (timer re-syncs only on change)
     bool ampOnCache = false;                     // detect ampOn change on the timer (host automation)
-    bool showTubesPref = true;                   // gear "Show tubes" view pref (default on)
+    bool showTubesPref = true;                   // gear "Show tubes" view pref (default on) — shared by both rows
     bool hasPoweramps = false;                   // library non-empty (factory or user) → show the POWERAMP UI
 
+    // PREAMP (NAM): the SECOND stage's selector — an exact sibling of the poweramp block above,
+    // against the preamp library (channel / gain / boost dimensions instead of PP-SE / hours). Its
+    // revealed row stacks ABOVE the poweramp row (signal order: input → preamp → poweramp → cab).
+    juce::ToggleButton    preampPowerBtn { "PREAMP" };
+    std::unique_ptr<BAtt> preampPowerAtt;
+    TubeDisplay           preampTubeDisplay;
+    std::vector<orbitcab::PreampEntry>             preampLib;          // cached merged library (rebuilt on add/remove)
+    std::vector<juce::String>                      preampGroupNames;   // distinct names with ≥2 variants (ordered)
+    std::vector<std::unique_ptr<juce::TextButton>> preampNameBtns;     // one per group name
+    juce::TextButton      preampChannelBtn[3];   // contextual 3-way channel switch (ch1/ch2/ch3; shown when ≥2 exist)
+    juce::Slider          preampGainSlider;      // contextual horizontal discrete slider over the available <N>h (gain)
+    std::vector<int>      preampGainVals;        // gain hour at each slider index (sorted; snaps to these stops)
+    juce::TextButton      preampBoostBtn { "BOOST" };   // contextual boost toggle (shown when both on+off variants exist)
+    juce::ComboBox        preampSingleBox;       // SINGLETONS (one-off preamps) listed by full filename
+
+    void rebuildPreampSelector();                // rescan library → groups/singletons → (re)create controls
+    void selectPreampName    (const juce::String& name);   // pick a group (keep channel/gain/boost if they exist there)
+    void selectPreampChannel (int channel);                // switch channel within the current name
+    void selectPreampGain    (int hours);                  // switch gain position within the current name+channel
+    void selectPreampBoost   (bool boost);                 // switch boost within the current name+channel+gain
+    void configurePreampGainSlider();            // set the slider's stops to the current name+channel positions
+    void updatePreampRow();                      // show/hide the revealed row + resize the editor
+    void syncPreampSelector();                   // reflect "preampSel" → highlight + contextual controls + tubes
+
+    // Library queries, computed from preampLib (small vector — no caching needed):
+    std::vector<int>  channelsForName     (const juce::String& name) const;                 // distinct channels present
+    std::vector<int>  gainsForNameChannel  (const juce::String& name, int channel) const;    // distinct <N>h present
+    std::vector<bool> boostsForNameChGain  (const juce::String& name, int channel, int hours) const;  // {false?, true?}
+    juce::String findPreampId (const juce::String& name, int channel, int hours, bool boost) const;   // matching id ("" = none)
+    bool          isPreampGroupName (const juce::String& name) const;     // ≥2 entries share this display name
+    const orbitcab::PreampEntry* preampEntryById (const juce::String& id) const;
+
+    juce::Rectangle<int>  preampRowBounds;       // painted panel region of the revealed preamp row
+    juce::String preampSyncedId;                 // last selection reflected (timer re-syncs only on change)
+    bool preampOnCache = false;                   // detect preampOn change on the timer (host automation)
+    bool hasPreamps = false;                      // library non-empty (factory or user) → show the PREAMP UI
+
     static constexpr int  kBaseHeight = 620;
-    int ampRowH() const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
+    int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
+    int preampRowH() const { return ampRowH(); }                 // same geometry as the poweramp row
+
+    // Window height = base + whichever NAM rows are revealed (each stage independent). One helper so
+    // updateAmpRow()/updatePreampRow() can't disagree on the total. setSize is a no-op when unchanged.
+    void resizeForAmpRows()
+    {
+        setSize (1040, kBaseHeight
+                       + (hasPreamps   && preampPowerBtn.getToggleState() ? preampRowH() : 0)
+                       + (hasPoweramps && ampPowerBtn.getToggleState()    ? ampRowH()    : 0));
+    }
 
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B
 
     void openSettings();         // gear → CallOutBox: HEAD / Dry-Wet / spectrum toggles
     void openPowerampManager();  // settings "Manage library…" → PowerampManager pop-over (Add/Remove .nam)
+    void openPreampManager();    // settings "Manage library…" → PreampManager pop-over (Add/Remove .nam)
     juce::Component::SafePointer<juce::CallOutBox> settingsCallout;   // dismiss it when opening the manager
 
     // pre/post spectrum analyser (drawn faint inside the waveforms). `spectrumEnabled` mirrors

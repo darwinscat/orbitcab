@@ -31,7 +31,8 @@ struct Params
     float outputGainDb = 0.0f;
     float mixAB01      = 0.0f;   // 0 = slot A, 1 = slot B (the "mixAB" param / 100)
     bool  bypass       = false;
-    bool  ampOn        = false;  // run the NAM amp stage in front of the cab (input → AMP → cab)
+    bool  preampOn     = false;  // run the NAM preamp stage first (input → PREAMP → POWERAMP → cab)
+    bool  ampOn        = false;  // run the NAM poweramp stage in front of the cab
     bool  autoLevel    = true;
     bool  aLoaded      = true;   // slot A has an IR; false = empty (no cab → dry passthrough on A)
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)

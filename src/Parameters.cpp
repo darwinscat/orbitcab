@@ -49,6 +49,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // (Output loudness-normalisation is always on — there's no user reason to hear models at
     // mismatched levels — so no param/toggle for it either.)
     layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "ampOn", kParamVersion }, "Amp (NAM)", false));
+    // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
+    // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
+    // "preampSel" library selection (not a host param), resolved off the audio thread in
+    // PluginProcessor::applyPreamp(). Output loudness-normalisation is always on (no toggle).
+    layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "preampOn", kParamVersion }, "Preamp (NAM)", false));
 
     // ---- per slot (A/B): HPF + LPF + Phase + Dry/Wet + Trim-enable ----
     // Cutoff ranges (widened per user): HPF 30–400 Hz (def 80), LPF 2–12 kHz (def 7k);
