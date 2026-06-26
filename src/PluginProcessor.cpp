@@ -531,8 +531,8 @@ juce::File OrbitCabAudioProcessor::importPoweramp (const juce::File& src)
 {
     // Copy a chosen .nam into the per-machine user library, so it's available to every instance.
     // Name clash → suffix " (2)", " (3)"… Returns the destination ({} on failure).
-    if (! src.existsAsFile())
-        return {};
+    if (! src.existsAsFile() || src.getSize() > (juce::int64) kMaxEmbeddedNamBytes)
+        return {};                     // missing, or far bigger than any real .nam → refuse (don't import junk)
     const auto dir = appPreferencesInstance.powerampDir();
     auto dest = dir.getChildFile (src.getFileName());
     for (int n = 2; dest.existsAsFile(); ++n)
@@ -626,9 +626,9 @@ void OrbitCabAudioProcessor::applyPoweramp()
                             break;
                         }
                 }
-                else if (e.file.existsAsFile())
+                else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
                 {
-                    e.file.loadFileAsData (mb);
+                    e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
                 }
 
                 if (mb.getSize() > 0 && engine.loadAmpModelBytes (mb.getData(), mb.getSize(), kPowerampTrimDb))
@@ -689,8 +689,8 @@ void OrbitCabAudioProcessor::selectPreamp (const juce::String& id)
 
 juce::File OrbitCabAudioProcessor::importPreamp (const juce::File& src)
 {
-    if (! src.existsAsFile())
-        return {};
+    if (! src.existsAsFile() || src.getSize() > (juce::int64) kMaxEmbeddedNamBytes)
+        return {};                     // missing, or far bigger than any real .nam → refuse (don't import junk)
     const auto dir = appPreferencesInstance.preampDir();
     auto dest = dir.getChildFile (src.getFileName());
     for (int n = 2; dest.existsAsFile(); ++n)
@@ -766,9 +766,9 @@ void OrbitCabAudioProcessor::applyPreamp()
                             break;
                         }
                 }
-                else if (e.file.existsAsFile())
+                else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
                 {
-                    e.file.loadFileAsData (mb);
+                    e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
                 }
 
                 if (mb.getSize() > 0 && engine.loadPreampModelBytes (mb.getData(), mb.getSize(), kPreampTrimDb))

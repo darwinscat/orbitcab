@@ -1071,6 +1071,32 @@ int main()
                                         : "MONO/STEREO BROKEN");
     }
 
+    // ---- user .nam size cap: import refuses a file far larger than any real capture (no OOM on junk) ----
+    // A real NAM capture is well under 1 MB; the cap is 8 MB. importPreamp/importPoweramp must refuse an
+    // oversized file (return {}), copying nothing into the per-machine library.
+    {
+        auto big = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("orbitcab_big_cap_test.nam");
+        { juce::MemoryBlock blob ((size_t) 9 * 1024 * 1024, true); big.replaceWithData (blob.getData(), blob.getSize()); }   // 9 MB > 8 MB cap
+
+        OrbitCabAudioProcessor p;
+        const bool ampReject = p.importPoweramp (big) == juce::File();
+        const bool preReject = p.importPreamp   (big) == juce::File();
+
+        // sanity: a small file IS accepted (then clean it up so we don't pollute the user library).
+        auto small = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("orbitcab_small_cap_test.nam");
+        small.replaceWithText ("{}");
+        const auto destAmp = p.importPoweramp (small);
+        const bool smallOk = destAmp != juce::File();
+        if (smallOk) destAmp.moveToTrash();
+
+        big.deleteFile(); small.deleteFile();
+        const bool ok = ampReject && preReject && smallOk;
+        allPass &= ok;
+        std::printf ("SIZE CAP TEST: ampReject=%d preReject=%d smallAccepted=%d\n", ampReject, preReject, smallOk);
+        std::printf ("RESULT: %s\n", ok ? "OVERSIZED .nam REFUSED, normal .nam accepted"
+                                        : "SIZE CAP BROKEN");
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }
