@@ -21,8 +21,10 @@
 //     once the audio thread has provably stepped past it — so no use-after-free and the
 //     audio thread never deletes.
 //
-// A guitar amp is mono: process() sums the input channels to mono, runs the model once,
-// and fans the result back across every channel (the cab IR downstream can still be stereo).
+// Channels: a MONO stream (1 ch) runs ONE model instance on the single channel; a STEREO stream
+// (2 ch) runs TWO independent instances of the SAME capture (true stereo — L/R independent). Both
+// instances are always built on load, and prepare() configures both per-channel resamplers, so a
+// host switching the layout mono<->stereo (a re-prepare) is safe.
 //==============================================================================
 namespace cab
 {
