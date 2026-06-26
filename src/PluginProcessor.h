@@ -312,6 +312,13 @@ private:
     // Same idea for the preamp — a single flat output makeup (dB) on top of loudness normalisation.
     static constexpr float kPreampTrimDb = 3.0f;
 
+    // Raw .nam bytes for a library id — factory (BinaryData / PreampBinaryData) or user file, size-
+    // capped; {} if the id isn't in the merged library or is oversized. The ONE byte source shared by
+    // applyPoweramp/applyPreamp (load the model) AND buildStateTree (materialise the pool at save time,
+    // so a select-then-save before the reload poll still embeds the .nam).
+    juce::MemoryBlock powerampBytesFor (const juce::String& id) const;
+    juce::MemoryBlock preampBytesFor   (const juce::String& id) const;
+
     // Resolve "ampSel" against the merged library + load that .nam into the amp stage off the
     // audio thread (BinaryData or file read + atomic swap). Off / empty / unresolved => clears it.
     void applyPoweramp();

@@ -991,15 +991,23 @@ int main()
         //       them to the same waveform);
         //   (b) feed L a signal and R silence → R must stay quiet (a mono-sum-and-fan would put ~half of L
         //       into R, i.e. rMax ≈ 0.5·lMax). True stereo keeps R ≈ 0.
-        auto stereoIndependent = [&] () -> bool
+        // Run it twice: at unity, and at NON-UNITY, ASYMMETRIC input/output gain (inDb/outDb) — so the
+        // LEVEL stages (input gain → … → auto-level → output gain) are proven per-channel, never a sum.
+        auto stereoIndependent = [&] (float inDb, float outDb) -> bool
         {
+            auto setLevels = [&] (OrbitCabAudioProcessor& p)
+            {
+                if (auto* q = p.apvts.getParameter ("inputGain")) q->setValueNotifyingHost (q->convertTo0to1 (inDb));
+                if (auto* q = p.apvts.getParameter ("gain"))      q->setValueNotifyingHost (q->convertTo0to1 (outDb));
+            };
+
             // (a) different per-channel signal → outputs differ
             double maxDiff = 0.0; bool finite = true;
             {
                 OrbitCabAudioProcessor p;
                 if (! p.setBusesLayout (layoutFor (2))) return false;
                 p.prepareToPlay (sr, block);
-                armStages (p);
+                armStages (p); setLevels (p);
                 juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
                 for (int k = 0; k < 24; ++k)
                 {
@@ -1026,7 +1034,7 @@ int main()
                 OrbitCabAudioProcessor p;
                 if (! p.setBusesLayout (layoutFor (2))) return false;
                 p.prepareToPlay (sr, block);
-                armStages (p);
+                armStages (p); setLevels (p);
                 juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
                 for (int k = 0; k < 24; ++k)
                 {
@@ -1044,9 +1052,10 @@ int main()
             return distinct && noBleed;
         };
 
-        const bool mono       = runChannels (1);
-        const bool stereo     = runChannels (2);
-        const bool trueStereo = stereoIndependent();
+        const bool mono        = runChannels (1);
+        const bool stereo      = runChannels (2);
+        const bool trueStereo  = stereoIndependent (0.0f,  0.0f);   // unity in/out level
+        const bool levelStereo = stereoIndependent (6.0f, -3.0f);   // +6 dB in / −3 dB out, asymmetric
 
         // A host can change the layout live (mono -> stereo) → re-prepare; the loaded models stay clean.
         bool reprepare = false;
@@ -1063,12 +1072,76 @@ int main()
             }
         }
 
-        const bool ok = mono && stereo && trueStereo && reprepare;
+        const bool ok = mono && stereo && trueStereo && levelStereo && reprepare;
         allPass &= ok;
-        std::printf ("MONO/STEREO TEST: mono=%d stereo=%d trueStereo(L/R independent)=%d reprepare=%d (factory nam pre=%d amp=%d)\n",
-                     mono, stereo, trueStereo, reprepare, preId.isNotEmpty(), ampId.isNotEmpty());
-        std::printf ("RESULT: %s\n", ok ? "FULL TRUE-STEREO CHAIN (independent L/R, mono ok, live re-layout)"
+        std::printf ("MONO/STEREO TEST: mono=%d stereo=%d trueStereo=%d levelStereo(in+6/out-3)=%d reprepare=%d (factory nam pre=%d amp=%d)\n",
+                     mono, stereo, trueStereo, levelStereo, reprepare, preId.isNotEmpty(), ampId.isNotEmpty());
+        std::printf ("RESULT: %s\n", ok ? "FULL TRUE-STEREO CHAIN (independent L/R at unity + non-unity levels, mono ok, live re-layout)"
                                         : "MONO/STEREO BROKEN");
+    }
+
+    // ---- user .nam size cap: import refuses a file far larger than any real capture (no OOM on junk) ----
+    // A real NAM capture is well under 1 MB; the cap is 8 MB. importPreamp/importPoweramp must refuse an
+    // oversized file (return {}), copying nothing into the per-machine library.
+    {
+        auto big = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("orbitcab_big_cap_test.nam");
+        { juce::MemoryBlock blob ((size_t) 9 * 1024 * 1024, true); big.replaceWithData (blob.getData(), blob.getSize()); }   // 9 MB > 8 MB cap
+
+        OrbitCabAudioProcessor p;
+        const bool ampReject = p.importPoweramp (big) == juce::File();
+        const bool preReject = p.importPreamp   (big) == juce::File();
+
+        // sanity: a small file IS accepted (then clean it up so we don't pollute the user library).
+        auto small = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("orbitcab_small_cap_test.nam");
+        small.replaceWithText ("{}");
+        const auto destAmp = p.importPoweramp (small);
+        const bool smallOk = destAmp != juce::File();
+        if (smallOk) destAmp.moveToTrash();
+
+        big.deleteFile(); small.deleteFile();
+        const bool ok = ampReject && preReject && smallOk;
+        allPass &= ok;
+        std::printf ("SIZE CAP TEST: ampReject=%d preReject=%d smallAccepted=%d\n", ampReject, preReject, smallOk);
+        std::printf ("RESULT: %s\n", ok ? "OVERSIZED .nam REFUSED, normal .nam accepted"
+                                        : "SIZE CAP BROKEN");
+    }
+
+    // ---- select-then-save-immediately still embeds the model (no reload-poll tick needed) ----
+    // The pool used to be populated only by the 30 Hz reload poll (applyPreamp/applyPoweramp). A save
+    // BEFORE that tick would miss the bytes. buildStateTree now materialises any referenced-but-unpooled
+    // model from the library at save time, so the .nam always travels with the save.
+    {
+        auto poolCount = [] (const juce::MemoryBlock& mb, const char* node)
+        { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+          auto* p = x ? x->getChildByName (node) : nullptr; return p ? p->getNumChildElements() : -1; };
+
+        juce::String preId, ampId;
+        { OrbitCabAudioProcessor probe;
+          for (const auto& e : probe.preampLibrary())   if (e.factory) { preId = e.id; break; }
+          for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        if (preId.isEmpty() || ampId.isEmpty())
+        {
+            std::printf ("IMMEDIATE EMBED TEST: skipped (no factory .nam in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            a.selectPreamp (preId);
+            a.selectPoweramp (ampId);
+            // NO pump() — save right away, before the poll could have pooled the bytes.
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            juce::MemoryBlock pres; a.getStateForPreset  (pres);
+            const int preSess = poolCount (sess, "PreampPool"),  ampSess = poolCount (sess, "PowerampPool");
+            const int prePres = poolCount (pres, "PreampPool"),  ampPres = poolCount (pres, "PowerampPool");
+
+            const bool ok = preSess == 1 && ampSess == 1 && prePres == 1 && ampPres == 1;
+            allPass &= ok;
+            std::printf ("IMMEDIATE EMBED TEST: session(pre=%d amp=%d) preset(pre=%d amp=%d) — saved with no poll tick\n",
+                         preSess, ampSess, prePres, ampPres);
+            std::printf ("RESULT: %s\n", ok ? "SELECT-THEN-SAVE EMBEDS (materialised at save time)"
+                                            : "IMMEDIATE EMBED BROKEN");
+        }
     }
 
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
