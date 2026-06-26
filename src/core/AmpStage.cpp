@@ -114,11 +114,19 @@ struct AmpStage::Impl
             return false;
 
         const double modelSR = set->inst[0]->GetExpectedSampleRate();
-        // Resamplers are configured for the model's native rate in prepare() (audio stopped); do
-        // NOT reconfigure them here — audio may be live, and resetting them would race. Just Reset
-        // the new, not-yet-live instances to the run rate. (All factory captures are 48 kHz.)
+
+        // Rate contract: the resamplers are configured for `modelRunSR` in prepare() (audio stopped),
+        // and we can't safely reconfigure them here (audio may be live → resetting them would race the
+        // audio thread). So a model whose native rate differs from the configured run rate would play
+        // at the WRONG rate (mispitched). Refuse it instead of misrepresenting it. A model that doesn't
+        // report a rate (0) keeps the previous behaviour (run at modelRunSR). Lifting this restriction
+        // would need per-model resampler state carried in the swapped ModelSet. (Factory NAMs are 48k.)
+        if (modelSR > 0.0 && std::abs (modelSR - modelRunSR) > 0.5)
+            return false;
+
+        // Reset the new, not-yet-live instances to the run rate (alloc + prewarm).
         for (auto& m : set->inst)
-            m->Reset (modelRunSR, maxModelFrames);           // run at native rate; alloc + prewarm
+            m->Reset (modelRunSR, maxModelFrames);
 
         set->expectedSR = modelSR;
         if (set->inst[0]->HasLoudness())

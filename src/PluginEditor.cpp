@@ -426,6 +426,8 @@ void OrbitCabAudioProcessorEditor::timerCallback()
         lastSoundRev = r;
         slots[0].syncFromProcessor(); slots[1].syncFromProcessor();
         pushFiltersToWave();
+        updatePreampRow();   // a restored / snapshot / undo selection may flip hasPreamps/hasPoweramps —
+        updateAmpRow();      // re-evaluate visibility so an audible NAM stage is never left hidden
     }
 
     updatePresetDisplay();                         // live dirty marker ("Default *") as knobs move
@@ -648,7 +650,7 @@ void OrbitCabAudioProcessorEditor::rebuildAmpSelector()
     ampGroupNames.clear();
 
     ampLib       = processorRef.powerampLibrary();   // factory (BinaryData) + user (powerampDir), merged
-    hasPoweramps = ! ampLib.empty();
+    hasPoweramps = ! ampLib.empty() || processorRef.selectedPowerampId().isNotEmpty();   // restored/pooled model shows even with an empty local library
 
     // GROUPS: a display name shared by ≥2 captures → one name button (tube families: 6L6 / EL34 / …).
     {
@@ -779,7 +781,14 @@ void OrbitCabAudioProcessorEditor::syncAmpSelector()
 
 void OrbitCabAudioProcessorEditor::updateAmpRow()
 {
-    const bool on = hasPoweramps && ampPowerBtn.getToggleState();   // empty library → never reveal
+    // A restored/embedded model (from <PowerampPool>) can be audible even when this build's local
+    // library is empty (a moved project on a public build). Show the UI when EITHER the library has
+    // models OR a selection is restored, so an audible stage is never invisible/untoggleable. Recompute
+    // here (not just on rebuild) so a host state-restore / snapshot / undo reveals it.
+    hasPoweramps = ! ampLib.empty() || processorRef.selectedPowerampId().isNotEmpty();
+    ampPowerBtn.setVisible (hasPoweramps);
+
+    const bool on = hasPoweramps && ampPowerBtn.getToggleState();
     ampOnCache = ampPowerBtn.getToggleState();
 
     // Powering on with no resolvable selection → default to the first library entry (so the stage
@@ -813,7 +822,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     preampNameBtns.clear();
 
     preampSel.lib = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
-    hasPreamps    = ! preampSel.lib.empty();
+    hasPreamps    = ! preampSel.lib.empty() || processorRef.selectedPreampId().isNotEmpty();   // restored/pooled model shows even with an empty local library
 
     // GROUPS: a display name shared by ≥2 captures → one name button (model families).
     preampGroupNames = preampSel.groupNames();
@@ -920,7 +929,13 @@ void OrbitCabAudioProcessorEditor::syncPreampSelector()
 
 void OrbitCabAudioProcessorEditor::updatePreampRow()
 {
-    const bool on = hasPreamps && preampPowerBtn.getToggleState();   // empty library → never reveal
+    // Same as updateAmpRow: a restored/embedded preamp can be audible with an empty local library, so
+    // reveal the UI when EITHER the library has models OR a selection is restored (re-evaluated here so
+    // a host state-restore / snapshot / undo reveals it, not only on a library rebuild).
+    hasPreamps = ! preampSel.lib.empty() || processorRef.selectedPreampId().isNotEmpty();
+    preampPowerBtn.setVisible (hasPreamps);
+
+    const bool on = hasPreamps && preampPowerBtn.getToggleState();
     preampOnCache = preampPowerBtn.getToggleState();
 
     // Powering on with no resolvable selection → default to the first library entry (never "on but
