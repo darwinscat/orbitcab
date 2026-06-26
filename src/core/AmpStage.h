@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <string>
 
 //==============================================================================
 // cab::AmpStage — a neural amp (NAM) stage that runs IN FRONT of the cab convolution
@@ -15,7 +14,7 @@
 // of the Core, and the dependency stays swappable.
 //
 // Threading mirrors the IR path exactly:
-//   • prepare() / loadModelFile() / clearModel() / collectGarbage() — message thread.
+//   • prepare() / loadModelFromMemory() / clearModel() / collectGarbage() — message thread.
 //   • process() — the ONLY thing the audio thread calls. 🔴 It never allocates, locks,
 //     does IO or throws. A freshly-loaded model is atomic-swapped into the live pointer;
 //     the replaced model is parked and freed on the message thread (collectGarbage) only
@@ -46,12 +45,12 @@ public:
     void process (float* const* io, int numChannels, int numSamples, bool normalize);
 
     //--- model lifecycle (message thread) ----------------------------------------
-    // Build a NAM model from a .nam file off the audio thread and atomic-swap it in.
+    // Build a NAM model from raw .nam bytes off the audio thread and atomic-swap it in.
     // Returns false (and leaves the current model untouched) on a bad / unsupported /
-    // non-mono file. The replaced model is reclaimed later via collectGarbage().
+    // non-mono model. The replaced model is reclaimed later via collectGarbage().
     // trimDb = per-model output offset (dB) folded into the loudness-normalisation makeup.
-    bool   loadModelFile (const std::string& path, float trimDb = 0.0f);
-    bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);   // bundled .nam bytes
+    // (Bytes only — file I/O stays in the adapter layer, never in pure-DSP core.)
+    bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);
     void   clearModel();
     void   collectGarbage();          // free models retired by a swap, once audio moved past them
 

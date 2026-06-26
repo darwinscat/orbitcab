@@ -338,6 +338,8 @@ private:
     // <PowerampPool> so a saved session/preset carries the amp (reproducible on any machine /
     // public build); applyPoweramp prefers this pool over the library on restore.
     std::map<juce::String, juce::MemoryBlock> embeddedPoweramps;
+    juce::CriticalSection powerampPoolLock;   // guards embeddedPoweramps: applyPoweramp (poll timer) vs
+                                              // get/setStateInformation, which some hosts call off the message thread
 
     // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
     // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as

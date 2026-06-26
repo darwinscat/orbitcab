@@ -13,8 +13,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <vector>
 
@@ -187,12 +185,12 @@ void AmpStage::prepare (double sampleRate, int maxBlock)
     impl->hostSR   = sampleRate;
     impl->maxBlock = std::max (1, maxBlock);
 
-    // Audio is stopped here, so reconfigure rates + re-Reset the live model in place.
-    double modelSR = kModelSampleRate;
-    if (ModelSet* m = impl->live.load (std::memory_order_acquire))
-        modelSR = (m->expectedSR > 0.0 ? m->expectedSR : kModelSampleRate);
+    // Audio is stopped here, so reconfigure rates + re-Reset the live model in place. Capture the
+    // live pointer ONCE — a concurrent message-thread swap mustn't split rate-config from the Reset.
+    ModelSet* const m = impl->live.load (std::memory_order_acquire);
+    const double modelSR = (m != nullptr && m->expectedSR > 0.0) ? m->expectedSR : kModelSampleRate;
     impl->configureRates (modelSR);
-    if (ModelSet* m = impl->live.load (std::memory_order_acquire))
+    if (m != nullptr)
         for (auto& inst : m->inst)
             if (inst) inst->Reset (impl->modelRunSR, impl->maxModelFrames);
 }
@@ -235,19 +233,6 @@ namespace
         set->inst[1] = nam::get_dsp (j);
         return set;
     }
-}
-
-bool AmpStage::loadModelFile (const std::string& path, float trimDb)
-{
-    std::unique_ptr<ModelSet> set;
-    try
-    {
-        std::ifstream f (path);
-        nlohmann::json j; f >> j;
-        set = buildSetFromJson (j);
-    }
-    catch (...) { return false; }
-    return impl->adopt (std::move (set), trimDb);
 }
 
 bool AmpStage::loadModelFromMemory (const void* data, std::size_t size, float trimDb)

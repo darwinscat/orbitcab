@@ -671,7 +671,9 @@ void OrbitCabAudioProcessorEditor::syncAmpSelector()
 
     // contextual PP/SE toggle — only for a group that actually has both modes
     const auto cats = (group ? catsForName (cur->name) : std::vector<orbitcab::PowerampCat>{});
-    const bool showMode = on && group && cats.size() >= 2;
+    const bool hasPP = std::find (cats.begin(), cats.end(), orbitcab::PowerampCat::pushPull)    != cats.end();
+    const bool hasSE = std::find (cats.begin(), cats.end(), orbitcab::PowerampCat::singleEnded) != cats.end();
+    const bool showMode = on && group && hasPP && hasSE;   // a real PP↔SE choice, not e.g. PP + Other
     for (int m = 0; m < 2; ++m)
     {
         const auto mc = (m == 0 ? orbitcab::PowerampCat::pushPull : orbitcab::PowerampCat::singleEnded);
@@ -697,7 +699,9 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
 
     // Powering on with no resolvable selection → default to the first library entry (so the stage
     // is never "on but silent"). A restored session that already carries a valid "ampSel" keeps it.
-    if (on && ! ampLib.empty() && ampEntryById (processorRef.selectedPowerampId()) == nullptr)
+    // Default a selection only when there is NONE — don't overwrite a restored ampSel that resolves
+    // from the embedded pool but isn't in this machine's local library (else a moved session resets).
+    if (on && ! ampLib.empty() && processorRef.selectedPowerampId().isEmpty())
         processorRef.selectPoweramp (ampLib.front().id);
 
     tubeDisplay.setShowTubes (showTubesPref);         // "Show tubes" hides the tubes but keeps the amp icon

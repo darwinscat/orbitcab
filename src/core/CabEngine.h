@@ -73,7 +73,6 @@ public:
     //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStage ----------
     // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
     // is pumped by the processor's 30 Hz timer to reclaim swapped-out models safely.
-    bool   loadAmpModel       (const std::string& path) { return amp.loadModelFile (path); }
     bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f) { return amp.loadModelFromMemory (data, size, trimDb); }
     void   clearAmpModel()                              { amp.clearModel(); }
     void   collectAmpGarbage()                          { amp.collectGarbage(); }
