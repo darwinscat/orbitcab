@@ -229,8 +229,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         ampModeBtn[m].setButtonText (kModeNames[m]);
         ampModeBtn[m].setClickingTogglesState (false);
         ampModeBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull \xe2\x80\x94 tighter, more headroom & punch. Better for rhythm."
-                                         : "Single-ended \xe2\x80\x94 sweeter even-harmonic compression that sings. Better for melodic solos.");
+        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull: tighter, punchy \xe2\x80\x94 better for rhythm"
+                                         : "Single-ended: sweeter, singing \xe2\x80\x94 better for melodic solos");
         ampModeBtn[m].onClick = [this, m] { selectAmpMode (m == 0 ? orbitcab::PowerampCat::pushPull
                                                                    : orbitcab::PowerampCat::singleEnded); };
         addChildComponent (ampModeBtn[m]);
