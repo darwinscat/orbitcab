@@ -17,6 +17,7 @@
 #include "ui/TubeDisplay.h"
 #include "ui/PowerampManager.h"
 #include "ui/PreampManager.h"
+#include "PreampSelector.h"   // pure resolve/view-model behind the PREAMP row (GUI-free, unit-tested)
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
@@ -164,8 +165,8 @@ private:
     juce::ToggleButton    preampPowerBtn { "PREAMP" };
     std::unique_ptr<BAtt> preampPowerAtt;
     TubeDisplay           preampTubeDisplay;
-    std::vector<orbitcab::PreampEntry>             preampLib;          // cached merged library (rebuilt on add/remove)
-    std::vector<juce::String>                      preampGroupNames;   // distinct names with ≥2 variants (ordered)
+    orbitcab::PreampSelector                       preampSel;          // pure resolve/view-model (owns the merged library snapshot)
+    std::vector<juce::String>                      preampGroupNames;   // group names, ordered (mirrors preampSel.groupNames(); maps name buttons)
     std::vector<std::unique_ptr<juce::TextButton>> preampNameBtns;     // one per group name
     juce::TextButton      preampChannelBtn[3];   // contextual 3-way channel switch (ch1/ch2/ch3; shown when ≥2 exist)
     juce::Slider          preampGainSlider;      // contextual horizontal discrete slider over the available <N>h (gain)
@@ -178,17 +179,9 @@ private:
     void selectPreampChannel (int channel);                // switch channel within the current name
     void selectPreampGain    (int hours);                  // switch gain position within the current name+channel
     void selectPreampBoost   (bool boost);                 // switch boost within the current name+channel+gain
-    void configurePreampGainSlider();            // set the slider's stops to the current name+channel positions
     void updatePreampRow();                      // show/hide the revealed row + resize the editor
     void syncPreampSelector();                   // reflect "preampSel" → highlight + contextual controls + tubes
-
-    // Library queries, computed from preampLib (small vector — no caching needed):
-    std::vector<int>  channelsForName     (const juce::String& name) const;                 // distinct channels present
-    std::vector<int>  gainsForNameChannel  (const juce::String& name, int channel) const;    // distinct <N>h present
-    std::vector<bool> boostsForNameChGain  (const juce::String& name, int channel, int hours) const;  // {false?, true?}
-    juce::String findPreampId (const juce::String& name, int channel, int hours, bool boost) const;   // matching id ("" = none)
-    bool          isPreampGroupName (const juce::String& name) const;     // ≥2 entries share this display name
-    const orbitcab::PreampEntry* preampEntryById (const juce::String& id) const;
+    // (the resolution + visibility policy lives in orbitcab::PreampSelector; these are thin bindings.)
 
     juce::Rectangle<int>  preampRowBounds;       // painted panel region of the revealed preamp row
     juce::String preampSyncedId;                 // last selection reflected (timer re-syncs only on change)

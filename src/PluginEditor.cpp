@@ -323,7 +323,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     preampBoostBtn.setTooltip ("Boost — switch to the boosted (or clean) capture of this preamp.");
     preampBoostBtn.onClick = [this]
     {
-        if (auto* cur = preampEntryById (processorRef.selectedPreampId()))
+        if (auto* cur = preampSel.entryById (processorRef.selectedPreampId()))
             selectPreampBoost (! cur->boost);
     };
     addChildComponent (preampBoostBtn);
@@ -334,8 +334,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     preampSingleBox.onChange = [this]
     {
         const int idx = preampSingleBox.getSelectedId() - 1;          // ids are 1-based → entry index
-        if (juce::isPositiveAndBelow (idx, (int) preampLib.size()))
-        { processorRef.selectPreamp (preampLib[(size_t) idx].id); syncPreampSelector(); }
+        if (juce::isPositiveAndBelow (idx, (int) preampSel.lib.size()))
+        { processorRef.selectPreamp (preampSel.lib[(size_t) idx].id); syncPreampSelector(); }
     };
     addChildComponent (preampSingleBox);
 
@@ -800,102 +800,23 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
 }
 
 //==============================================================================
-// PREAMP selector — an exact sibling of the poweramp selector above, generalised to the preamp's
-// richer dimension set (channel / gain / boost instead of PP-SE / hours). Each contextual control
-// is shown only when the current selection has ≥2 values for that dimension. Picking a value in one
-// dimension keeps the others if they still exist under the new choice, else falls back to a default.
+// PREAMP selector — thin GUI bindings over orbitcab::PreampSelector (the pure resolve/view-model in
+// PreampSelector.h, unit-tested headless). select* asks the model to resolve a dimension change into
+// a new id; syncPreampSelector asks it which contextual controls to show + their values and pushes
+// that onto the widgets. The "≥2 values → show the control" rule + the keep-other-dimensions-else-
+// default policy live in the model, not here.
 //==============================================================================
-
-// Default gain position when the current gain doesn't exist in the target group: prefer noon (12h),
-// else the middle of the available sweep, else 0 (no gain).
-static int defaultPreampGain (const std::vector<int>& hrs)
-{
-    if (hrs.empty()) return 0;
-    for (int h : hrs) if (h == 12) return 12;
-    return hrs[hrs.size() / 2];
-}
-
-// Default channel: keep "none" (0) if that's all there is, else the lowest available channel.
-static int defaultPreampChannel (const std::vector<int>& chs)
-{
-    return chs.empty() ? 0 : chs.front();
-}
-
-// Default boost: prefer OFF (the cleaner capture) when available, else whatever's there.
-static bool defaultPreampBoost (const std::vector<bool>& bs)
-{
-    if (bs.empty()) return false;
-    for (bool b : bs) if (! b) return false;
-    return bs.front();
-}
-
-const orbitcab::PreampEntry* OrbitCabAudioProcessorEditor::preampEntryById (const juce::String& id) const
-{
-    for (const auto& e : preampLib) if (e.id == id) return &e;
-    return nullptr;
-}
-
-bool OrbitCabAudioProcessorEditor::isPreampGroupName (const juce::String& name) const
-{
-    int n = 0;
-    for (const auto& e : preampLib) if (e.name == name && ++n >= 2) return true;
-    return false;
-}
-
-std::vector<int> OrbitCabAudioProcessorEditor::channelsForName (const juce::String& name) const
-{
-    std::vector<int> out;
-    for (const auto& e : preampLib)
-        if (e.name == name && std::find (out.begin(), out.end(), e.channel) == out.end())
-            out.push_back (e.channel);
-    std::sort (out.begin(), out.end());
-    return out;
-}
-
-std::vector<int> OrbitCabAudioProcessorEditor::gainsForNameChannel (const juce::String& name, int channel) const
-{
-    std::vector<int> out;
-    for (const auto& e : preampLib)
-        if (e.name == name && e.channel == channel && std::find (out.begin(), out.end(), e.hours) == out.end())
-            out.push_back (e.hours);
-    std::sort (out.begin(), out.end());
-    return out;
-}
-
-std::vector<bool> OrbitCabAudioProcessorEditor::boostsForNameChGain (const juce::String& name, int channel, int hours) const
-{
-    std::vector<bool> out;
-    for (const auto& e : preampLib)
-        if (e.name == name && e.channel == channel && e.hours == hours
-            && std::find (out.begin(), out.end(), e.boost) == out.end())
-            out.push_back (e.boost);
-    std::sort (out.begin(), out.end());   // false (clean) before true (boost)
-    return out;
-}
-
-juce::String OrbitCabAudioProcessorEditor::findPreampId (const juce::String& name, int channel, int hours, bool boost) const
-{
-    for (const auto& e : preampLib)
-        if (e.name == name && e.channel == channel && e.hours == hours && e.boost == boost) return e.id;
-    return {};
-}
 
 void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
 {
     for (auto& b : preampNameBtns) removeChildComponent (b.get());
     preampNameBtns.clear();
-    preampGroupNames.clear();
 
-    preampLib  = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
-    hasPreamps = ! preampLib.empty();
+    preampSel.lib = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
+    hasPreamps    = ! preampSel.lib.empty();
 
     // GROUPS: a display name shared by ≥2 captures → one name button (model families).
-    {
-        juce::StringArray seen;
-        for (const auto& e : preampLib)
-            if (isPreampGroupName (e.name) && ! seen.contains (e.name))
-            { seen.add (e.name); preampGroupNames.push_back (e.name); }
-    }
+    preampGroupNames = preampSel.groupNames();
     for (const auto& nm : preampGroupNames)
     {
         auto b = std::make_unique<juce::TextButton> (nm);
@@ -910,125 +831,86 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
 
     // SINGLETONS: a one-off capture → the combo, shown by its full filename. Item id = entry index + 1.
     preampSingleBox.clear (juce::dontSendNotification);
-    for (int i = 0; i < (int) preampLib.size(); ++i)
-        if (! isPreampGroupName (preampLib[(size_t) i].name))
-            preampSingleBox.addItem (preampLib[(size_t) i].id.fromFirstOccurrenceOf (":", false, false), i + 1);
+    for (int i = 0; i < (int) preampSel.lib.size(); ++i)
+        if (! preampSel.isGroupName (preampSel.lib[(size_t) i].name))
+            preampSingleBox.addItem (preampSel.lib[(size_t) i].id.fromFirstOccurrenceOf (":", false, false), i + 1);
 
     preampPowerBtn.setVisible (hasPreamps);
 }
 
-// Pick a GROUP by name — keep the current channel/gain/boost if they exist there, else defaults.
+// Each select* resolves a single-dimension change to a new id via the model, then commits + re-syncs.
 void OrbitCabAudioProcessorEditor::selectPreampName (const juce::String& name)
 {
-    const auto chs = channelsForName (name);
-    if (chs.empty()) return;
-    int  channel  = defaultPreampChannel (chs);
-    int  curHours = 0;
-    bool curBoost = false;
-    if (auto* cur = preampEntryById (processorRef.selectedPreampId()))
-    {
-        if (std::find (chs.begin(), chs.end(), cur->channel) != chs.end()) channel = cur->channel;
-        curHours = cur->hours; curBoost = cur->boost;
-    }
-    const auto hrs   = gainsForNameChannel (name, channel);
-    const int  hours = (std::find (hrs.begin(), hrs.end(), curHours) != hrs.end()) ? curHours : defaultPreampGain (hrs);
-    const auto bs    = boostsForNameChGain (name, channel, hours);
-    const bool boost = (std::find (bs.begin(), bs.end(), curBoost) != bs.end()) ? curBoost : defaultPreampBoost (bs);
-    const auto id = findPreampId (name, channel, hours, boost);
+    const auto id = preampSel.resolveName (processorRef.selectedPreampId(), name);
     if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
 }
 
 void OrbitCabAudioProcessorEditor::selectPreampChannel (int channel)
 {
-    auto* cur = preampEntryById (processorRef.selectedPreampId());
-    if (cur == nullptr) return;
-    const auto hrs   = gainsForNameChannel (cur->name, channel);
-    const int  hours = (std::find (hrs.begin(), hrs.end(), cur->hours) != hrs.end()) ? cur->hours : defaultPreampGain (hrs);
-    const auto bs    = boostsForNameChGain (cur->name, channel, hours);
-    const bool boost = (std::find (bs.begin(), bs.end(), cur->boost) != bs.end()) ? cur->boost : defaultPreampBoost (bs);
-    const auto id = findPreampId (cur->name, channel, hours, boost);
+    const auto id = preampSel.resolveChannel (processorRef.selectedPreampId(), channel);
     if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
 }
 
 void OrbitCabAudioProcessorEditor::selectPreampGain (int hours)
 {
-    auto* cur = preampEntryById (processorRef.selectedPreampId());
-    if (cur == nullptr) return;
-    const auto bs    = boostsForNameChGain (cur->name, cur->channel, hours);
-    const bool boost = (std::find (bs.begin(), bs.end(), cur->boost) != bs.end()) ? cur->boost : defaultPreampBoost (bs);
-    const auto id = findPreampId (cur->name, cur->channel, hours, boost);
+    const auto id = preampSel.resolveGain (processorRef.selectedPreampId(), hours);
     if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
 }
 
 void OrbitCabAudioProcessorEditor::selectPreampBoost (bool boost)
 {
-    auto* cur = preampEntryById (processorRef.selectedPreampId());
-    if (cur == nullptr) return;
-    const auto id = findPreampId (cur->name, cur->channel, cur->hours, boost);
+    const auto id = preampSel.resolveBoost (processorRef.selectedPreampId(), boost);
     if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
 }
 
-// Point the gain slider at the current name+channel's positions (its stops = preampGainVals indices).
-// Leaves preampGainVals empty when there are <2 positions (caller hides the slider then).
-void OrbitCabAudioProcessorEditor::configurePreampGainSlider()
-{
-    preampGainVals.clear();
-    auto* cur = preampEntryById (processorRef.selectedPreampId());
-    if (cur == nullptr) return;
-    const auto hrs = gainsForNameChannel (cur->name, cur->channel);
-    if (hrs.size() < 2) return;                       // 0/1 position → no slider
-    preampGainVals = hrs;                             // sorted; slider index i → preampGainVals[i] o'clock
-
-    preampGainSlider.setRange (0.0, (double) (preampGainVals.size() - 1), 1.0);   // discrete: snaps to each stop
-    const int idx = (int) (std::find (preampGainVals.begin(), preampGainVals.end(), cur->hours) - preampGainVals.begin());
-    preampGainSlider.setValue (juce::isPositiveAndBelow (idx, (int) preampGainVals.size()) ? idx : 0,
-                               juce::dontSendNotification);
-}
-
 // Reflect the "preampSel" selection onto the whole selector: highlight the name button (or the combo),
-// show the contextual channel switch (channels the name has, ≥2), the gain slider (name+channel has
-// several), and the boost toggle (both on+off captures exist), plus the tube. Then re-flow.
+// show the contextual channel switch / gain slider / boost toggle (each only when ≥2 values exist for
+// that dimension), plus the tube. The model decides WHAT to show; this binds it to the widgets.
 void OrbitCabAudioProcessorEditor::syncPreampSelector()
 {
     preampSyncedId = processorRef.selectedPreampId();
     const bool on  = preampPowerBtn.getToggleState();
-    auto* cur = preampEntryById (preampSyncedId);
-    const bool group = cur != nullptr && isPreampGroupName (cur->name);
+    auto* cur = preampSel.entryById (preampSyncedId);
+    const auto v = preampSel.viewFor (preampSyncedId);
 
     // name buttons — highlight the selected group's name
     for (size_t i = 0; i < preampNameBtns.size(); ++i)
-        preampNameBtns[i]->setToggleState (group && cur->name == preampGroupNames[i], juce::dontSendNotification);
+        preampNameBtns[i]->setToggleState (v.group && cur != nullptr && cur->name == preampGroupNames[i],
+                                           juce::dontSendNotification);
 
     // singletons combo — reflect (or clear) the selection
-    if (cur != nullptr && ! group)
+    if (cur != nullptr && ! v.group)
     {
-        for (int i = 0; i < (int) preampLib.size(); ++i)
-            if (preampLib[(size_t) i].id == cur->id) { preampSingleBox.setSelectedId (i + 1, juce::dontSendNotification); break; }
+        for (int i = 0; i < (int) preampSel.lib.size(); ++i)
+            if (preampSel.lib[(size_t) i].id == cur->id) { preampSingleBox.setSelectedId (i + 1, juce::dontSendNotification); break; }
     }
     else
         preampSingleBox.setSelectedId (0, juce::dontSendNotification);
 
     // contextual channel switch — a button per channel the name has, shown only when ≥2 exist
-    const auto chs = (group ? channelsForName (cur->name) : std::vector<int>{});
-    const bool showChannels = on && group && chs.size() >= 2;
+    const bool showChannels = on && v.showChannels;
     for (int m = 0; m < 3; ++m)
     {
         const int channel = m + 1;
-        const bool exists  = std::find (chs.begin(), chs.end(), channel) != chs.end();
+        const bool exists  = std::find (v.channels.begin(), v.channels.end(), channel) != v.channels.end();
         preampChannelBtn[m].setVisible (showChannels && exists);
-        preampChannelBtn[m].setToggleState (cur != nullptr && cur->channel == channel, juce::dontSendNotification);
+        preampChannelBtn[m].setToggleState (v.currentChannel == channel, juce::dontSendNotification);
     }
 
-    // contextual gain slider — pointed at this name+channel's positions (hidden when <2 exist)
-    configurePreampGainSlider();
-    preampGainSlider.setVisible (on && group && preampGainVals.size() >= 2);
+    // contextual gain slider — its discrete stops are this name+channel's positions (hidden when <2)
+    preampGainVals = v.showGain ? v.gains : std::vector<int>{};
+    if (preampGainVals.size() >= 2)
+    {
+        preampGainSlider.setRange (0.0, (double) (preampGainVals.size() - 1), 1.0);   // snaps to each stop
+        const int idx = (int) (std::find (preampGainVals.begin(), preampGainVals.end(), v.currentGain) - preampGainVals.begin());
+        preampGainSlider.setValue (juce::isPositiveAndBelow (idx, (int) preampGainVals.size()) ? idx : 0,
+                                   juce::dontSendNotification);
+    }
+    preampGainSlider.setVisible (on && v.showGain);
 
     // contextual boost toggle — only when both an on- and an off-capture exist for name+channel+gain
-    const auto bs = (cur != nullptr ? boostsForNameChGain (cur->name, cur->channel, cur->hours) : std::vector<bool>{});
-    const bool hasOff = std::find (bs.begin(), bs.end(), false) != bs.end();
-    const bool hasOn  = std::find (bs.begin(), bs.end(), true)  != bs.end();
-    preampBoostBtn.setVisible (on && group && hasOff && hasOn);
-    preampBoostBtn.setToggleState (cur != nullptr && cur->boost, juce::dontSendNotification);
+    preampBoostBtn.setVisible (on && v.showBoost);
+    preampBoostBtn.setToggleState (v.currentBoost, juce::dontSendNotification);
 
     // tube: a single slim preamp tube (12AX7-ish), glowing when on
     preampTubeDisplay.setSelection (2 /*slim silhouette*/, cur != nullptr ? 1 : 0, on);
@@ -1043,8 +925,8 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
 
     // Powering on with no resolvable selection → default to the first library entry (never "on but
     // silent"). A restored session that already carries a valid "preampSel" keeps it.
-    if (on && ! preampLib.empty() && processorRef.selectedPreampId().isEmpty())
-        processorRef.selectPreamp (preampLib.front().id);
+    if (on && ! preampSel.lib.empty() && processorRef.selectedPreampId().isEmpty())
+        processorRef.selectPreamp (preampSel.lib.front().id);
 
     preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
     preampTubeDisplay.setVisible (on);
