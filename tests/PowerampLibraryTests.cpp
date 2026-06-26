@@ -38,8 +38,8 @@ struct PowerampLibraryTest : juce::UnitTest
 
         beginTest ("no tag → Other, name unchanged");
         {
-            parse ("Marshall Plexi"); expect (c == PowerampCat::other && n == "Marshall Plexi");
-            parse ("Fryette PS1");    expect (c == PowerampCat::other && n == "Fryette PS1");
+            parse ("Studio Plexi");   expect (c == PowerampCat::other && n == "Studio Plexi");
+            parse ("Reactor X1");     expect (c == PowerampCat::other && n == "Reactor X1");   // 'X1' isn't a tag
         }
 
         beginTest ("legacy trailing -N count after the tag is stripped");
@@ -50,8 +50,8 @@ struct PowerampLibraryTest : juce::UnitTest
 
         beginTest ("a number BEFORE the tag is part of the name, not the count");
         {
-            parse ("JCM 800 PP");    expect (c == PowerampCat::pushPull && n == "JCM 800");
-            parse ("Peavey 120 PP"); expect (c == PowerampCat::pushPull && n == "Peavey 120");
+            parse ("Combo 800 PP"); expect (c == PowerampCat::pushPull && n == "Combo 800");
+            parse ("Head 120 PP");  expect (c == PowerampCat::pushPull && n == "Head 120");
         }
 
         beginTest ("token match is case-insensitive + whole-word only");
