@@ -991,15 +991,23 @@ int main()
         //       them to the same waveform);
         //   (b) feed L a signal and R silence → R must stay quiet (a mono-sum-and-fan would put ~half of L
         //       into R, i.e. rMax ≈ 0.5·lMax). True stereo keeps R ≈ 0.
-        auto stereoIndependent = [&] () -> bool
+        // Run it twice: at unity, and at NON-UNITY, ASYMMETRIC input/output gain (inDb/outDb) — so the
+        // LEVEL stages (input gain → … → auto-level → output gain) are proven per-channel, never a sum.
+        auto stereoIndependent = [&] (float inDb, float outDb) -> bool
         {
+            auto setLevels = [&] (OrbitCabAudioProcessor& p)
+            {
+                if (auto* q = p.apvts.getParameter ("inputGain")) q->setValueNotifyingHost (q->convertTo0to1 (inDb));
+                if (auto* q = p.apvts.getParameter ("gain"))      q->setValueNotifyingHost (q->convertTo0to1 (outDb));
+            };
+
             // (a) different per-channel signal → outputs differ
             double maxDiff = 0.0; bool finite = true;
             {
                 OrbitCabAudioProcessor p;
                 if (! p.setBusesLayout (layoutFor (2))) return false;
                 p.prepareToPlay (sr, block);
-                armStages (p);
+                armStages (p); setLevels (p);
                 juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
                 for (int k = 0; k < 24; ++k)
                 {
@@ -1026,7 +1034,7 @@ int main()
                 OrbitCabAudioProcessor p;
                 if (! p.setBusesLayout (layoutFor (2))) return false;
                 p.prepareToPlay (sr, block);
-                armStages (p);
+                armStages (p); setLevels (p);
                 juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
                 for (int k = 0; k < 24; ++k)
                 {
@@ -1044,9 +1052,10 @@ int main()
             return distinct && noBleed;
         };
 
-        const bool mono       = runChannels (1);
-        const bool stereo     = runChannels (2);
-        const bool trueStereo = stereoIndependent();
+        const bool mono        = runChannels (1);
+        const bool stereo      = runChannels (2);
+        const bool trueStereo  = stereoIndependent (0.0f,  0.0f);   // unity in/out level
+        const bool levelStereo = stereoIndependent (6.0f, -3.0f);   // +6 dB in / −3 dB out, asymmetric
 
         // A host can change the layout live (mono -> stereo) → re-prepare; the loaded models stay clean.
         bool reprepare = false;
@@ -1063,11 +1072,11 @@ int main()
             }
         }
 
-        const bool ok = mono && stereo && trueStereo && reprepare;
+        const bool ok = mono && stereo && trueStereo && levelStereo && reprepare;
         allPass &= ok;
-        std::printf ("MONO/STEREO TEST: mono=%d stereo=%d trueStereo(L/R independent)=%d reprepare=%d (factory nam pre=%d amp=%d)\n",
-                     mono, stereo, trueStereo, reprepare, preId.isNotEmpty(), ampId.isNotEmpty());
-        std::printf ("RESULT: %s\n", ok ? "FULL TRUE-STEREO CHAIN (independent L/R, mono ok, live re-layout)"
+        std::printf ("MONO/STEREO TEST: mono=%d stereo=%d trueStereo=%d levelStereo(in+6/out-3)=%d reprepare=%d (factory nam pre=%d amp=%d)\n",
+                     mono, stereo, trueStereo, levelStereo, reprepare, preId.isNotEmpty(), ampId.isNotEmpty());
+        std::printf ("RESULT: %s\n", ok ? "FULL TRUE-STEREO CHAIN (independent L/R at unity + non-unity levels, mono ok, live re-layout)"
                                         : "MONO/STEREO BROKEN");
     }
 
