@@ -21,6 +21,11 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for GITHUB_TOKEN: this workflow only reads the repo and uploads
+# build artifacts (artifacts API — not contents). Nothing here writes back to the repo.
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
