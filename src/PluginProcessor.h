@@ -9,6 +9,7 @@
 #include "core/CabEngine.h"
 #include "AppPreferences.h"
 #include "PowerampLibrary.h"
+#include "PreampLibrary.h"
 #include "UpdateChecker.h"
 #include "Metadata.h"
 #include "StateModel.h"
@@ -150,10 +151,22 @@ public:
     juce::File   importPoweramp (const juce::File& src);                   // copy a .nam into powerampDir; {} on failure
     bool         removePoweramp (const juce::String& id);                  // delete a USER model (factory: no-op → false)
 
+    // PREAMP (NAM): the SECOND neural stage, run BEFORE the poweramp (input → PREAMP → POWERAMP →
+    // cab), gated by `preampOn`. Mirrors the poweramp exactly — a separate merged factory
+    // (PreampBinaryData) + user (preampDir) library, the chosen entry's stable id persisted as
+    // "preampSel", loaded off the audio thread (applyPreamp). Editor hides the UI when empty.
+    std::vector<orbitcab::PreampEntry> preampLibrary() const;              // factory + user, merged + sorted
+    bool         hasAnyPreamps() const { return ! preampLibrary().empty(); }
+    juce::String selectedPreampId() const { return apvts.state.getProperty ("preampSel", juce::String()).toString(); }
+    void         selectPreamp (const juce::String& id);                    // set "preampSel" + reload + bump (message thread)
+    juce::File   importPreamp (const juce::File& src);                     // copy a .nam into preampDir; {} on failure
+    bool         removePreamp (const juce::String& id);                    // delete a USER model (factory: no-op → false)
+
     // Does an exported preset ACTUALLY carry embedded audio (vs only bundled refs)? Drives the
     // export heads-up. Keyed on the same pools buildStateTree embeds from, so they never disagree.
     bool         exportEmbedsIR()  const;                                  // live uses an external IR whose bytes are embedded
     bool         exportEmbedsAmp() const;                                  // live uses a poweramp whose .nam is embedded
+    bool         exportEmbedsPreamp() const;                               // live uses a preamp whose .nam is embedded
 
     bool isSlotBLoaded() const { return slotAudioLoaded[1].load (std::memory_order_relaxed); }
     bool isSlotALoaded() const { return slotAudioLoaded[0].load (std::memory_order_relaxed); }
@@ -247,6 +260,7 @@ private:
     std::atomic<float>* inputGainParam = nullptr;
     std::atomic<float>* bypassParam    = nullptr;
     std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
+    std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
     // Cached raw parameter pointers — RT-safe atomic reads in processBlock. Per-slot
     // params are [0]=A, [1]=B.
@@ -288,18 +302,24 @@ private:
     std::atomic<bool> pendingTrimReloadA { false };
     std::atomic<bool> pendingTrimReloadB { false };
     std::atomic<bool> pendingPowerampReload { false };   // ampOn toggled / selection changed → reload the .nam
+    std::atomic<bool> pendingPreampReload   { false };   // preampOn toggled / selection changed → reload the .nam
     std::atomic<bool> enginePrepared     { false };
 
     // Per-model output makeup (dB) applied on top of loudness normalisation — a single flat
     // offset for every poweramp (the measured level match for the tested rigs). Was a per-tube
     // table; now the library is free-form, so it's one constant.
     static constexpr float kPowerampTrimDb = 3.0f;
+    // Same idea for the preamp — a single flat output makeup (dB) on top of loudness normalisation.
+    static constexpr float kPreampTrimDb = 3.0f;
 
     // Resolve "ampSel" against the merged library + load that .nam into the amp stage off the
     // audio thread (BinaryData or file read + atomic swap). Off / empty / unresolved => clears it.
     void applyPoweramp();
-    // Report the rate-match latency to the host (PDC). 0 unless the amp is on AND resampling
-    // (host SR != model 48k) — so it's 0 in the common 48k case (no PDC churn).
+    // Same for the preamp: resolve "preampSel" + load into the preamp stage (PreampBinaryData /
+    // file / embedded pool). Off / empty / unresolved => clears it.
+    void applyPreamp();
+    // Report the rate-match latency to the host (PDC). 0 unless a NAM stage is on AND resampling
+    // (host SR != model 48k) — so it's 0 in the common 48k case. The two stages' latencies sum.
     void updateLatency();
 
     // One-shot startup fade (#48) — a host-side cosmetic that ramps the output up from
@@ -340,6 +360,11 @@ private:
     std::map<juce::String, juce::MemoryBlock> embeddedPoweramps;
     juce::CriticalSection powerampPoolLock;   // guards embeddedPoweramps: applyPoweramp (poll timer) vs
                                               // get/setStateInformation, which some hosts call off the message thread
+
+    // Same again for the preamp stage: raw .nam bytes of every preamp loaded this session, keyed by
+    // its preampSel id ("fp:…"/"up:…"), deflated into a <PreampPool> on save (v6).
+    std::map<juce::String, juce::MemoryBlock> embeddedPreamps;
+    juce::CriticalSection preampPoolLock;     // guards embeddedPreamps (same threads as powerampPoolLock)
 
     // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
     // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as

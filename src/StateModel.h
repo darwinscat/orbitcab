@@ -36,7 +36,9 @@ namespace orbitcab::state
 // pre-v3 form) are migrated on load; see migrateLegacySound().
 // v5 adds <PowerampPool> (the selected .nam embedded, deflated) so a session/preset is
 // self-contained for the amp too — older builds ignore the pool and resolve from the library.
-inline constexpr int kStateVersion = 5;
+// v6 adds <PreampPool> (the same, for the second/preamp NAM stage) + the "preampSel" property;
+// older builds ignore both, so it stays compatible in BOTH directions.
+inline constexpr int kStateVersion = 6;
 
 //============================================================ one slot's IR ====
 struct SlotIR

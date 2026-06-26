@@ -17,12 +17,13 @@
 //==============================================================================
 // cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
 //
-//   global (front): in → [AMP (NAM)]  — optional neural amp/poweramp in front of the cab
+//   global (front): in → [PREAMP (NAM)] → [POWERAMP (NAM)]  — two optional neural stages, in order
 //   per slot (A/B):  → HPF → LPF → Convolution → Phase → Dry/Wet(blend the amp output)
 //   then:            MIX crossfades the two slot outputs → Auto-level → Output Gain
 //
-// The AMP runs before the dry tap, so the dry/wet blend + the auto-level reference are the
-// amp's output (the thing being cab'd), not the clean DI. See cab::AmpStage.
+// The two NAM stages run before the dry tap, so the dry/wet blend + the auto-level reference are
+// their output (the thing being cab'd), not the clean DI. The preamp feeds the poweramp. Both are
+// the same cab::AmpStage class — `preamp` is just a second instance ahead of `amp`.
 //
 // Two cab::IRSlot instances are the per-slot channels (filters + convolver + the IR
 // buffer + trim math); cab::AutoLeveler is the wet->dry match. No JUCE GUI, no APVTS,
@@ -70,17 +71,23 @@ public:
     const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
     double slotOriginalSampleRate (int slot) const;
 
-    //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStage ----------
+    //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStages ----------
     // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
-    // is pumped by the processor's 30 Hz timer to reclaim swapped-out models safely.
+    // is pumped by the processor's 30 Hz timer to reclaim swapped-out models safely. `amp` is the
+    // poweramp; `preamp` is the second instance that runs ahead of it (same class, same threading).
     bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f) { return amp.loadModelFromMemory (data, size, trimDb); }
     void   clearAmpModel()                              { amp.clearModel(); }
-    void   collectAmpGarbage()                          { amp.collectGarbage(); }
+    void   collectAmpGarbage()                          { amp.collectGarbage(); preamp.collectGarbage(); }
     bool   ampHasModel()         const                  { return amp.hasModel(); }
     double ampModelSampleRate()  const                  { return amp.modelSampleRate(); }
     double ampModelLoudness()    const                  { return amp.modelLoudness(); }
     bool   ampModelHasLoudness() const                  { return amp.modelHasLoudness(); }
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
+
+    bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f) { return preamp.loadModelFromMemory (data, size, trimDb); }
+    void   clearPreampModel()                           { preamp.clearModel(); }
+    bool   preampHasModel()        const                { return preamp.hasModel(); }
+    int    preampLatencySamples()  const                { return preamp.latencySamples(); }
 
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
@@ -91,7 +98,8 @@ public:
     double sampleRate() const { return currentSampleRate; }
 
 private:
-    AmpStage    amp;                       // optional NAM amp/poweramp, front of chain
+    AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the poweramp)
+    AmpStage    amp;                       // optional NAM poweramp, front of the cab
     IRSlot      slot[2];
     AutoLeveler autoLeveler;
     juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch

@@ -793,6 +793,284 @@ int main()
         }
     }
 
+    // ---- PREAMP embed (v6): the selected preamp .nam rides the save, deflated + lossless ----
+    // Exact mirror of the POWERAMP embed test, against the second NAM stage (preampOn / preampSel /
+    // <PreampPool> / exportEmbedsPreamp). Proves the preamp embeds, decodes back losslessly, rides
+    // into a fresh instance, re-arms there, renders cleanly, and stays v5-compatible (no pool).
+    {
+        auto preampPoolN = [] (const juce::MemoryBlock& mb)
+        { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+          auto* p = x ? x->getChildByName ("PreampPool") : nullptr; return p ? p->getNumChildElements() : -1; };
+
+        juce::String preId;   // first factory preamp (the test build embeds the .nam; skip cleanly if none)
+        { OrbitCabAudioProcessor probe; for (const auto& e : probe.preampLibrary()) if (e.factory) { preId = e.id; break; } }
+
+        if (preId.isEmpty())
+        {
+            std::printf ("PREAMP EMBED TEST: skipped (no factory .nam in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            if (auto* p = a.apvts.getParameter ("preampOn")) p->setValueNotifyingHost (1.0f);
+            a.selectPreamp (preId);
+            pump (250);                                        // poll → applyPreamp loads + stashes bytes
+
+            const bool srcEmbeds = a.exportEmbedsPreamp();
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            juce::MemoryBlock pres; a.getStateForPreset  (pres);
+            const int sPool = preampPoolN (sess), pPool = preampPoolN (pres);
+
+            bool decodesToNam = false; int rawSz = 0, deflSz = 0;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+                if (auto* pool = x->getChildByName ("PreampPool"))
+                    if (auto* e = pool->getFirstChildElement())
+                    {
+                        juce::MemoryOutputStream defl;
+                        if (juce::Base64::convertFromBase64 (defl, e->getStringAttribute ("nam")))
+                        {
+                            deflSz = (int) defl.getDataSize();
+                            juce::MemoryInputStream in (defl.getData(), defl.getDataSize(), false);
+                            juce::GZIPDecompressorInputStream gz (in);
+                            juce::MemoryBlock raw; gz.readIntoMemoryBlock (raw);
+                            rawSz = (int) raw.getSize();
+                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) raw.getData(), (int) raw.getSize()));
+                            decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
+                        }
+                    }
+
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+            b.setStateInformation (sess.getData(), (int) sess.getSize());
+            pump (250);
+            const bool selRides = b.selectedPreampId() == preId;
+            const bool bEmbeds  = b.exportEmbedsPreamp();
+            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;
+
+            bool rendersClean = true;
+            {
+                juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+                for (int k = 0; k < 24; ++k)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                    b.processBlock (bb, mm);
+                    for (int ch = 0; ch < 2 && rendersClean; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            if (! std::isfinite (bb.getSample (ch, i))) { rendersClean = false; break; }
+                }
+            }
+
+            // v5 back-compat: a save WITHOUT a <PreampPool> must still resolve the preamp from the library.
+            bool v5Compat = false;
+            if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
+            {
+                if (auto* pool = x->getChildByName ("PreampPool")) x->removeChildElement (pool, true);
+                juce::MemoryBlock noPool; juce::AudioProcessor::copyXmlToBinary (*x, noPool);
+                OrbitCabAudioProcessor d; d.prepareToPlay (sr, block);
+                d.setStateInformation (noPool.getData(), (int) noPool.getSize());
+                pump (250);
+                v5Compat = d.selectedPreampId() == preId && d.exportEmbedsPreamp();
+            }
+
+            const bool preOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam
+                               && selRides && bEmbeds && shrank && rendersClean && v5Compat;
+            allPass &= preOk;
+            std::printf ("PREAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v5compat=%d zip(%d->%d)\n",
+                         srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rendersClean, v5Compat, rawSz, deflSz);
+            std::printf ("RESULT: %s\n", preOk ? "PREAMP RIDES STATE (embedded, deflated, lossless, reproducible, v5-compatible)"
+                                                : "PREAMP EMBED BROKEN");
+        }
+    }
+
+    // ---- PREAMP + POWERAMP together: both stages on, both render finite through the full chain ----
+    // Proves the two NAM instances coexist (input → preamp → poweramp → cab) without NaN/Inf and that
+    // both selections ride a save independently.
+    {
+        juce::String preId, ampId;
+        { OrbitCabAudioProcessor probe;
+          for (const auto& e : probe.preampLibrary())   if (e.factory) { preId = e.id; break; }
+          for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        if (preId.isEmpty() || ampId.isEmpty())
+        {
+            std::printf ("PRE+POWER TEST: skipped (need a factory preamp AND poweramp in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            if (auto* p = a.apvts.getParameter ("preampOn")) p->setValueNotifyingHost (1.0f);
+            if (auto* p = a.apvts.getParameter ("ampOn"))    p->setValueNotifyingHost (1.0f);
+            a.selectPreamp (preId);
+            a.selectPoweramp (ampId);
+            pump (250);
+
+            bool rendersClean = true;
+            juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+            for (int k = 0; k < 24; ++k)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < block; ++i)
+                        bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                a.processBlock (bb, mm);
+                for (int ch = 0; ch < 2 && rendersClean; ++ch)
+                    for (int i = 0; i < block; ++i)
+                        if (! std::isfinite (bb.getSample (ch, i))) { rendersClean = false; break; }
+            }
+
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
+            b.setStateInformation (sess.getData(), (int) sess.getSize());
+            pump (250);
+            const bool bothRide  = b.selectedPreampId() == preId && b.selectedPowerampId() == ampId;
+            const bool bothEmbed = b.exportEmbedsPreamp() && b.exportEmbedsAmp();   // both pools re-armed on restore
+
+            const bool ok = rendersClean && bothRide && bothEmbed;
+            allPass &= ok;
+            std::printf ("PRE+POWER TEST: render=%d bothRide=%d bothEmbed=%d\n", rendersClean, bothRide, bothEmbed);
+            std::printf ("RESULT: %s\n", ok ? "PREAMP + POWERAMP COEXIST (both render finite + ride state + re-arm)"
+                                            : "PREAMP + POWERAMP BROKEN");
+        }
+    }
+
+    // ---- MONO + STEREO: the NAM chain must render at 1 AND 2 channels (+ a live mono->stereo relayout) ----
+    // The plugin accepts mono->mono and stereo->stereo. AmpStage runs ONE model instance for mono and TWO
+    // independent instances for stereo; verify the full chain (preamp + poweramp on) renders finite,
+    // non-silent audio at each, and that a host switching the layout (re-prepare) stays clean.
+    {
+        juce::String preId, ampId;
+        { OrbitCabAudioProcessor probe;
+          for (const auto& e : probe.preampLibrary())   if (e.factory) { preId = e.id; break; }
+          for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        auto layoutFor = [] (int channels)
+        {
+            juce::AudioProcessor::BusesLayout bl;
+            const auto set = channels == 1 ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo();
+            bl.inputBuses.add (set); bl.outputBuses.add (set);
+            return bl;
+        };
+
+        auto render = [&] (OrbitCabAudioProcessor& p, int channels) -> bool   // finite AND non-silent
+        {
+            bool finite = true; double maxAbs = 0.0;
+            juce::AudioBuffer<float> bb (channels, block); juce::MidiBuffer mm;
+            for (int k = 0; k < 24; ++k)
+            {
+                for (int ch = 0; ch < channels; ++ch)
+                    for (int i = 0; i < block; ++i)
+                        bb.setSample (ch, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                p.processBlock (bb, mm);
+                for (int ch = 0; ch < channels && finite; ++ch)
+                    for (int i = 0; i < block; ++i)
+                    { const float s = bb.getSample (ch, i); if (! std::isfinite (s)) finite = false; maxAbs = juce::jmax (maxAbs, (double) std::abs (s)); }
+            }
+            return finite && maxAbs > 1.0e-4;
+        };
+
+        auto armStages = [&] (OrbitCabAudioProcessor& p)
+        {
+            if (auto* q = p.apvts.getParameter ("preampOn")) q->setValueNotifyingHost (1.0f);
+            if (auto* q = p.apvts.getParameter ("ampOn"))    q->setValueNotifyingHost (1.0f);
+            if (preId.isNotEmpty()) p.selectPreamp (preId);
+            if (ampId.isNotEmpty()) p.selectPoweramp (ampId);
+            pump (250);
+        };
+
+        auto runChannels = [&] (int channels) -> bool
+        {
+            OrbitCabAudioProcessor p;
+            if (! p.setBusesLayout (layoutFor (channels))) return false;   // layout must be accepted
+            p.prepareToPlay (sr, block);
+            armStages (p);
+            return render (p, channels);
+        };
+
+        // TRUE STEREO (the whole point): L/R are processed INDEPENDENTLY, never summed to mono. Prove it:
+        //   (a) feed L and R DIFFERENT signals → the two outputs must stay distinct (a mono-sum collapses
+        //       them to the same waveform);
+        //   (b) feed L a signal and R silence → R must stay quiet (a mono-sum-and-fan would put ~half of L
+        //       into R, i.e. rMax ≈ 0.5·lMax). True stereo keeps R ≈ 0.
+        auto stereoIndependent = [&] () -> bool
+        {
+            // (a) different per-channel signal → outputs differ
+            double maxDiff = 0.0; bool finite = true;
+            {
+                OrbitCabAudioProcessor p;
+                if (! p.setBusesLayout (layoutFor (2))) return false;
+                p.prepareToPlay (sr, block);
+                armStages (p);
+                juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+                for (int k = 0; k < 24; ++k)
+                {
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const float t = (float) (k * block + i) / (float) sr;
+                        bb.setSample (0, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 200.0f * t));   // L
+                        bb.setSample (1, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 600.0f * t));   // R
+                    }
+                    p.processBlock (bb, mm);
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const float l = bb.getSample (0, i), r = bb.getSample (1, i);
+                        if (! std::isfinite (l) || ! std::isfinite (r)) finite = false;
+                        maxDiff = juce::jmax (maxDiff, (double) std::abs (l - r));
+                    }
+                }
+            }
+            const bool distinct = finite && maxDiff > 1.0e-3;   // did NOT collapse to one shared signal
+
+            // (b) signal on L, silence on R → R stays quiet (no L→R bleed)
+            double lMax = 0.0, rMax = 0.0;
+            {
+                OrbitCabAudioProcessor p;
+                if (! p.setBusesLayout (layoutFor (2))) return false;
+                p.prepareToPlay (sr, block);
+                armStages (p);
+                juce::AudioBuffer<float> bb (2, block); juce::MidiBuffer mm;
+                for (int k = 0; k < 24; ++k)
+                {
+                    bb.clear();
+                    for (int i = 0; i < block; ++i)
+                        bb.setSample (0, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * 300.0f * (float) (k * block + i) / (float) sr));
+                    p.processBlock (bb, mm);
+                    for (int i = 0; i < block; ++i)
+                    { lMax = juce::jmax (lMax, (double) std::abs (bb.getSample (0, i)));
+                      rMax = juce::jmax (rMax, (double) std::abs (bb.getSample (1, i))); }
+                }
+            }
+            const bool noBleed = lMax > 0.02 && rMax < 0.25 * lMax;   // R far below L (a mono-fan → rMax≈0.5·lMax)
+
+            return distinct && noBleed;
+        };
+
+        const bool mono       = runChannels (1);
+        const bool stereo     = runChannels (2);
+        const bool trueStereo = stereoIndependent();
+
+        // A host can change the layout live (mono -> stereo) → re-prepare; the loaded models stay clean.
+        bool reprepare = false;
+        {
+            OrbitCabAudioProcessor p;
+            if (p.setBusesLayout (layoutFor (1)))
+            {
+                p.prepareToPlay (sr, block);
+                armStages (p);
+                const bool m = render (p, 1);
+                p.releaseResources();
+                reprepare = m && p.setBusesLayout (layoutFor (2));
+                if (reprepare) { p.prepareToPlay (sr, block); pump (50); reprepare = render (p, 2); }
+            }
+        }
+
+        const bool ok = mono && stereo && trueStereo && reprepare;
+        allPass &= ok;
+        std::printf ("MONO/STEREO TEST: mono=%d stereo=%d trueStereo(L/R independent)=%d reprepare=%d (factory nam pre=%d amp=%d)\n",
+                     mono, stereo, trueStereo, reprepare, preId.isNotEmpty(), ampId.isNotEmpty());
+        std::printf ("RESULT: %s\n", ok ? "FULL TRUE-STEREO CHAIN (independent L/R, mono ok, live re-layout)"
+                                        : "MONO/STEREO BROKEN");
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }

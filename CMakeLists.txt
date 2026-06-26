@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 1.4.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 1.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,8 +50,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(clap-juce-extensions)
 
 # ----------------------------------------------------------------------------
-# NeuralAmpModelerCore (NAM) — neural amp/poweramp inference, run IN FRONT of the cab
-# (input → AMP → cab). PROTOTYPE (feat/nam-poweramp-prototype). Pinned to a commit like
+# NeuralAmpModelerCore (NAM) — neural amp inference for the two stages in front of the cab
+# (input → PREAMP → POWERAMP → cab). Pinned to a commit like
 # JUCE/CLAP. Only the `eigen` submodule is needed — AudioDSPTools is plugin-only and never
 # referenced by the core sources; nlohmann/json is vendored in the repo. The repo ships no
 # usable library target, so we compile NAM/*.cpp into our own static lib `nam_core`.
@@ -159,6 +159,11 @@ file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/r
 # CONFIGURE_DEPENDS re-globs on build, so dropping in the trained .nam files ships them.
 file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.nam")
 
+# Bundled factory PRE-amp NAM models: every .nam in resources/preamps/ — the SECOND neural stage
+# (input → preamp → poweramp → cab). These go into a SEPARATE binary-data target with its own
+# namespace (PreampBinaryData), so they never bleed into the poweramp's BinaryData enumeration.
+file(GLOB ORBITCAB_PREAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps/*.nam")
+
 juce_add_binary_data(OrbitCabData
     SOURCES
         # Brutal pack (mod. Behringer BG412S — V30 / Rockdriver Jr / DV-77)
@@ -194,6 +199,18 @@ juce_add_binary_data(OrbitCabData
         ${ORBITCAB_POWERAMP_FILES}
 )
 
+# Factory PRE-amp NAM models — a SEPARATE binary-data lib + namespace (PreampBinaryData) so the
+# preamp factory set is enumerated independently of the poweramp's BinaryData. The README.md is
+# the always-present placeholder source (juce_add_binary_data needs ≥1 file, and a public build
+# ships no .nam); the runtime only reads ".nam" entries, so it's ignored by the selector.
+juce_add_binary_data(OrbitCabPreampData
+    NAMESPACE   PreampBinaryData
+    HEADER_NAME PreampBinaryData.h
+    SOURCES
+        resources/preamps/README.md
+        ${ORBITCAB_PREAMP_FILES}
+)
+
 target_compile_definitions(OrbitCab PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -202,7 +219,8 @@ target_compile_definitions(OrbitCab PUBLIC
 )
 
 target_link_libraries(OrbitCab PRIVATE
-    OrbitCabData                # the embedded IR(s) — BinaryData::* symbols
+    OrbitCabData                # the embedded IR(s) + factory poweramps — BinaryData::* symbols
+    OrbitCabPreampData          # the embedded factory preamps — PreampBinaryData::* symbols
     # NAM (prototype amp stage). WHOLE_ARCHIVE keeps NAM's architecture self-registration:
     # wavenet/lstm/convnet register via static initializers, and a plain static-lib link drops
     # those (unreferenced) objects, so get_dsp() finds no architecture and every load fails.
@@ -241,6 +259,7 @@ target_compile_definitions(orbitcab_dsp_test PRIVATE
 )
 target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
+    OrbitCabPreampData                          # factory preamps (PreampBinaryData) — preamp-embed test
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     juce::juce_audio_utils
     juce::juce_dsp
@@ -274,6 +293,7 @@ target_compile_definitions(orbitcab_fade_measure PRIVATE
 )
 target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabData
+    OrbitCabPreampData
     nam_core
     juce::juce_audio_utils
     juce::juce_dsp
@@ -294,6 +314,8 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
+    tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
+    tests/PreampSelectorTests.cpp  # orbitcab::PreampSelector — contextual resolve/visibility (≥2-rule, keep-else-default)
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)

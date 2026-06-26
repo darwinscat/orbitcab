@@ -19,6 +19,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 {
     currentSampleRate = sampleRate;
 
+    preamp.prepare (sampleRate, maxBlock);
     amp.prepare (sampleRate, maxBlock);
 
     for (int i = 0; i < 2; ++i)
@@ -53,6 +54,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 
 void CabEngine::reset()
 {
+    preamp.reset();
     amp.reset();
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
@@ -146,10 +148,13 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     mixABSmoothed.setTargetValue (abTarget);
     muteGateSmoothed.setTargetValue ((aOn || bOn) ? 1.0f : 0.0f);
 
-    // --- AMP (NAM): nonlinear amp/poweramp stage in front of the cab. Runs on the (mono-
-    // summed) signal BEFORE the dry tap, so the amp output becomes the "dry" reference for
-    // both the per-slot Dry/Wet blend and the auto-level match — i.e. we cab the amp, not the
-    // clean DI. No-op passthrough when off or no model is loaded. ---
+    // --- NAM stages (PREAMP → POWERAMP): two nonlinear stages in front of the cab, in signal
+    // order. They run on the signal BEFORE the dry tap, so their output becomes the "dry"
+    // reference for both the per-slot Dry/Wet blend and the auto-level match — i.e. we cab the
+    // amp, not the clean DI. Each is a no-op passthrough when off or no model is loaded. The
+    // preamp feeds the poweramp (both load-normalised to a consistent level). ---
+    if (p.preampOn)
+        preamp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
     if (p.ampOn)
         amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
 
