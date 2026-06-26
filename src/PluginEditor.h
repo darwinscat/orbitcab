@@ -116,31 +116,47 @@ private:
     juce::Label  mixABLabel;
     std::unique_ptr<SAtt> mixABAtt;
 
-    // POWERAMP (NAM): a "POWERAMP" power checkbox sits in the bottom strip by the version; toggling
-    // it reveals a row below (window grows by ampRowH) carrying the symbolic amp + glowing tubes, a
-    // row of model buttons, and a 3-position mode switch (PP / SE / Other) where the old 2x checkbox
-    // sat. The mode switch FILTERS the model row: PP shows only push-pull models, SE only single-
-    // ended, Other the rest. ampOn drives the gate + reveal; the chosen model is library state
-    // ("ampSel"), not a host param; the active mode is derived from the selected model's category.
+    // POWERAMP (NAM): the "POWERAMP" power checkbox in the bottom strip reveals a row below (window
+    // grows by ampRowH) with the symbolic amp + glowing tubes and a NAME-FIRST selector:
+    //   • captures that share a display name with ≥2 variants form a GROUP — a name button, plus a
+    //     contextual PP/SE toggle (only when both modes exist) and contextual hours segments (only
+    //     when the name+mode has several "<N>h" clock positions);
+    //   • a one-off capture (a name with a single variant) is a SINGLETON — listed in a combo by its
+    //     full filename.
+    // ampOn gates + reveals; the chosen model is library state ("ampSel"), not a host param.
     juce::ToggleButton    ampPowerBtn { "POWERAMP" };   // it's a poweramp, not a full amp (preamp+poweramp)
     std::unique_ptr<BAtt> ampPowerAtt;
     TubeDisplay           tubeDisplay;          // symbolic amp + glowing tubes (count by mode: PP 2 / SE 1 / Other 0)
-    std::vector<orbitcab::PowerampEntry>           ampLib;       // cached merged library (rebuilt on add/remove)
-    std::vector<std::unique_ptr<juce::TextButton>> ampSelBtns;   // one button per library entry (shown if cat == ampCat)
-    juce::TextButton      ampCatBtn[3];          // mode switch (push-pull / single / other); labels set in the ctor
-    int  ampCat = 0;                             // active mode index: 0=PP, 1=SE, 2=Other (view filter)
-    void rebuildAmpSelector();                   // rescan the library + (re)create the model buttons
-    void setAmpCategory (int cat);               // switch the visible mode + select its first model
+    std::vector<orbitcab::PowerampEntry>           ampLib;          // cached merged library (rebuilt on add/remove)
+
+    std::vector<juce::String>                      ampGroupNames;   // distinct names with ≥2 variants (ordered)
+    std::vector<std::unique_ptr<juce::TextButton>> ampNameBtns;     // one per group name
+    juce::TextButton      ampModeBtn[2];         // contextual PP / SE toggle (shown when the name has both)
+    std::vector<std::unique_ptr<juce::TextButton>> ampHourBtns;     // contextual hours segments (rebuilt per name+mode)
+    std::vector<int>      ampHourVals;           // hour value parallel to ampHourBtns
+    juce::ComboBox        ampSingleBox;          // SINGLETONS (one-off amps) listed by full filename
+
+    void rebuildAmpSelector();                   // rescan library → groups/singletons → (re)create controls
+    void selectAmpName   (const juce::String& name);          // pick a group (keep mode/hours if they exist there)
+    void selectAmpMode   (orbitcab::PowerampCat c);           // switch PP/SE within the current name
+    void selectAmpHours  (int hours);                         // switch position within the current name+mode
+    void rebuildHourSegments();                  // (re)create the hour buttons for the current name+mode
     void updateAmpRow();                         // show/hide the revealed row + resize the editor
-    void syncAmpTubes();                         // reflect the "ampSel" selection onto mode/buttons/tubes
-    int  ampCatCount (int cat) const;            // how many library models fall in a mode (0 → disable that switch)
+    void syncAmpSelector();                      // reflect "ampSel" → highlight + contextual controls + tubes
+
+    // Library queries, computed from ampLib (small vector — no caching needed):
+    std::vector<orbitcab::PowerampCat> catsForName    (const juce::String& name) const;          // distinct modes present
+    std::vector<int>                   hoursForNameCat (const juce::String& name, orbitcab::PowerampCat c) const;
+    juce::String findAmpId   (const juce::String& name, orbitcab::PowerampCat c, int hours) const;  // matching entry id ("" = none)
+    bool         isGroupName (const juce::String& name) const;     // ≥2 entries share this display name
+    const orbitcab::PowerampEntry* ampEntryById (const juce::String& id) const;
+
     juce::Rectangle<int>  ampRowBounds;          // painted panel region of the revealed row
+    juce::String ampSyncedId;                    // last selection reflected (timer re-syncs only on change)
     bool ampOnCache = false;                     // detect ampOn change on the timer (host automation)
     bool showTubesPref = true;                   // gear "Show tubes" view pref (default on)
     bool hasPoweramps = false;                   // library non-empty (factory or user) → show the POWERAMP UI
 
-    static int         ampCatIndex (orbitcab::PowerampCat c)   // category → switch index (0/1/2)
-    { return c == orbitcab::PowerampCat::pushPull ? 0 : c == orbitcab::PowerampCat::singleEnded ? 1 : 2; }
     static constexpr int  kBaseHeight = 620;
     int ampRowH() const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
 

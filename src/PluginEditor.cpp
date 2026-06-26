@@ -221,22 +221,33 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     addAndMakeVisible (tubeDisplay);   // symbolic amp + glowing tube(s) in the revealed row
 
-    // Mode switch (PP / SE / Other) — sits where the old 2x checkbox did; filters the model row.
-    // Param-free, mutually-exclusive (driven by setAmpCategory / syncAmpTubes, no self-toggle).
-    static const char* const kCatNames[3] = { "PP", "SE", "Other" };
-    for (int c = 0; c < 3; ++c)
+    // Contextual PP / SE toggle — shown only when the selected NAME has both modes. Param-free,
+    // driven by syncAmpSelector (no self-toggle). [0] = push-pull, [1] = single-ended.
+    static const char* const kModeNames[2] = { "PP", "SE" };
+    for (int m = 0; m < 2; ++m)
     {
-        ampCatBtn[c].setButtonText (kCatNames[c]);
-        ampCatBtn[c].setClickingTogglesState (false);
-        ampCatBtn[c].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        ampCatBtn[c].setTooltip (c == 0 ? "Push-pull models \xe2\x80\x94 a pair of power tubes."
-                               : c == 1 ? "Single-ended models \xe2\x80\x94 one power tube."
-                                        : "Other models (no push-pull / single-ended tag).");
-        ampCatBtn[c].onClick = [this, c] { setAmpCategory (c); };
-        addChildComponent (ampCatBtn[c]);
+        ampModeBtn[m].setButtonText (kModeNames[m]);
+        ampModeBtn[m].setClickingTogglesState (false);
+        ampModeBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        ampModeBtn[m].setTooltip (m == 0 ? "Push-pull capture \xe2\x80\x94 a pair of power tubes."
+                                         : "Single-ended capture \xe2\x80\x94 one power tube.");
+        ampModeBtn[m].onClick = [this, m] { selectAmpMode (m == 0 ? orbitcab::PowerampCat::pushPull
+                                                                   : orbitcab::PowerampCat::singleEnded); };
+        addChildComponent (ampModeBtn[m]);
     }
 
-    rebuildAmpSelector();              // scan the merged library → model buttons + hasPoweramps + ampPowerBtn visibility
+    // Singletons combo (one-off amps by full filename). Selecting an item picks that capture.
+    ampSingleBox.setTextWhenNothingSelected ("Amps\xe2\x80\xa6");
+    ampSingleBox.setTooltip ("One-off poweramp captures (not part of a tube family).");
+    ampSingleBox.onChange = [this]
+    {
+        const int idx = ampSingleBox.getSelectedId() - 1;            // ids are 1-based → entry index
+        if (juce::isPositiveAndBelow (idx, (int) ampLib.size()))
+        { processorRef.selectPoweramp (ampLib[(size_t) idx].id); syncAmpSelector(); }
+    };
+    addChildComponent (ampSingleBox);
+
+    rebuildAmpSelector();              // scan the merged library → name buttons + combo + hasPoweramps + power-btn visibility
 
     // ---- IR library + restore display ----
     slots[0].rebuildList();
@@ -281,9 +292,9 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     if (hasPoweramps)                              // no bundled models → no POWERAMP UI to sync
     {
         if ((processorRef.apvts.getRawParameterValue ("ampOn")->load() > 0.5f) != ampOnCache)
-            updateAmpRow();
-        else
-            syncAmpTubes();
+            updateAmpRow();                        // ampOn flipped → reveal/hide + resize
+        else if (processorRef.selectedPowerampId() != ampSyncedId)
+            syncAmpSelector();                     // selection changed externally (automation / restore) → re-sync
         if (ampPowerBtn.getToggleState())
             tubeDisplay.tick();                    // advance the warm heater flicker (~30 Hz)
     }
@@ -469,97 +480,202 @@ static int tubeTypeFromName (const juce::String& name)
     return 0;   // 6L6 / 6V6 / unknown
 }
 
+// Default position when the current hours don't exist in the target group: prefer noon (12h),
+// else the middle of the available sweep, else 0 (no hours).
+static int defaultAmpHour (const std::vector<int>& hrs)
+{
+    if (hrs.empty()) return 0;
+    for (int h : hrs) if (h == 12) return 12;
+    return hrs[hrs.size() / 2];
+}
+
+//==============================================================================
+// Library queries (computed from the cached ampLib — small, no caching needed).
+const orbitcab::PowerampEntry* OrbitCabAudioProcessorEditor::ampEntryById (const juce::String& id) const
+{
+    for (const auto& e : ampLib) if (e.id == id) return &e;
+    return nullptr;
+}
+
+bool OrbitCabAudioProcessorEditor::isGroupName (const juce::String& name) const
+{
+    int n = 0;
+    for (const auto& e : ampLib) if (e.name == name && ++n >= 2) return true;
+    return false;
+}
+
+std::vector<orbitcab::PowerampCat> OrbitCabAudioProcessorEditor::catsForName (const juce::String& name) const
+{
+    std::vector<orbitcab::PowerampCat> out;
+    for (const auto& e : ampLib)
+        if (e.name == name && std::find (out.begin(), out.end(), e.cat) == out.end())
+            out.push_back (e.cat);
+    std::sort (out.begin(), out.end(), [] (auto a, auto b) { return (int) a < (int) b; });   // PP, SE, Other
+    return out;
+}
+
+std::vector<int> OrbitCabAudioProcessorEditor::hoursForNameCat (const juce::String& name, orbitcab::PowerampCat c) const
+{
+    std::vector<int> out;
+    for (const auto& e : ampLib)
+        if (e.name == name && e.cat == c && std::find (out.begin(), out.end(), e.hours) == out.end())
+            out.push_back (e.hours);
+    std::sort (out.begin(), out.end());
+    return out;
+}
+
+juce::String OrbitCabAudioProcessorEditor::findAmpId (const juce::String& name, orbitcab::PowerampCat c, int hours) const
+{
+    for (const auto& e : ampLib)
+        if (e.name == name && e.cat == c && e.hours == hours) return e.id;
+    return {};
+}
+
+//==============================================================================
 void OrbitCabAudioProcessorEditor::rebuildAmpSelector()
 {
-    for (auto& b : ampSelBtns)
-        removeChildComponent (b.get());
-    ampSelBtns.clear();
+    for (auto& b : ampNameBtns) removeChildComponent (b.get());
+    ampNameBtns.clear();
+    ampGroupNames.clear();
 
     ampLib       = processorRef.powerampLibrary();   // factory (BinaryData) + user (powerampDir), merged
     hasPoweramps = ! ampLib.empty();
 
-    for (const auto& e : ampLib)
+    // GROUPS: a display name shared by ≥2 captures → one name button (tube families: 6L6 / EL34 / …).
     {
-        // Label is the token-stripped name ("6L6 PP" → "6L6"); the PP/SE distinction is the mode
-        // switch, so within a mode the row reads like the original tube buttons (6L6 / EL34 / …).
-        auto b = std::make_unique<juce::TextButton> (e.name);
-        // Visual state is driven SOLELY by the selection (syncAmpTubes) — no self-toggle / radio
-        // group, so the accent fill can't get stuck (the old 2x colour bug). Click → select.
-        b->setClickingTogglesState (false);
-        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        b->setTooltip (e.factory ? "Factory poweramp capture." : "Your poweramp capture (manage in Settings).");
-        const auto id = e.id;
-        b->onClick = [this, id] { processorRef.selectPoweramp (id); syncAmpTubes(); };
-        addChildComponent (*b);   // visibility owned by updateAmpRow
-        ampSelBtns.push_back (std::move (b));
+        juce::StringArray seen;
+        for (const auto& e : ampLib)
+            if (isGroupName (e.name) && ! seen.contains (e.name))
+            { seen.add (e.name); ampGroupNames.push_back (e.name); }
     }
+    for (const auto& nm : ampGroupNames)
+    {
+        auto b = std::make_unique<juce::TextButton> (nm);
+        b->setClickingTogglesState (false);   // visual state driven by syncAmpSelector (no stuck-fill bug)
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        b->setTooltip ("Poweramp capture family (pick mode / position below).");
+        const auto name = nm;
+        b->onClick = [this, name] { selectAmpName (name); };
+        addChildComponent (*b);
+        ampNameBtns.push_back (std::move (b));
+    }
+
+    // SINGLETONS: a one-off capture → the combo, shown by its full filename. Item id = entry index + 1.
+    ampSingleBox.clear (juce::dontSendNotification);
+    for (int i = 0; i < (int) ampLib.size(); ++i)
+        if (! isGroupName (ampLib[(size_t) i].name))
+            ampSingleBox.addItem (ampLib[(size_t) i].id.fromFirstOccurrenceOf (":", false, false), i + 1);
 
     ampPowerBtn.setVisible (hasPoweramps);
 }
 
-int OrbitCabAudioProcessorEditor::ampCatCount (int cat) const
+// Pick a GROUP by name — keep the current mode/hours if they exist there, else sensible defaults.
+void OrbitCabAudioProcessorEditor::selectAmpName (const juce::String& name)
 {
-    int n = 0;
-    for (const auto& e : ampLib)
-        if (ampCatIndex (e.cat) == cat) ++n;
-    return n;
-}
-
-void OrbitCabAudioProcessorEditor::setAmpCategory (int cat)
-{
-    ampCat = juce::jlimit (0, 2, cat);
-    // Empty modes are disabled in updateAmpRow, so the target mode always has ≥1 model here.
-    const auto sel = processorRef.selectedPowerampId();
-    juce::String curName;
-    bool selInCat = false;
-    for (const auto& e : ampLib)
-        if (e.id == sel) { curName = e.name; selInCat = (ampCatIndex (e.cat) == ampCat); break; }
-
-    if (! selInCat)
+    const auto cats = catsForName (name);
+    if (cats.empty()) return;
+    auto cat = cats.front();
+    int  curHours = 0;
+    if (auto* cur = ampEntryById (processorRef.selectedPowerampId()))
     {
-        // Keep the SAME tube type across a mode change when it exists (KT88 SE → KT88 PP) — matches
-        // the old "tube buttons + 2x" feel; otherwise fall back to the first model in the new mode.
-        juce::String pick, first;
-        for (const auto& e : ampLib)
-            if (ampCatIndex (e.cat) == ampCat)
-            {
-                if (first.isEmpty()) first = e.id;
-                if (e.name == curName) { pick = e.id; break; }
-            }
-        if (pick.isEmpty()) pick = first;
-        if (pick.isNotEmpty()) processorRef.selectPoweramp (pick);
+        if (std::find (cats.begin(), cats.end(), cur->cat) != cats.end()) cat = cur->cat;
+        curHours = cur->hours;
     }
-    updateAmpRow();
+    const auto hrs = hoursForNameCat (name, cat);
+    const int hours = (std::find (hrs.begin(), hrs.end(), curHours) != hrs.end()) ? curHours : defaultAmpHour (hrs);
+    const auto id = findAmpId (name, cat, hours);
+    if (id.isNotEmpty()) { processorRef.selectPoweramp (id); syncAmpSelector(); }
 }
 
-void OrbitCabAudioProcessorEditor::syncAmpTubes()
+void OrbitCabAudioProcessorEditor::selectAmpMode (orbitcab::PowerampCat c)
 {
-    const auto sel = processorRef.selectedPowerampId();
+    auto* cur = ampEntryById (processorRef.selectedPowerampId());
+    if (cur == nullptr) return;
+    const auto hrs = hoursForNameCat (cur->name, c);
+    const int hours = (std::find (hrs.begin(), hrs.end(), cur->hours) != hrs.end()) ? cur->hours : defaultAmpHour (hrs);
+    const auto id = findAmpId (cur->name, c, hours);
+    if (id.isNotEmpty()) { processorRef.selectPoweramp (id); syncAmpSelector(); }
+}
+
+void OrbitCabAudioProcessorEditor::selectAmpHours (int hours)
+{
+    auto* cur = ampEntryById (processorRef.selectedPowerampId());
+    if (cur == nullptr) return;
+    const auto id = findAmpId (cur->name, cur->cat, hours);
+    if (id.isNotEmpty()) { processorRef.selectPoweramp (id); syncAmpSelector(); }
+}
+
+// (Re)create the hour segment buttons for the current name+mode (only when ≥2 positions exist).
+void OrbitCabAudioProcessorEditor::rebuildHourSegments()
+{
+    for (auto& b : ampHourBtns) removeChildComponent (b.get());
+    ampHourBtns.clear();
+    ampHourVals.clear();
+
+    auto* cur = ampEntryById (processorRef.selectedPowerampId());
+    if (cur == nullptr) return;
+    const auto hrs = hoursForNameCat (cur->name, cur->cat);
+    if (hrs.size() < 2) return;   // 0/1 position → no segments
+
+    for (int h : hrs)
+    {
+        auto b = std::make_unique<juce::TextButton> (juce::String (h) + "h");
+        b->setClickingTogglesState (false);
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        b->setTooltip ("Knob at " + juce::String (h) + " o'clock.");
+        b->onClick = [this, h] { selectAmpHours (h); };
+        addChildComponent (*b);
+        ampHourBtns.push_back (std::move (b));
+        ampHourVals.push_back (h);
+    }
+}
+
+// Reflect the "ampSel" selection onto the whole selector: highlight the right name button (or the
+// combo), show the contextual PP/SE toggle (only if the name has both) + hours segments (only if the
+// name+mode has several), and the tubes. Called on a real change (click / restore), then re-flows.
+void OrbitCabAudioProcessorEditor::syncAmpSelector()
+{
+    ampSyncedId = processorRef.selectedPowerampId();
     const bool on  = ampPowerBtn.getToggleState();
-    int  type = 0;
-    auto cat   = orbitcab::PowerampCat::other;
-    bool found = false;
-    for (size_t i = 0; i < ampLib.size(); ++i)
-    {
-        const bool isSel = (ampLib[i].id == sel);
-        ampSelBtns[i]->setToggleState (isSel, juce::dontSendNotification);
-        if (isSel) { type = tubeTypeFromName (ampLib[i].name); cat = ampLib[i].cat; found = true; }
-    }
-    const int newCat = found ? ampCatIndex (cat) : ampCat;   // the mode follows the selected model
-    const bool catChanged = (newCat != ampCat);
-    ampCat = newCat;
-    for (int c = 0; c < 3; ++c)
-        ampCatBtn[c].setToggleState (c == ampCat, juce::dontSendNotification);
-    tubeDisplay.setSelection (type, found ? orbitcab::tubeCountForCat (cat) : 0, on);   // PP 2 / SE 1 / Other 0
+    auto* cur = ampEntryById (ampSyncedId);
+    const bool group = cur != nullptr && isGroupName (cur->name);
 
-    // A selection arriving without a click (session/preset/undo restore) can land in another mode
-    // → re-show that mode's model buttons + re-flow. Guarded on a real change so it's not per-frame.
-    if (catChanged)
+    // name buttons — highlight the selected group's name
+    for (size_t i = 0; i < ampNameBtns.size(); ++i)
+        ampNameBtns[i]->setToggleState (group && cur->name == ampGroupNames[i], juce::dontSendNotification);
+
+    // singletons combo — reflect (or clear) the selection
+    if (cur != nullptr && ! group)
     {
-        for (size_t i = 0; i < ampSelBtns.size(); ++i)
-            ampSelBtns[i]->setVisible (on && ampCatIndex (ampLib[i].cat) == ampCat);
-        resized();
+        for (int i = 0; i < (int) ampLib.size(); ++i)
+            if (ampLib[(size_t) i].id == cur->id) { ampSingleBox.setSelectedId (i + 1, juce::dontSendNotification); break; }
     }
+    else
+        ampSingleBox.setSelectedId (0, juce::dontSendNotification);
+
+    // contextual PP/SE toggle — only for a group that actually has both modes
+    const auto cats = (group ? catsForName (cur->name) : std::vector<orbitcab::PowerampCat>{});
+    const bool showMode = on && group && cats.size() >= 2;
+    for (int m = 0; m < 2; ++m)
+    {
+        const auto mc = (m == 0 ? orbitcab::PowerampCat::pushPull : orbitcab::PowerampCat::singleEnded);
+        ampModeBtn[m].setVisible (showMode);
+        ampModeBtn[m].setToggleState (cur != nullptr && cur->cat == mc, juce::dontSendNotification);
+    }
+
+    // contextual hours segments — rebuilt for this name+mode (only when ≥2 positions)
+    rebuildHourSegments();
+    for (size_t i = 0; i < ampHourBtns.size(); ++i)
+    {
+        ampHourBtns[i]->setVisible (on && group);
+        ampHourBtns[i]->setToggleState (cur != nullptr && cur->hours == ampHourVals[i], juce::dontSendNotification);
+    }
+
+    // tubes: silhouette from the name, count from the mode (PP 2 / SE 1 / Other 0)
+    tubeDisplay.setSelection (cur != nullptr ? tubeTypeFromName (cur->name) : 0,
+                              cur != nullptr ? orbitcab::tubeCountForCat (cur->cat) : 0, on);
+
+    resized();   // contextual controls appeared/disappeared → re-flow the row
 }
 
 void OrbitCabAudioProcessorEditor::updateAmpRow()
@@ -569,32 +685,17 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
 
     // Powering on with no resolvable selection → default to the first library entry (so the stage
     // is never "on but silent"). A restored session that already carries a valid "ampSel" keeps it.
-    if (on && ! ampLib.empty())
-    {
-        const auto sel = processorRef.selectedPowerampId();
-        const bool resolves = std::any_of (ampLib.begin(), ampLib.end(),
-                                           [&] (const auto& e) { return e.id == sel; });
-        if (! resolves)
-            processorRef.selectPoweramp (ampLib.front().id);
-    }
+    if (on && ! ampLib.empty() && ampEntryById (processorRef.selectedPowerampId()) == nullptr)
+        processorRef.selectPoweramp (ampLib.front().id);
 
     tubeDisplay.setShowTubes (showTubesPref);         // "Show tubes" hides the tubes but keeps the amp icon
     tubeDisplay.setVisible (on);                      // amp icon stays whenever the poweramp is on
 
-    syncAmpTubes();                                   // sets ampCat from the selection (+ glow + highlight)
-
-    // Mode switch: shown when on; a mode with no models is disabled (greyed, unclickable).
-    for (int c = 0; c < 3; ++c)
-    {
-        ampCatBtn[c].setVisible (on);
-        ampCatBtn[c].setEnabled (ampCatCount (c) > 0);
-    }
-    // Model buttons: only the active mode's are visible.
-    for (size_t i = 0; i < ampSelBtns.size(); ++i)
-        ampSelBtns[i]->setVisible (on && ampCatIndex (ampLib[i].cat) == ampCat);
+    for (auto& b : ampNameBtns) b->setVisible (on);                       // name buttons always visible when on
+    ampSingleBox.setVisible (on && ampSingleBox.getNumItems() > 0);       // combo only if there are singletons
 
     setSize (1040, kBaseHeight + (on ? ampRowH() : 0));   // grow/shrink (triggers resized when size changes)
-    resized();                                            // also re-flow when the mode changed but the size didn't
+    syncAmpSelector();                                    // contextual controls + tubes + final re-flow
 }
 
 void OrbitCabAudioProcessorEditor::pushFiltersToWave()
@@ -1099,29 +1200,46 @@ void OrbitCabAudioProcessorEditor::resized()
         tubeDisplay.setBounds (row.removeFromLeft (showTubesPref ? 152 : 52));
         row.removeFromLeft (16);
 
-        // Mode switch (PP / SE / Other) on the right — where the old 2x checkbox sat.
-        constexpr int catW = 50, catGap = 4;
-        auto sw = row.removeFromRight (3 * catW + 2 * catGap).withSizeKeepingCentre (3 * catW + 2 * catGap, 26);
-        for (int c = 0; c < 3; ++c)
+        // Laid out from the RIGHT: singletons combo, then contextual hours segments, then PP/SE.
+        // The grouped NAME buttons fill whatever's left in the middle.
+        if (ampSingleBox.isVisible())
         {
-            ampCatBtn[c].setBounds (sw.removeFromLeft (catW));
-            sw.removeFromLeft (catGap);
+            ampSingleBox.setBounds (row.removeFromRight (160).withSizeKeepingCentre (160, 28));
+            row.removeFromRight (14);
         }
-        row.removeFromRight (16);
+        // hours segments (visible ones)
+        {
+            int nh = 0; for (auto& b : ampHourBtns) if (b->isVisible()) ++nh;
+            if (nh > 0)
+            {
+                constexpr int hw = 42, hg = 3;
+                auto ha = row.removeFromRight (nh * hw + (nh - 1) * hg).withSizeKeepingCentre (nh * hw + (nh - 1) * hg, 26);
+                for (auto& b : ampHourBtns) if (b->isVisible()) { b->setBounds (ha.removeFromLeft (hw)); ha.removeFromLeft (hg); }
+                row.removeFromRight (12);
+            }
+        }
+        // PP / SE toggle (visible ones)
+        {
+            int nm = 0; for (auto& b : ampModeBtn) if (b.isVisible()) ++nm;
+            if (nm > 0)
+            {
+                constexpr int mw = 46, mg = 3;
+                auto ma = row.removeFromRight (nm * mw + (nm - 1) * mg).withSizeKeepingCentre (nm * mw + (nm - 1) * mg, 26);
+                for (auto& b : ampModeBtn) if (b.isVisible()) { b.setBounds (ma.removeFromLeft (mw)); ma.removeFromLeft (mg); }
+                row.removeFromRight (14);
+            }
+        }
 
-        // Model buttons for the ACTIVE mode only, vertically centred, sharing the remaining width.
+        // Grouped NAME buttons fill the middle, vertically centred, sharing the remaining width.
         auto ctl = row.withSizeKeepingCentre (row.getWidth(), 30);
-        std::vector<int> vis;
-        for (int i = 0; i < (int) ampSelBtns.size(); ++i)
-            if (ampCatIndex (ampLib[(size_t) i].cat) == ampCat) vis.push_back (i);
-        const int n = (int) vis.size();
+        const int n = (int) ampNameBtns.size();
         if (n > 0)
         {
             const int gap = 6;
             const int bw  = juce::jlimit (44, 132, (ctl.getWidth() - gap * (n - 1)) / n);
-            for (int k = 0; k < n; ++k)
+            for (auto& b : ampNameBtns)
             {
-                ampSelBtns[(size_t) vis[(size_t) k]]->setBounds (ctl.removeFromLeft (bw).reduced (1, 0));
+                b->setBounds (ctl.removeFromLeft (bw).reduced (1, 0));
                 ctl.removeFromLeft (gap);
             }
         }
