@@ -1097,6 +1097,44 @@ int main()
                                         : "SIZE CAP BROKEN");
     }
 
+    // ---- select-then-save-immediately still embeds the model (no reload-poll tick needed) ----
+    // The pool used to be populated only by the 30 Hz reload poll (applyPreamp/applyPoweramp). A save
+    // BEFORE that tick would miss the bytes. buildStateTree now materialises any referenced-but-unpooled
+    // model from the library at save time, so the .nam always travels with the save.
+    {
+        auto poolCount = [] (const juce::MemoryBlock& mb, const char* node)
+        { auto x = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+          auto* p = x ? x->getChildByName (node) : nullptr; return p ? p->getNumChildElements() : -1; };
+
+        juce::String preId, ampId;
+        { OrbitCabAudioProcessor probe;
+          for (const auto& e : probe.preampLibrary())   if (e.factory) { preId = e.id; break; }
+          for (const auto& e : probe.powerampLibrary()) if (e.factory) { ampId = e.id; break; } }
+
+        if (preId.isEmpty() || ampId.isEmpty())
+        {
+            std::printf ("IMMEDIATE EMBED TEST: skipped (no factory .nam in this build)\n");
+        }
+        else
+        {
+            OrbitCabAudioProcessor a; a.prepareToPlay (sr, block);
+            a.selectPreamp (preId);
+            a.selectPoweramp (ampId);
+            // NO pump() — save right away, before the poll could have pooled the bytes.
+            juce::MemoryBlock sess; a.getStateInformation (sess);
+            juce::MemoryBlock pres; a.getStateForPreset  (pres);
+            const int preSess = poolCount (sess, "PreampPool"),  ampSess = poolCount (sess, "PowerampPool");
+            const int prePres = poolCount (pres, "PreampPool"),  ampPres = poolCount (pres, "PowerampPool");
+
+            const bool ok = preSess == 1 && ampSess == 1 && prePres == 1 && ampPres == 1;
+            allPass &= ok;
+            std::printf ("IMMEDIATE EMBED TEST: session(pre=%d amp=%d) preset(pre=%d amp=%d) — saved with no poll tick\n",
+                         preSess, ampSess, prePres, ampPres);
+            std::printf ("RESULT: %s\n", ok ? "SELECT-THEN-SAVE EMBEDS (materialised at save time)"
+                                            : "IMMEDIATE EMBED BROKEN");
+        }
+    }
+
     std::printf ("\n==== %s ====\n", allPass ? "ALL DSP CHECKS PASSED" : "SOME DSP CHECKS FAILED");
     return allPass ? 0 : 1;
 }

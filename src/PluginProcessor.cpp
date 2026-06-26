@@ -608,40 +608,47 @@ void OrbitCabAudioProcessor::applyPoweramp()
         if (pooled.getSize() > 0 && engine.loadAmpModelBytes (pooled.getData(), pooled.getSize(), kPowerampTrimDb))
             return;
 
-        // 2) Else resolve from the merged library, and stash the raw bytes into the pool so a
-        //    later save can embed them (the only place the pool gets populated from disk).
-        for (const auto& e : powerampLibrary())
-            if (e.id == sel)
-            {
-                juce::MemoryBlock mb;
-                if (e.factory)
-                {
-                    const juce::String fn = sel.fromFirstOccurrenceOf ("f:", false, false) + ".nam";
-                    for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
-                        if (fn == BinaryData::originalFilenames[i])
-                        {
-                            int sz = 0;
-                            if (const char* d = BinaryData::getNamedResource (BinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
-                                mb.append (d, (size_t) sz);
-                            break;
-                        }
-                }
-                else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
-                {
-                    e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
-                }
-
-                if (mb.getSize() > 0 && engine.loadAmpModelBytes (mb.getData(), mb.getSize(), kPowerampTrimDb))
-                {
-                    const juce::ScopedLock sl (powerampPoolLock);
-                    embeddedPoweramps[sel] = std::move (mb);   // remember for embedding in saves
-                    return;
-                }
-                break;
-            }
+        // 2) Else resolve the bytes from the merged library, load + stash into the pool so a later
+        //    save can embed them.
+        juce::MemoryBlock mb = powerampBytesFor (sel);
+        if (mb.getSize() > 0 && engine.loadAmpModelBytes (mb.getData(), mb.getSize(), kPowerampTrimDb))
+        {
+            const juce::ScopedLock sl (powerampPoolLock);
+            embeddedPoweramps[sel] = std::move (mb);   // remember for embedding in saves
+            return;
+        }
     }
 
     engine.clearAmpModel();
+}
+
+juce::MemoryBlock OrbitCabAudioProcessor::powerampBytesFor (const juce::String& id) const
+{
+    // Raw .nam bytes for a poweramp id, from the library: factory → embedded BinaryData; user → the
+    // file (size-capped). {} if the id isn't in the library or is oversized. Pure read (no pool write).
+    juce::MemoryBlock mb;
+    for (const auto& e : powerampLibrary())
+        if (e.id == id)
+        {
+            if (e.factory)
+            {
+                const juce::String fn = id.fromFirstOccurrenceOf ("f:", false, false) + ".nam";
+                for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+                    if (fn == BinaryData::originalFilenames[i])
+                    {
+                        int sz = 0;
+                        if (const char* d = BinaryData::getNamedResource (BinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
+                            mb.append (d, (size_t) sz);
+                        break;
+                    }
+            }
+            else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
+            {
+                e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
+            }
+            break;
+        }
+    return mb;
 }
 
 //==============================================================================
@@ -748,40 +755,47 @@ void OrbitCabAudioProcessor::applyPreamp()
         if (pooled.getSize() > 0 && engine.loadPreampModelBytes (pooled.getData(), pooled.getSize(), kPreampTrimDb))
             return;
 
-        // 2) Else resolve from the merged library, and stash the raw bytes into the pool so a later
-        //    save can embed them (the only place the pool gets populated from disk).
-        for (const auto& e : preampLibrary())
-            if (e.id == sel)
-            {
-                juce::MemoryBlock mb;
-                if (e.factory)
-                {
-                    const juce::String fn = sel.fromFirstOccurrenceOf ("fp:", false, false) + ".nam";
-                    for (int i = 0; i < PreampBinaryData::namedResourceListSize; ++i)
-                        if (fn == PreampBinaryData::originalFilenames[i])
-                        {
-                            int sz = 0;
-                            if (const char* d = PreampBinaryData::getNamedResource (PreampBinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
-                                mb.append (d, (size_t) sz);
-                            break;
-                        }
-                }
-                else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
-                {
-                    e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
-                }
-
-                if (mb.getSize() > 0 && engine.loadPreampModelBytes (mb.getData(), mb.getSize(), kPreampTrimDb))
-                {
-                    const juce::ScopedLock sl (preampPoolLock);
-                    embeddedPreamps[sel] = std::move (mb);   // remember for embedding in saves
-                    return;
-                }
-                break;
-            }
+        // 2) Else resolve the bytes from the merged library, load + stash into the pool so a later
+        //    save can embed them.
+        juce::MemoryBlock mb = preampBytesFor (sel);
+        if (mb.getSize() > 0 && engine.loadPreampModelBytes (mb.getData(), mb.getSize(), kPreampTrimDb))
+        {
+            const juce::ScopedLock sl (preampPoolLock);
+            embeddedPreamps[sel] = std::move (mb);   // remember for embedding in saves
+            return;
+        }
     }
 
     engine.clearPreampModel();
+}
+
+juce::MemoryBlock OrbitCabAudioProcessor::preampBytesFor (const juce::String& id) const
+{
+    // Raw .nam bytes for a preamp id, from the library: factory → embedded PreampBinaryData; user → the
+    // file (size-capped). {} if the id isn't in the library or is oversized. Pure read (no pool write).
+    juce::MemoryBlock mb;
+    for (const auto& e : preampLibrary())
+        if (e.id == id)
+        {
+            if (e.factory)
+            {
+                const juce::String fn = id.fromFirstOccurrenceOf ("fp:", false, false) + ".nam";
+                for (int i = 0; i < PreampBinaryData::namedResourceListSize; ++i)
+                    if (fn == PreampBinaryData::originalFilenames[i])
+                    {
+                        int sz = 0;
+                        if (const char* d = PreampBinaryData::getNamedResource (PreampBinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
+                            mb.append (d, (size_t) sz);
+                        break;
+                    }
+            }
+            else if (e.file.existsAsFile() && e.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)
+            {
+                e.file.loadFileAsData (mb);   // cap the read so a crafted/corrupt oversized file can't OOM us
+            }
+            break;
+        }
+    return mb;
 }
 
 void OrbitCabAudioProcessor::updateLatency()
@@ -1233,6 +1247,16 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
                 if (snapshots[(size_t) i].has_value())
                     addAmp (snapshots[(size_t) i]->params);
 
+        // Materialise any referenced model not pooled yet (selected then saved before the reload poll
+        // ran) — load its bytes from the library so the save still embeds it. Lock only around the map.
+        for (const auto& id : ampIds)
+        {
+            { const juce::ScopedLock sl (powerampPoolLock);
+              if (auto it = embeddedPoweramps.find (id); it != embeddedPoweramps.end() && it->second.getSize() > 0) continue; }
+            if (auto bytes = powerampBytesFor (id); bytes.getSize() > 0)
+            { const juce::ScopedLock sl (powerampPoolLock); embeddedPoweramps[id] = std::move (bytes); }
+        }
+
         juce::ValueTree pool ("PowerampPool");
         {
             const juce::ScopedLock sl (powerampPoolLock);
@@ -1262,6 +1286,15 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
             for (int i = 0; i < kNumSnapshots; ++i)
                 if (snapshots[(size_t) i].has_value())
                     addPreamp (snapshots[(size_t) i]->params);
+
+        // Materialise any referenced preamp not pooled yet (selected then saved before the reload poll).
+        for (const auto& id : preampIds)
+        {
+            { const juce::ScopedLock sl (preampPoolLock);
+              if (auto it = embeddedPreamps.find (id); it != embeddedPreamps.end() && it->second.getSize() > 0) continue; }
+            if (auto bytes = preampBytesFor (id); bytes.getSize() > 0)
+            { const juce::ScopedLock sl (preampPoolLock); embeddedPreamps[id] = std::move (bytes); }
+        }
 
         juce::ValueTree pool ("PreampPool");
         {
