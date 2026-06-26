@@ -33,44 +33,59 @@ enum class PowerampCat { pushPull, singleEnded, other };
 struct PowerampEntry
 {
     juce::String id;          // stable selection key: "f:<base>" (factory) | "u:<base>" (user folder)
-    juce::String name;        // display name (filename minus extension, minus the PP/SE token)
+    juce::String name;        // display name (filename minus extension, minus the PP/SE + <N>h tokens)
     PowerampCat  cat;         // PP / SE / Other — from the filename token; drives the mode switch + tube count
+    int          hours = 0;   // clock-position knob setting from a "<N>h" token (9/12/15); 0 = none → no slider
     bool         factory;     // true → embedded (BinaryData); false → user folder
     juce::File   file;        // valid only when ! factory (the source file in powerampDir)
 };
 
-// Split a base filename into (display name, category) on a whole-word "PP"/"SE" token (any case),
-// separated by space / dash / underscore. No token → category Other, name unchanged.
-inline void parsePowerampName (const juce::String& base, juce::String& nameOut, PowerampCat& catOut)
+// Split a base filename into (display name, category, hours) on tokens separated by space / dash /
+// underscore: a whole-word "PP"/"SE" (any case) → category; a "<N>h" (e.g. 12h) → the clock-position
+// knob setting. Both tokens are dropped from the display name. No PP/SE → Other; no <N>h → hours 0.
+//   "6L6 PP 12h"  → name "6L6",  cat PP,    hours 12   (one of several positions of the same capture)
+//   "6L6 PP-2"    → name "6L6",  cat PP,    hours 0    (legacy: a trailing tube count is still stripped)
+//   "Marshall"    → name "Marshall", cat Other, hours 0
+inline void parsePowerampName (const juce::String& base, juce::String& nameOut, PowerampCat& catOut, int& hoursOut)
 {
-    catOut  = PowerampCat::other;
-    nameOut = base;   // default: no PP/SE tag → name unchanged. Set up front so the result never
-                      // depends on what the caller passed in (a reused out-string was returning stale).
+    catOut   = PowerampCat::other;
+    hoursOut = 0;
+    nameOut  = base;   // default: no tags → name unchanged. Set up front so the result never depends
+                       // on what the caller passed in (a reused out-string used to return stale).
     juce::StringArray words;
     words.addTokens (base, " -_", "");
     words.removeEmptyStrings();
 
-    int tokenIdx = -1;
+    // PP / SE tag → category (+ drop a legacy "-N" tube count tokenised right after it: "6L6 PP-2").
     for (int i = 0; i < words.size(); ++i)
     {
         const auto w = words[i].toUpperCase();
-        if (w == "PP") { catOut = PowerampCat::pushPull;    tokenIdx = i; break; }
-        if (w == "SE") { catOut = PowerampCat::singleEnded; tokenIdx = i; break; }
+        if (w == "PP" || w == "SE")
+        {
+            catOut = (w == "PP" ? PowerampCat::pushPull : PowerampCat::singleEnded);
+            if (i + 1 < words.size() && words[i + 1].containsOnly ("0123456789"))
+                words.remove (i + 1);
+            words.remove (i);
+            break;
+        }
     }
 
-    if (tokenIdx >= 0)
+    // Clock-position tag "<N>h" (9h / 12h / 15h) → hours; dropped from the display name.
+    for (int i = 0; i < words.size(); ++i)
     {
-        // Also drop a legacy trailing "-N" tube count that tokenised into its own word right after
-        // the tag ("6L6 PP-2" → [6L6, PP, 2] → "6L6") — the count now comes from the category, so a
-        // file still named the old way displays cleanly without a rename. A number BEFORE the tag
-        // (e.g. "JCM 800 PP") is kept, since it's part of the name, not the count.
-        if (tokenIdx + 1 < words.size() && words[tokenIdx + 1].containsOnly ("0123456789"))
-            words.remove (tokenIdx + 1);
-        words.remove (tokenIdx);
-        nameOut = words.joinIntoString (" ").trim();
+        const auto w = words[i].toLowerCase();
+        if (w.length() >= 2 && w.getLastCharacter() == (juce::juce_wchar) 'h'
+            && w.dropLastCharacters (1).containsOnly ("0123456789"))
+        {
+            hoursOut = w.dropLastCharacters (1).getIntValue();
+            words.remove (i);
+            break;
+        }
     }
-    if (nameOut.isEmpty())
-        nameOut = base;   // token was the whole name → keep something to show
+
+    const auto joined = words.joinIntoString (" ").trim();
+    if (joined.isNotEmpty())
+        nameOut = joined;   // else keep base (the tags were the whole name)
 }
 
 // Tubes drawn for a category: push-pull = a pair, single-ended = one, other = none (amp icon only).
@@ -92,7 +107,7 @@ inline std::vector<PowerampEntry> scanPowerampLibrary (const juce::File& dir)
         e.file    = f;
         const auto base = f.getFileNameWithoutExtension();
         e.id = "u:" + base;
-        parsePowerampName (base, e.name, e.cat);
+        parsePowerampName (base, e.name, e.cat, e.hours);
         out.push_back (std::move (e));
     }
     std::sort (out.begin(), out.end(),

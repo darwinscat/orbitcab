@@ -489,7 +489,7 @@ std::vector<orbitcab::PowerampEntry> OrbitCabAudioProcessor::powerampLibrary() c
         e.factory = true;
         const auto base = fn.dropLastCharacters (4);     // strip ".nam"
         e.id = "f:" + base;
-        orbitcab::parsePowerampName (base, e.name, e.cat);
+        orbitcab::parsePowerampName (base, e.name, e.cat, e.hours);
         out.push_back (std::move (e));
     }
     std::sort (out.begin(), out.end(),

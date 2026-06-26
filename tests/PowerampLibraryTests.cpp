@@ -16,14 +16,24 @@ struct PowerampLibraryTest : juce::UnitTest
 
     void runTest() override
     {
-        juce::String n; PowerampCat c;
-        auto parse = [&] (const char* base) { parsePowerampName (base, n, c); };
+        juce::String n; PowerampCat c; int h = -1;
+        auto parse = [&] (const char* base) { parsePowerampName (base, n, c, h); };
 
         beginTest ("PP / SE token → mode, dropped from the display name");
         {
-            parse ("6L6 PP");  expect (c == PowerampCat::pushPull    && n == "6L6");
-            parse ("6L6 SE");  expect (c == PowerampCat::singleEnded && n == "6L6");
+            parse ("6L6 PP");  expect (c == PowerampCat::pushPull    && n == "6L6" && h == 0);
+            parse ("6L6 SE");  expect (c == PowerampCat::singleEnded && n == "6L6" && h == 0);
             parse ("EL34 PP"); expect (c == PowerampCat::pushPull    && n == "EL34");
+        }
+
+        beginTest ("<N>h clock-position token → hours, dropped from the display name");
+        {
+            parse ("6L6 PP 12h"); expect (c == PowerampCat::pushPull    && n == "6L6" && h == 12);
+            parse ("6L6 SE 9h");  expect (c == PowerampCat::singleEnded && n == "6L6" && h == 9);
+            parse ("EL34 PP 15h");expect (c == PowerampCat::pushPull    && n == "EL34" && h == 15);
+            parse ("6L6 12h PP"); expect (c == PowerampCat::pushPull    && n == "6L6" && h == 12);   // order-independent
+            parse ("Marshall 12h");expect (c == PowerampCat::other      && n == "Marshall" && h == 12);  // hours without a mode
+            parse ("6L6 PP");     expect (h == 0);                                                    // no token → 0
         }
 
         beginTest ("no tag → Other, name unchanged");
