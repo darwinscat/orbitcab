@@ -68,6 +68,14 @@ struct PreampLibraryTest : juce::UnitTest
             parse ("boost"); expect (boost  && n.isNotEmpty());
         }
 
+        beginTest ("first whole-word token of each type wins; separators trimmed; h is case-insensitive");
+        {
+            parse ("Voltage ch1 ch2");  expect (ch == 1 && n == "Voltage ch2");  // first chN wins; the rest stays in the name
+            parse ("  Voltage   12h  "); expect (n == "Voltage" && h == 12);      // leading/trailing/extra separators trimmed
+            parse ("-Voltage-ch2-");     expect (n == "Voltage" && ch == 2);      // dash/underscore separators tokenise too
+            parse ("Voltage 12H");       expect (n == "Voltage" && h == 12);      // uppercase 'H' token still matches
+        }
+
         beginTest ("scanPreampLibrary: only *.nam, parsed, sorted by name, id = up:<base>");
         {
             auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
@@ -88,6 +96,26 @@ struct PreampLibraryTest : juce::UnitTest
 
             // empty / non-existent folder → empty library (the public-build / fresh-machine case)
             expect (scanPreampLibrary (dir.getChildFile ("nope")).empty());
+            dir.deleteRecursively();
+        }
+
+        beginTest ("scanPreampLibrary: a shared name sorts by channel, then gain (the variant order)");
+        {
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("orbitcab_pre_sort_" + juce::String (juce::Time::currentTimeMillis()));
+            dir.createDirectory();
+            dir.getChildFile ("Voltage ch2 12h.nam").replaceWithText ("{}");   // deliberately out of order on disk
+            dir.getChildFile ("Voltage ch1 16h.nam").replaceWithText ("{}");
+            dir.getChildFile ("Voltage ch1 12h.nam").replaceWithText ("{}");
+
+            auto lib = scanPreampLibrary (dir);
+            expect (lib.size() == 3);
+            if (lib.size() == 3)
+            {
+                expect (lib[0].channel == 1 && lib[0].hours == 12);   // same name → channel asc, then gain asc
+                expect (lib[1].channel == 1 && lib[1].hours == 16);
+                expect (lib[2].channel == 2 && lib[2].hours == 12);
+            }
             dir.deleteRecursively();
         }
     }

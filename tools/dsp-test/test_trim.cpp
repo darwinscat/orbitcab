@@ -922,12 +922,13 @@ int main()
             OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);
             b.setStateInformation (sess.getData(), (int) sess.getSize());
             pump (250);
-            const bool bothRide = b.selectedPreampId() == preId && b.selectedPowerampId() == ampId;
+            const bool bothRide  = b.selectedPreampId() == preId && b.selectedPowerampId() == ampId;
+            const bool bothEmbed = b.exportEmbedsPreamp() && b.exportEmbedsAmp();   // both pools re-armed on restore
 
-            const bool ok = rendersClean && bothRide;
+            const bool ok = rendersClean && bothRide && bothEmbed;
             allPass &= ok;
-            std::printf ("PRE+POWER TEST: render=%d bothRide=%d\n", rendersClean, bothRide);
-            std::printf ("RESULT: %s\n", ok ? "PREAMP + POWERAMP COEXIST (both render finite + ride state)"
+            std::printf ("PRE+POWER TEST: render=%d bothRide=%d bothEmbed=%d\n", rendersClean, bothRide, bothEmbed);
+            std::printf ("RESULT: %s\n", ok ? "PREAMP + POWERAMP COEXIST (both render finite + ride state + re-arm)"
                                             : "PREAMP + POWERAMP BROKEN");
         }
     }

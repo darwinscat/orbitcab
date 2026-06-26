@@ -50,8 +50,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(clap-juce-extensions)
 
 # ----------------------------------------------------------------------------
-# NeuralAmpModelerCore (NAM) — neural amp/poweramp inference, run IN FRONT of the cab
-# (input → AMP → cab). PROTOTYPE (feat/nam-poweramp-prototype). Pinned to a commit like
+# NeuralAmpModelerCore (NAM) — neural amp inference for the two stages in front of the cab
+# (input → PREAMP → POWERAMP → cab). Pinned to a commit like
 # JUCE/CLAP. Only the `eigen` submodule is needed — AudioDSPTools is plugin-only and never
 # referenced by the core sources; nlohmann/json is vendored in the repo. The repo ships no
 # usable library target, so we compile NAM/*.cpp into our own static lib `nam_core`.

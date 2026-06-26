@@ -24,9 +24,9 @@ namespace
     // 20 s IR is a few MB, so this just stops a crafted/corrupt file from OOM-ing the host.
     constexpr size_t kMaxEmbeddedIRBytes = 64u * 1024u * 1024u;   // 64 MB / entry
 
-    // Same guard for an embedded poweramp .nam (raw, before deflate). A NAM capture is well
-    // under 1 MB; this caps a crafted/corrupt PowerampPool entry on load.
-    constexpr size_t kMaxEmbeddedPowerampBytes = 8u * 1024u * 1024u;   // 8 MB / entry
+    // Same guard for an embedded NAM .nam (raw, before deflate) — used for BOTH the Poweramp and
+    // Preamp pools. A NAM capture is well under 1 MB; this caps a crafted/corrupt pool entry on load.
+    constexpr size_t kMaxEmbeddedNamBytes = 8u * 1024u * 1024u;   // 8 MB / entry
 
     // Lossless deflate (zlib) of an arbitrary byte blob, and its inverse — used to shrink the
     // embedded .nam (~300 KB of float text → ~100 KB) in the saved state. JUCE ships zlib.
@@ -1378,7 +1378,7 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                     juce::MemoryOutputStream defl;
                     if (! juce::Base64::convertFromBase64 (defl, b64))
                         continue;
-                    auto raw = inflateBytes (defl.getData(), defl.getDataSize(), kMaxEmbeddedPowerampBytes);
+                    auto raw = inflateBytes (defl.getData(), defl.getDataSize(), kMaxEmbeddedNamBytes);
                     if (raw.getSize() > 0)
                         embeddedPoweramps[key] = std::move (raw);
                 }
@@ -1400,7 +1400,7 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                     juce::MemoryOutputStream defl;
                     if (! juce::Base64::convertFromBase64 (defl, b64))
                         continue;
-                    auto raw = inflateBytes (defl.getData(), defl.getDataSize(), kMaxEmbeddedPowerampBytes);
+                    auto raw = inflateBytes (defl.getData(), defl.getDataSize(), kMaxEmbeddedNamBytes);
                     if (raw.getSize() > 0)
                         embeddedPreamps[key] = std::move (raw);
                 }
