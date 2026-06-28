@@ -188,6 +188,23 @@ private:
     bool preampOnCache = false;                   // detect preampOn change on the timer (host automation)
     bool hasPreamps = false;                      // library non-empty (factory or user) → show the PREAMP UI
 
+    // AMP EQ (teq): a fixed-frequency tone stack (Bass/Mid/Treble) + Presence + an HPF/LPF
+    // "tightening" pair. A revealed row BETWEEN the preamp and poweramp rows (signal order:
+    // input → preamp → EQ → poweramp → cab). eqOn gates the DSP and reveals the row. No library,
+    // so — unlike the NAM rows — the toggle is ALWAYS shown (even on a public build with no .nam).
+    juce::ToggleButton    eqPowerBtn { "AMP EQ" };
+    std::unique_ptr<BAtt> eqPowerAtt;
+    juce::Label           eqTitleLabel;                                                   // "AMP EQ" caption on the row's left
+    juce::Slider          eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
+    juce::Label           eqBassLabel, eqMidLabel, eqTrebleLabel, eqPresenceLabel;        // static tone captions
+    juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
+    std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt, eqHpfFreqAtt, eqLpfFreqAtt;
+    std::unique_ptr<BAtt> eqHpfOnAtt, eqLpfOnAtt;
+    juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
+    bool eqOnCache = false;                                                               // detect eqOn change on the timer (host automation)
+    void updateEqRow();                                                                   // reveal/hide the row + resize
+    int  eqRowH() const { return 104; }
+
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
     int preampRowH() const { return ampRowH(); }                 // same geometry as the poweramp row
@@ -198,6 +215,7 @@ private:
     {
         setSize (1040, kBaseHeight
                        + (hasPreamps   && preampPowerBtn.getToggleState() ? preampRowH() : 0)
+                       + (eqPowerBtn.getToggleState()                     ? eqRowH()     : 0)
                        + (hasPoweramps && ampPowerBtn.getToggleState()    ? ampRowH()    : 0));
     }
 
