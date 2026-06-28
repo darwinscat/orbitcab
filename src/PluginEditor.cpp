@@ -349,8 +349,6 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     eqPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "eqOn", eqPowerBtn);
     eqPowerBtn.onClick = [this] { updateEqRow(); };          // reveal/hide the row + resize on toggle
 
-    styleLabel (eqTitleLabel, "AMP EQ");
-
     auto setupKnob = [this] (juce::Slider& k, const juce::String& paramId, std::unique_ptr<SAtt>& att,
                              double doubleClickReturn, const juce::String& tip)
     {
@@ -1031,7 +1029,6 @@ void OrbitCabAudioProcessorEditor::updateEqRow()
     const bool on = eqPowerBtn.getToggleState();
     eqOnCache = on;
 
-    eqTitleLabel.setVisible (on);
     eqCurve.setVisible (on);
     for (auto* k : { &eqBassKnob, &eqMidKnob, &eqTrebleKnob, &eqPresenceKnob, &eqHpfKnob, &eqLpfKnob })
         k->setVisible (on);
@@ -1619,15 +1616,9 @@ void OrbitCabAudioProcessorEditor::resized()
         eqRowBounds = r.removeFromBottom (eqRowH());
         auto inner = eqRowBounds.reduced (16, 10);
 
-        // top: "AMP EQ" title (left) + the live response curve filling the rest
-        auto curveStrip = inner.removeFromTop (44);
-        eqTitleLabel.setBounds (curveStrip.removeFromLeft (96).withSizeKeepingCentre (96, 18));
-        curveStrip.removeFromLeft (12);
-        eqCurve.setBounds (curveStrip.reduced (0, 2));
-        inner.removeFromTop (4);   // gap between curve and knobs
-
-        // bottom: six equal knob cells across the full width. Tone knobs have a static caption;
-        // HPF/LPF use their enable toggle as the caption.
+        // Six COMPACT knob cells packed on the LEFT (fixed width + fixed gap); the response curve
+        // takes 100% of the remaining width on the right. Tone knobs get a static caption; HPF/LPF
+        // use their enable toggle as the caption.
         struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
         const Cell cells[6] = {
             { &eqBassKnob,     &eqBassLabel,     nullptr },
@@ -1637,15 +1628,18 @@ void OrbitCabAudioProcessorEditor::resized()
             { &eqHpfKnob,      nullptr,          &eqHpfBtn },
             { &eqLpfKnob,      nullptr,          &eqLpfBtn },
         };
-        const int cw = juce::jmax (1, inner.getWidth() / 6);
+        constexpr int kKnobW = 74, kKnobGap = 6;
         for (auto& c : cells)
         {
-            auto cell = inner.removeFromLeft (cw).reduced (6, 0);
+            auto cell = inner.removeFromLeft (kKnobW);
             auto cap  = cell.removeFromTop (15);                          // caption strip at the top
             if (c.label)  c.label->setBounds (cap);
-            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (66, 15));
+            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (kKnobW, 15));
             c.knob->setBounds (cell);                                     // rotary + its value textbox fill the rest
+            inner.removeFromLeft (kKnobGap);                              // fixed gap between knobs
         }
+        inner.removeFromLeft (10);                                        // breathing room before the curve
+        eqCurve.setBounds (inner.reduced (0, 2));                         // curve fills the remaining width
     }
     else
         eqRowBounds = {};

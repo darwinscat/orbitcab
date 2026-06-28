@@ -195,7 +195,6 @@ private:
     // so — unlike the NAM rows — the toggle is ALWAYS shown (even on a public build with no .nam).
     juce::ToggleButton    eqPowerBtn { "AMP EQ" };
     std::unique_ptr<BAtt> eqPowerAtt;
-    juce::Label           eqTitleLabel;                                                   // "AMP EQ" caption on the row's left
     juce::Slider          eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
     juce::Label           eqBassLabel, eqMidLabel, eqTrebleLabel, eqPresenceLabel;        // static tone captions
     juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
@@ -205,7 +204,7 @@ private:
     juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
     bool eqOnCache = false;                                                               // detect eqOn change on the timer (host automation)
     void updateEqRow();                                                                   // reveal/hide the row + resize
-    int  eqRowH() const { return 150; }   // curve strip (top) + a row of six knobs
+    int  eqRowH() const { return 104; }   // one band: compact knobs (left) + curve (fills the rest)
 
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without

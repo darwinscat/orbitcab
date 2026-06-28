@@ -40,13 +40,10 @@ public:
             return r.getCentreY() - (float) (juce::jlimit (-kDbRange, kDbRange, db) / kDbRange) * (r.getHeight() * 0.5f);
         };
 
-        // 0 dB baseline
-        g.setColour (juce::Colour (0x22ffffff));
-        g.drawHorizontalLine ((int) yFor (0.0), r.getX(), r.getRight());
-
         teq::BandParams bands[teq::EqEngine::kMaxBands];
         const int n = getBands (bands);
         const double fs = sampleRate > 0.0 ? sampleRate : 48000.0;
+        const float yZero = yFor (0.0);
 
         juce::Path p;
         const int steps = juce::jmax (2, (int) r.getWidth());
@@ -61,7 +58,21 @@ public:
             else        p.lineTo (x, y);
         }
 
-        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.92f));
+        // Fill between the curve and the 0 dB line — the response "rests" on a horizontal shelf at
+        // 0, the fill pinching to that line wherever the curve crosses 0 dB.
+        juce::Path fill = p;
+        fill.lineTo (r.getRight(), yZero);
+        fill.lineTo (r.getX(),     yZero);
+        fill.closeSubPath();
+        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.14f));
+        g.fillPath (fill);
+
+        // the 0 dB shelf line itself
+        g.setColour (juce::Colour (0x33ffffff));
+        g.drawHorizontalLine ((int) yZero, r.getX(), r.getRight());
+
+        // the curve on top
+        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
         g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved));
     }
 
