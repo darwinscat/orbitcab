@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 1.5.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 1.5.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -141,6 +141,12 @@ juce_add_plugin(OrbitCab
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    # Standalone is an effect → it needs the system audio INPUT. Under macOS hardened runtime
+    # (required for notarization) that means an NSMicrophoneUsageDescription in the app's Info.plist
+    # AND the com.apple.security.device.audio-input entitlement (added at signing time — see
+    # installer/standalone.entitlements). The plug-in formats don't need this (they run in the host).
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT  "OrbitCab needs audio input to process your signal."
     COPY_PLUGIN_AFTER_BUILD     TRUE   # auto-install to the user plug-in folders during dev
 )
 

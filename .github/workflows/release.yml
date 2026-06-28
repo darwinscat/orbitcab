@@ -5,7 +5,7 @@ name: release
 # (workflow_dispatch) builds the SAME artifacts but does NOT create a release unless
 # dry_run=false, so you can download + test installers from the run page without publishing.
 #
-#   • macOS  → signed + notarized .pkg + .zip (VST3 + AU + CLAP)   [self-hosted runner]
+#   • macOS  → signed + notarized .pkg + .zip (VST3 + AU + CLAP + Standalone)  [self-hosted runner]
 #   • Windows → Inno Setup .exe + .zip (VST3 + CLAP + Standalone)
 #   • Linux  → .tar.gz (VST3 + CLAP + Standalone)
 #
@@ -69,8 +69,10 @@ jobs:
           VER="${{ steps.v.outputs.version }}"
           REL="build/OrbitCab_artefacts/Release"
           VST3="$REL/VST3/OrbitCab.vst3"; AU="$REL/AU/OrbitCab.component"; CLAP="$REL/CLAP/OrbitCab.clap"
+          SA="$REL/Standalone/OrbitCab.app"
           mkdir -p dist stage
 
+          # Plug-ins: hardened-runtime sign (they run inside the host → no own entitlements).
           BUNDLES=("$VST3" "$AU")
           if [ -d "$CLAP" ]; then BUNDLES+=("$CLAP"); fi
           for b in "${BUNDLES[@]}"; do
@@ -78,6 +80,21 @@ jobs:
             codesign --verify --strict --verbose=1 "$b"
             cp -R "$b" stage/
           done
+
+          # Standalone app: its own process → sign with the audio-input entitlement, then notarize +
+          # staple it so it also launches cleanly straight from the .zip (the .pkg's own notarization
+          # covers the installed copy).
+          if [ -d "$SA" ]; then
+            codesign --force --options runtime --timestamp \
+                     --entitlements installer/standalone.entitlements --sign "$APP_ID" "$SA"
+            codesign --verify --strict --verbose=1 "$SA"
+            ditto -c -k --keepParent "$SA" dist/_standalone.zip
+            xcrun notarytool submit dist/_standalone.zip --keychain-profile "$NOTARY" --wait
+            xcrun stapler staple "$SA"
+            rm -f dist/_standalone.zip
+            cp -R "$SA" stage/
+          fi
+
           ditto -c -k stage "dist/OrbitCab-$VER-macOS.zip"
 
           # build → sign → notarize → staple the .pkg (one submission carries both bundles)
