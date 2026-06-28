@@ -18,6 +18,7 @@
 #include "ui/PowerampManager.h"
 #include "ui/PreampManager.h"
 #include "ui/EqCurve.h"
+#include "ui/PerfBadge.h"
 #include "PreampSelector.h"   // pure resolve/view-model behind the PREAMP row (GUI-free, unit-tested)
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
@@ -96,7 +97,8 @@ private:
     juce::ComboBox        presetBox;
     std::unique_ptr<juce::Drawable> logo;  // Darwin's Cat mark (drawn inside HeaderBrand)
     HeaderBrand           brand;           // logo + OrbitCab brand -> /orbitcab
-    VersionBadge          versionBadge { processorRef.updateChecker() };   // bottom-left version + update check
+    VersionBadge          versionBadge { processorRef.updateChecker() };   // bottom version + update check
+    PerfBadge             perfBadge;                                        // latency + DSP load (click → per-stage breakdown)
 
     // INPUT block (left): bypass + input fader + IN meter
     juce::ToggleButton bypassBtn { "BYP" };

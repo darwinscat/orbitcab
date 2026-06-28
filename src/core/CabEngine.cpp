@@ -4,6 +4,7 @@
 #include "CabEngine.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>   // AudioBuffer, Decibels, FloatVectorOperations
+#include <chrono>
 #include <cmath>
 
 namespace cab
@@ -110,6 +111,14 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     juce::AudioBuffer<float> buffer (io, numChannels, numSamples);
     const int numCh = numChannels;
 
+    // DSP load meter: wall-clock each stage with a monotonic clock (a cheap userspace read — no
+    // alloc/lock, RT-safe). Published as a smoothed % of the block's real-time budget at the end.
+    using PerfClock = std::chrono::steady_clock;
+    const auto tStart = PerfClock::now();
+    double nsPre = 0.0, nsEq = 0.0, nsPwr = 0.0, nsCab = 0.0;
+    auto elapsedNs = [] (PerfClock::time_point a) noexcept
+    { return std::chrono::duration<double, std::nano> (PerfClock::now() - a).count(); };
+
     // --- bypass: clean passthrough (no input trim, no processing) ---
     if (p.bypass)
     {
@@ -117,6 +126,8 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         const float lvl = buffer.getMagnitude (0, numSamples);
         inLevel.store  (lvl, std::memory_order_relaxed);
         outLevel.store (lvl, std::memory_order_relaxed);
+        const double z[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };   // decay the load meter toward 0 while bypassed
+        accumulateLoads (z);
         return;
     }
 
@@ -156,11 +167,17 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // match — i.e. we cab the amp, not the clean DI. Each NAM stage is a no-op passthrough when
     // off or no model is loaded; the EQ is a bit-exact passthrough when eq.on is false. The EQ
     // sits between the stages so its cuts shape what the poweramp distorts. ---
-    if (p.preampOn)
-        preamp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
-    ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);
-    if (p.ampOn)
-        amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+    { const auto a = PerfClock::now();
+      if (p.preampOn)
+          preamp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+      nsPre = elapsedNs (a); }
+    { const auto a = PerfClock::now();
+      ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);
+      nsEq = elapsedNs (a); }
+    { const auto a = PerfClock::now();
+      if (p.ampOn)
+          amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+      nsPwr = elapsedNs (a); }
 
     // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---
     for (int ch = 0; ch < numCh; ++ch)
@@ -169,10 +186,12 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // --- per-slot wet path: HPF -> LPF -> Convolution (into wet[0] / wet[1]) ---
     // Skip a slot's convolution when it's empty — its branch falls back to the dry signal
     // below (so an empty slot = "no cab", a clean passthrough, not silence).
-    if (aLoaded)
-        slot[0].processWet (wet[0], buffer, numCh, numSamples, hpfOn[0], p.slot[0].hpfHz, lpfOn[0], p.slot[0].lpfHz);
-    if (bLoaded)
-        slot[1].processWet (wet[1], buffer, numCh, numSamples, hpfOn[1], p.slot[1].hpfHz, lpfOn[1], p.slot[1].lpfHz);
+    { const auto a = PerfClock::now();
+      if (aLoaded)
+          slot[0].processWet (wet[0], buffer, numCh, numSamples, hpfOn[0], p.slot[0].hpfHz, lpfOn[0], p.slot[0].lpfHz);
+      if (bLoaded)
+          slot[1].processWet (wet[1], buffer, numCh, numSamples, hpfOn[1], p.slot[1].hpfHz, lpfOn[1], p.slot[1].lpfHz);
+      nsCab = elapsedNs (a); }
 
     // --- per-slot Phase + Dry/Wet, then A<->B crossfade -> buffer (the mix) ---
     {
@@ -246,6 +265,29 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             preTap.push  (pre  * inv);
             postTap.push (post * inv);
         }
+    }
+
+    // --- DSP load meter: each stage's wall-clock as a % of this block's real-time budget ---
+    {
+        const double totalNs  = elapsedNs (tStart);
+        const double budgetNs = currentSampleRate > 0.0 ? (double) numSamples / currentSampleRate * 1.0e9 : 0.0;
+        if (budgetNs > 0.0)
+        {
+            const double pct[5] = { totalNs / budgetNs * 100.0, nsPre / budgetNs * 100.0,
+                                    nsEq / budgetNs * 100.0, nsPwr / budgetNs * 100.0, nsCab / budgetNs * 100.0 };
+            accumulateLoads (pct);
+        }
+    }
+}
+
+void CabEngine::accumulateLoads (const double pct[5]) noexcept
+{
+    // One-pole EMA — stable at the GUI's 30 Hz, quick enough to track a stage toggling on/off.
+    constexpr double a = 0.08;
+    for (int i = 0; i < 5; ++i)
+    {
+        cpuSm[i] += a * (pct[i] - cpuSm[i]);
+        cpuPct[i].store ((float) cpuSm[i], std::memory_order_relaxed);
     }
 }
 

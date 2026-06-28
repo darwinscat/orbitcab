@@ -95,6 +95,15 @@ public:
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
+
+    // DSP load meter — each stage's wall-clock as a smoothed % of the block's real-time budget.
+    // Written on the audio thread (a few monotonic-clock reads per block), read by the GUI.
+    float cpuTotal()    const { return cpuPct[0].load (std::memory_order_relaxed); }
+    float cpuPreamp()   const { return cpuPct[1].load (std::memory_order_relaxed); }
+    float cpuEq()       const { return cpuPct[2].load (std::memory_order_relaxed); }
+    float cpuPoweramp() const { return cpuPct[3].load (std::memory_order_relaxed); }
+    float cpuCab()      const { return cpuPct[4].load (std::memory_order_relaxed); }
+
     void  setSpectrumActive (bool shouldFeed) { spectrumActive.store (shouldFeed, std::memory_order_relaxed); }
     bool  pullSpectrum (bool pre, float* destFftSize);
 
@@ -125,6 +134,12 @@ private:
 
     SpectrumTap preTap, postTap;
     std::atomic<bool> spectrumActive { false };
+
+    // DSP load meter state. pct[5] = {total, preamp, eq, poweramp, cab}. accumulateLoads() EMA-
+    // smooths and publishes to cpuPct (the GUI reads those). cpuSm is the smoother's running state.
+    void accumulateLoads (const double pct[5]) noexcept;
+    std::atomic<float> cpuPct[5] { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } };
+    double cpuSm[5] { 0.0, 0.0, 0.0, 0.0, 0.0 };
 };
 
 } // namespace cab

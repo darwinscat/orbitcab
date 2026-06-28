@@ -42,7 +42,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     brand.setTooltip ("darwinscat.com/orbitcab — OrbitCab by Darwin's Cat");
     addAndMakeVisible (brand);
 
-    addAndMakeVisible (versionBadge);   // bottom-left version + opt-in update check
+    addAndMakeVisible (versionBadge);   // bottom version + opt-in update check
+    addAndMakeVisible (perfBadge);      // latency + DSP load, left of the version
 
     addAndMakeVisible (presetBox);
     presetBox.onChange = [this]
@@ -435,6 +436,18 @@ void OrbitCabAudioProcessorEditor::timerCallback()
 {
     inMeter.setLevel  (processorRef.getInputLevel());
     outMeter.setLevel (processorRef.getOutputLevel());
+    {
+        PerfBadge::Stats ps;
+        const double sr = processorRef.getSampleRate();
+        ps.latencySamples = processorRef.getLatencySamples();
+        ps.latencyMs = sr > 0.0 ? (float) (ps.latencySamples * 1000.0 / sr) : 0.0f;
+        ps.total    = processorRef.getCpuTotal();
+        ps.preamp   = processorRef.getCpuPreamp();
+        ps.eq       = processorRef.getCpuEq();
+        ps.poweramp = processorRef.getCpuPoweramp();
+        ps.cab      = processorRef.getCpuCab();
+        perfBadge.setStats (ps);
+    }
     pushFiltersToWave();
     updateEnablement();
     refreshDryWetVisibility();                     // catch a blend (mix ≠ 100%) loaded by the host
@@ -1698,6 +1711,7 @@ void OrbitCabAudioProcessorEditor::resized()
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient
     versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 15));   // version always bottom-right
+    perfBadge.setBounds    (strip.removeFromRight (140).reduced (6, 15));   // latency + DSP load, just left of it
     // Bottom-left power checkboxes, in signal order: PREAMP, AMP EQ, POWERAMP. Share one 108-wide
     // column, stacked evenly. PREAMP/POWERAMP appear only when their library is non-empty; AMP EQ has
     // no library, so it's always present (a single checkbox is centred).

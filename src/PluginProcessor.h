@@ -115,6 +115,13 @@ public:
     float getInputLevel()  const { return engine.inputLevel();  }
     float getOutputLevel() const { return engine.outputLevel(); }
 
+    // DSP load meter (smoothed % of the real-time budget) for the perf badge + its breakdown popup.
+    float getCpuTotal()    const { return engine.cpuTotal();    }
+    float getCpuPreamp()   const { return engine.cpuPreamp();   }
+    float getCpuEq()       const { return engine.cpuEq();       }
+    float getCpuPoweramp() const { return engine.cpuPoweramp(); }
+    float getCpuCab()      const { return engine.cpuCab();      }
+
     // Spectrum capture (for the editor's pre/post analyser). The audio thread fills a
     // fixed window in the engine; the editor pulls the latest ready frame on its timer
     // and runs the FFT itself. The FFT-size contract lives in the core (cab::SpectrumTap);
