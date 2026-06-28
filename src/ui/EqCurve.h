@@ -37,7 +37,10 @@ public:
         const double logSpan = std::log (fHi / fLo);
         auto yFor = [&] (double db) noexcept
         {
-            return r.getCentreY() - (float) (juce::jlimit (-kDbRange, kDbRange, db) / kDbRange) * (r.getHeight() * 0.5f);
+            // Scale by the visible ±kDbRange window, but clamp far past it (±60 dB) so a roll-off
+            // (HPF/LPF) runs OFF the graph edge instead of flattening into a shelf along the floor.
+            const double d = juce::jlimit (-60.0, 60.0, db);
+            return r.getCentreY() - (float) (d / kDbRange) * (r.getHeight() * 0.5f);
         };
 
         teq::BandParams bands[teq::EqEngine::kMaxBands];
@@ -70,6 +73,20 @@ public:
         // the 0 dB shelf line itself
         g.setColour (juce::Colour (0x33ffffff));
         g.drawHorizontalLine ((int) yZero, r.getX(), r.getRight());
+
+        // vertical dashed guide at each active band's frequency (where its knob acts) — the
+        // HPF/LPF guides sweep as their freq knobs move; the tone guides appear when boosted/cut.
+        {
+            const float dashes[] = { 2.5f, 3.0f };
+            g.setColour (juce::Colour (0x44ffffff));
+            for (int i = 0; i < n; ++i)
+            {
+                if (! bands[i].on) continue;
+                const double f = juce::jlimit (fLo, fHi, bands[i].freq);
+                const float  x = r.getX() + (float) (std::log (f / fLo) / logSpan) * r.getWidth();
+                g.drawDashedLine (juce::Line<float> (x, r.getY(), x, r.getBottom()), dashes, 2, 1.0f);
+            }
+        }
 
         // the curve on top
         g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
