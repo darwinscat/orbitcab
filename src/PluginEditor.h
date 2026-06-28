@@ -17,6 +17,7 @@
 #include "ui/TubeDisplay.h"
 #include "ui/PowerampManager.h"
 #include "ui/PreampManager.h"
+#include "ui/EqCurve.h"
 #include "PreampSelector.h"   // pure resolve/view-model behind the PREAMP row (GUI-free, unit-tested)
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
@@ -200,10 +201,11 @@ private:
     juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
     std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt, eqHpfFreqAtt, eqLpfFreqAtt;
     std::unique_ptr<BAtt> eqHpfOnAtt, eqLpfOnAtt;
+    EqCurve               eqCurve;                                                        // live frequency-response curve (teq::EqEngine::magnitudeDbFor)
     juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
     bool eqOnCache = false;                                                               // detect eqOn change on the timer (host automation)
     void updateEqRow();                                                                   // reveal/hide the row + resize
-    int  eqRowH() const { return 104; }
+    int  eqRowH() const { return 150; }   // curve strip (top) + a row of six knobs
 
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without

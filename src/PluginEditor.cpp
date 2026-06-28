@@ -4,6 +4,7 @@
 #include "PluginEditor.h"
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
+#include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
 
 #include <algorithm>
 
@@ -383,6 +384,25 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     addAndMakeVisible (eqLpfBtn);
     eqLpfOnAtt = std::make_unique<BAtt> (processorRef.apvts, "eqLpfOn", eqLpfBtn);
 
+    // Live response curve — reads the EQ params and reuses cab::AmpEq::describe so the drawn shape
+    // is exactly what the audio path applies. Repainted from the 30 Hz timer while the row is open.
+    eqCurve.getBands = [this] (teq::BandParams* out) -> int
+    {
+        auto& a = processorRef.apvts;
+        cab::EqParams e;
+        e.bassDb     = a.getRawParameterValue ("eqBass")->load();
+        e.midDb      = a.getRawParameterValue ("eqMid")->load();
+        e.trebleDb   = a.getRawParameterValue ("eqTreble")->load();
+        e.presenceDb = a.getRawParameterValue ("eqPresence")->load();
+        e.hpfOn      = a.getRawParameterValue ("eqHpfOn")->load() > 0.5f;
+        e.hpfHz      = a.getRawParameterValue ("eqHpfFreq")->load();
+        e.lpfOn      = a.getRawParameterValue ("eqLpfOn")->load() > 0.5f;
+        e.lpfHz      = a.getRawParameterValue ("eqLpfFreq")->load();
+        cab::AmpEq::describe (e, out);
+        return cab::AmpEq::kNumBands;
+    };
+    addAndMakeVisible (eqCurve);
+
     // ---- IR library + restore display ----
     slots[0].rebuildList();
     slots[1].rebuildList();
@@ -447,6 +467,12 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     // which don't fire the button's onClick) to reveal/hide + resize the row.
     if ((processorRef.apvts.getRawParameterValue ("eqOn")->load() > 0.5f) != eqOnCache)
         updateEqRow();
+    if (eqPowerBtn.getToggleState())                       // row open → keep the response curve live
+    {
+        const double sr = processorRef.getSampleRate();
+        eqCurve.sampleRate = sr > 0.0 ? sr : 48000.0;
+        eqCurve.repaint();
+    }
 
     processorRef.undoTick();                       // coalesce edits into undo steps
     undoBtn.setEnabled (processorRef.canUndo());
@@ -1006,6 +1032,7 @@ void OrbitCabAudioProcessorEditor::updateEqRow()
     eqOnCache = on;
 
     eqTitleLabel.setVisible (on);
+    eqCurve.setVisible (on);
     for (auto* k : { &eqBassKnob, &eqMidKnob, &eqTrebleKnob, &eqPresenceKnob, &eqHpfKnob, &eqLpfKnob })
         k->setVisible (on);
     for (auto* l : { &eqBassLabel, &eqMidLabel, &eqTrebleLabel, &eqPresenceLabel })
@@ -1590,10 +1617,17 @@ void OrbitCabAudioProcessorEditor::resized()
     if (eqPowerBtn.getToggleState())
     {
         eqRowBounds = r.removeFromBottom (eqRowH());
-        auto row = eqRowBounds.reduced (16, 10);
-        eqTitleLabel.setBounds (row.removeFromLeft (96).withSizeKeepingCentre (96, 18));
-        row.removeFromLeft (12);
+        auto inner = eqRowBounds.reduced (16, 10);
 
+        // top: "AMP EQ" title (left) + the live response curve filling the rest
+        auto curveStrip = inner.removeFromTop (44);
+        eqTitleLabel.setBounds (curveStrip.removeFromLeft (96).withSizeKeepingCentre (96, 18));
+        curveStrip.removeFromLeft (12);
+        eqCurve.setBounds (curveStrip.reduced (0, 2));
+        inner.removeFromTop (4);   // gap between curve and knobs
+
+        // bottom: six equal knob cells across the full width. Tone knobs have a static caption;
+        // HPF/LPF use their enable toggle as the caption.
         struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
         const Cell cells[6] = {
             { &eqBassKnob,     &eqBassLabel,     nullptr },
@@ -1603,13 +1637,13 @@ void OrbitCabAudioProcessorEditor::resized()
             { &eqHpfKnob,      nullptr,          &eqHpfBtn },
             { &eqLpfKnob,      nullptr,          &eqLpfBtn },
         };
-        const int cw = juce::jmax (1, row.getWidth() / 6);
+        const int cw = juce::jmax (1, inner.getWidth() / 6);
         for (auto& c : cells)
         {
-            auto cell = row.removeFromLeft (cw).reduced (4, 0);
-            auto cap  = cell.removeFromTop (16);                          // caption strip at the top
+            auto cell = inner.removeFromLeft (cw).reduced (6, 0);
+            auto cap  = cell.removeFromTop (15);                          // caption strip at the top
             if (c.label)  c.label->setBounds (cap);
-            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (66, 16));
+            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (66, 15));
             c.knob->setBounds (cell);                                     // rotary + its value textbox fill the rest
         }
     }
