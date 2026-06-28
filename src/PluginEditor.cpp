@@ -4,6 +4,7 @@
 #include "PluginEditor.h"
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
+#include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
 
 #include <algorithm>
 
@@ -41,7 +42,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     brand.setTooltip ("darwinscat.com/orbitcab — OrbitCab by Darwin's Cat");
     addAndMakeVisible (brand);
 
-    addAndMakeVisible (versionBadge);   // bottom-left version + opt-in update check
+    addAndMakeVisible (versionBadge);   // bottom version + opt-in update check
+    addAndMakeVisible (perfBadge);      // latency + DSP load, left of the version
 
     addAndMakeVisible (presetBox);
     presetBox.onChange = [this]
@@ -341,6 +343,65 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     rebuildPreampSelector();           // scan the merged preamp library → name buttons + combo + hasPreamps + power-btn visibility
 
+    // ---- AMP EQ: tone stack (Bass/Mid/Treble) + Presence + HPF/LPF, revealed row + bottom toggle ----
+    eqPowerBtn.setTooltip (juce::String::fromUTF8 ("Amp tone EQ between the preamp and poweramp \xe2\x80\x94 reveals the knobs below."));
+    eqPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+    addAndMakeVisible (eqPowerBtn);
+    eqPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "eqOn", eqPowerBtn);
+    eqPowerBtn.onClick = [this] { updateEqRow(); };          // reveal/hide the row + resize on toggle
+
+    auto setupKnob = [this] (juce::Slider& k, const juce::String& paramId, std::unique_ptr<SAtt>& att,
+                             double doubleClickReturn, const juce::String& tip)
+    {
+        k.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        k.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 14);
+        k.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
+        k.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kNeutral));
+        k.setTooltip (tip);
+        addAndMakeVisible (k);
+        att = std::make_unique<SAtt> (processorRef.apvts, paramId, k);
+        k.setDoubleClickReturnValue (true, doubleClickReturn);   // AFTER the attachment (range is set there)
+        k.valueFromTextFunction = [] (const juce::String& t) { return parseLooseNumber (t); };
+    };
+    setupKnob (eqBassKnob,     "eqBass",     eqBassAtt,     0.0,     "Bass \xe2\x80\x94 low shelf ~100 Hz");
+    setupKnob (eqMidKnob,      "eqMid",      eqMidAtt,      0.0,     "Mid \xe2\x80\x94 bell ~600 Hz");
+    setupKnob (eqTrebleKnob,   "eqTreble",   eqTrebleAtt,   0.0,     "Treble \xe2\x80\x94 high shelf ~2.8 kHz");
+    setupKnob (eqPresenceKnob, "eqPresence", eqPresenceAtt, 0.0,     "Presence \xe2\x80\x94 high shelf ~5 kHz");
+    setupKnob (eqHpfKnob,      "eqHpfFreq",  eqHpfFreqAtt,  80.0,    "High-pass into the poweramp (tighten the lows)");
+    setupKnob (eqLpfKnob,      "eqLpfFreq",  eqLpfFreqAtt,  10000.0, "Low-pass into the poweramp (tame the fizz)");
+
+    styleLabel (eqBassLabel,     "BASS");
+    styleLabel (eqMidLabel,      "MID");
+    styleLabel (eqTrebleLabel,   "TREBLE");
+    styleLabel (eqPresenceLabel, "PRESENCE");
+
+    // HPF/LPF: the toggle doubles as the knob's caption (click the label to enable the cut).
+    for (auto* b : { &eqHpfBtn, &eqLpfBtn })
+        b->setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
+    addAndMakeVisible (eqHpfBtn);
+    eqHpfOnAtt = std::make_unique<BAtt> (processorRef.apvts, "eqHpfOn", eqHpfBtn);
+    addAndMakeVisible (eqLpfBtn);
+    eqLpfOnAtt = std::make_unique<BAtt> (processorRef.apvts, "eqLpfOn", eqLpfBtn);
+
+    // Live response curve — reads the EQ params and reuses cab::AmpEq::describe so the drawn shape
+    // is exactly what the audio path applies. Repainted from the 30 Hz timer while the row is open.
+    eqCurve.getBands = [this] (teq::BandParams* out) -> int
+    {
+        auto& a = processorRef.apvts;
+        cab::EqParams e;
+        e.bassDb     = a.getRawParameterValue ("eqBass")->load();
+        e.midDb      = a.getRawParameterValue ("eqMid")->load();
+        e.trebleDb   = a.getRawParameterValue ("eqTreble")->load();
+        e.presenceDb = a.getRawParameterValue ("eqPresence")->load();
+        e.hpfOn      = a.getRawParameterValue ("eqHpfOn")->load() > 0.5f;
+        e.hpfHz      = a.getRawParameterValue ("eqHpfFreq")->load();
+        e.lpfOn      = a.getRawParameterValue ("eqLpfOn")->load() > 0.5f;
+        e.lpfHz      = a.getRawParameterValue ("eqLpfFreq")->load();
+        cab::AmpEq::describe (e, out);
+        return cab::AmpEq::kNumBands;
+    };
+    addAndMakeVisible (eqCurve);
+
     // ---- IR library + restore display ----
     slots[0].rebuildList();
     slots[1].rebuildList();
@@ -359,8 +420,9 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     lastUserIRRev    = processorRef.userIRRevision();
 
     startTimerHz (30);
+    updateEqRow();       // initial reveal state for the amp-EQ row
     updatePreampRow();   // initial reveal state for the preamp row
-    updateAmpRow();      // + the poweramp row; resizeForAmpRows sizes the window for both (off → 620)
+    updateAmpRow();      // + the poweramp row; resizeForAmpRows sizes the window for all three (off → 620)
 }
 
 OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
@@ -374,6 +436,18 @@ void OrbitCabAudioProcessorEditor::timerCallback()
 {
     inMeter.setLevel  (processorRef.getInputLevel());
     outMeter.setLevel (processorRef.getOutputLevel());
+    {
+        PerfBadge::Stats ps;
+        const double sr = processorRef.getSampleRate();
+        ps.latencySamples = processorRef.getLatencySamples();
+        ps.latencyMs = sr > 0.0 ? (float) (ps.latencySamples * 1000.0 / sr) : 0.0f;
+        ps.total    = processorRef.getCpuTotal();
+        ps.preamp   = processorRef.getCpuPreamp();
+        ps.eq       = processorRef.getCpuEq();
+        ps.poweramp = processorRef.getCpuPoweramp();
+        ps.cab      = processorRef.getCpuCab();
+        perfBadge.setStats (ps);
+    }
     pushFiltersToWave();
     updateEnablement();
     refreshDryWetVisibility();                     // catch a blend (mix ≠ 100%) loaded by the host
@@ -399,6 +473,16 @@ void OrbitCabAudioProcessorEditor::timerCallback()
             syncPreampSelector();                  // selection changed externally (automation / restore) → re-sync
         if (preampPowerBtn.getToggleState())
             preampTubeDisplay.tick();              // advance the warm heater flicker (~30 Hz)
+    }
+    // AMP EQ has no library — always available; just mirror eqOn (host automation / state restore,
+    // which don't fire the button's onClick) to reveal/hide + resize the row.
+    if ((processorRef.apvts.getRawParameterValue ("eqOn")->load() > 0.5f) != eqOnCache)
+        updateEqRow();
+    if (eqPowerBtn.getToggleState())                       // row open → keep the response curve live
+    {
+        const double sr = processorRef.getSampleRate();
+        eqCurve.sampleRate = sr > 0.0 ? sr : 48000.0;
+        eqCurve.repaint();
     }
 
     processorRef.undoTick();                       // coalesce edits into undo steps
@@ -953,6 +1037,23 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     syncPreampSelector();                             // contextual controls + tube + final re-flow
 }
 
+void OrbitCabAudioProcessorEditor::updateEqRow()
+{
+    const bool on = eqPowerBtn.getToggleState();
+    eqOnCache = on;
+
+    eqCurve.setVisible (on);
+    for (auto* k : { &eqBassKnob, &eqMidKnob, &eqTrebleKnob, &eqPresenceKnob, &eqHpfKnob, &eqLpfKnob })
+        k->setVisible (on);
+    for (auto* l : { &eqBassLabel, &eqMidLabel, &eqTrebleLabel, &eqPresenceLabel })
+        l->setVisible (on);
+    eqHpfBtn.setVisible (on);
+    eqLpfBtn.setVisible (on);
+
+    resizeForAmpRows();   // grow/shrink for all three front-stage rows (triggers resized on change)
+    repaint();            // refresh the revealed row's panel background
+}
+
 void OrbitCabAudioProcessorEditor::openPreampManager()
 {
     // The preamp library manager: Add / Remove the user .nam captures (preampDir). On any change it
@@ -1389,6 +1490,8 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
         vpanel (ampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
     if (! preampRowBounds.isEmpty())                               // revealed preamp row (same shade)
         vpanel (preampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
+    if (! eqRowBounds.isEmpty())                                   // revealed amp-EQ row (same shade)
+        vpanel (eqRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
 
     // INPUT / OUTPUT side panels (rounded, gradient, faint border)
     for (auto rect : { inBlockBounds, outBlockBounds })
@@ -1518,6 +1621,42 @@ void OrbitCabAudioProcessorEditor::resized()
     else
         ampRowBounds = {};
 
+    // Revealed AMP EQ row (between the preamp row above and the poweramp row below — signal order).
+    // A title on the left, then six equal knob cells. Tone knobs (Bass/Mid/Treble/Presence) have a
+    // static caption; HPF/LPF use their enable toggle as the caption.
+    if (eqPowerBtn.getToggleState())
+    {
+        eqRowBounds = r.removeFromBottom (eqRowH());
+        auto inner = eqRowBounds.reduced (16, 10);
+
+        // Six COMPACT knob cells packed on the LEFT (fixed width + fixed gap); the response curve
+        // takes 100% of the remaining width on the right. Tone knobs get a static caption; HPF/LPF
+        // use their enable toggle as the caption.
+        struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
+        const Cell cells[6] = {
+            { &eqBassKnob,     &eqBassLabel,     nullptr },
+            { &eqMidKnob,      &eqMidLabel,      nullptr },
+            { &eqTrebleKnob,   &eqTrebleLabel,   nullptr },
+            { &eqPresenceKnob, &eqPresenceLabel, nullptr },
+            { &eqHpfKnob,      nullptr,          &eqHpfBtn },
+            { &eqLpfKnob,      nullptr,          &eqLpfBtn },
+        };
+        constexpr int kKnobW = 74, kKnobGap = 6;
+        for (auto& c : cells)
+        {
+            auto cell = inner.removeFromLeft (kKnobW);
+            auto cap  = cell.removeFromTop (15);                          // caption strip at the top
+            if (c.label)  c.label->setBounds (cap);
+            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (kKnobW, 15));
+            c.knob->setBounds (cell);                                     // rotary + its value textbox fill the rest
+            inner.removeFromLeft (kKnobGap);                              // fixed gap between knobs
+        }
+        inner.removeFromLeft (10);                                        // breathing room before the curve
+        eqCurve.setBounds (inner.reduced (0, 2));                         // curve fills the remaining width
+    }
+    else
+        eqRowBounds = {};
+
     // Revealed PREAMP row (above the poweramp row). Same geometry as the poweramp row, but with the
     // preamp's contextual controls laid out from the right: singletons combo, boost, gain, channel.
     if (hasPreamps && preampPowerBtn.getToggleState())
@@ -1572,20 +1711,26 @@ void OrbitCabAudioProcessorEditor::resized()
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient
     versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 15));   // version always bottom-right
-    // Bottom-left power checkboxes: PREAMP above POWERAMP (signal order). Share one 108-wide column;
-    // when only one library exists, that single checkbox is centred in the column.
-    if (hasPreamps || hasPoweramps)
+    perfBadge.setBounds    (strip.removeFromRight (140).reduced (6, 15));   // latency + DSP load, just left of it
+    // Bottom-left power checkboxes, in signal order: PREAMP, AMP EQ, POWERAMP. Share one 108-wide
+    // column, stacked evenly. PREAMP/POWERAMP appear only when their library is non-empty; AMP EQ has
+    // no library, so it's always present (a single checkbox is centred).
     {
+        std::array<juce::ToggleButton*, 3> col {};
+        int n = 0;
+        if (hasPreamps)   col[(size_t) n++] = &preampPowerBtn;
+        col[(size_t) n++] = &eqPowerBtn;
+        if (hasPoweramps) col[(size_t) n++] = &ampPowerBtn;
+
         auto amps = strip.removeFromLeft (108).reduced (12, 2);
-        if (hasPreamps && hasPoweramps)
-        {
-            preampPowerBtn.setBounds (amps.removeFromTop (amps.getHeight() / 2));
-            ampPowerBtn.setBounds    (amps);
-        }
-        else if (hasPreamps)
-            preampPowerBtn.setBounds (amps.withSizeKeepingCentre (amps.getWidth(), 22));
+        if (n == 1)
+            col[0]->setBounds (amps.withSizeKeepingCentre (amps.getWidth(), 22));
         else
-            ampPowerBtn.setBounds    (amps.withSizeKeepingCentre (amps.getWidth(), 22));
+        {
+            const int h = amps.getHeight() / n;
+            for (int i = 0; i < n; ++i)
+                col[(size_t) i]->setBounds (i < n - 1 ? amps.removeFromTop (h) : amps);
+        }
     }
     mixABLabel.setBounds   (strip.removeFromLeft (146).reduced (10, 0));
     mixABSlider.setBounds  (strip.reduced (40, 12));

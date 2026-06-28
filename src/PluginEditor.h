@@ -17,6 +17,8 @@
 #include "ui/TubeDisplay.h"
 #include "ui/PowerampManager.h"
 #include "ui/PreampManager.h"
+#include "ui/EqCurve.h"
+#include "ui/PerfBadge.h"
 #include "PreampSelector.h"   // pure resolve/view-model behind the PREAMP row (GUI-free, unit-tested)
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
@@ -95,7 +97,8 @@ private:
     juce::ComboBox        presetBox;
     std::unique_ptr<juce::Drawable> logo;  // Darwin's Cat mark (drawn inside HeaderBrand)
     HeaderBrand           brand;           // logo + OrbitCab brand -> /orbitcab
-    VersionBadge          versionBadge { processorRef.updateChecker() };   // bottom-left version + update check
+    VersionBadge          versionBadge { processorRef.updateChecker() };   // bottom version + update check
+    PerfBadge             perfBadge;                                        // latency + DSP load (click → per-stage breakdown)
 
     // INPUT block (left): bypass + input fader + IN meter
     juce::ToggleButton bypassBtn { "BYP" };
@@ -188,6 +191,23 @@ private:
     bool preampOnCache = false;                   // detect preampOn change on the timer (host automation)
     bool hasPreamps = false;                      // library non-empty (factory or user) → show the PREAMP UI
 
+    // AMP EQ (teq): a fixed-frequency tone stack (Bass/Mid/Treble) + Presence + an HPF/LPF
+    // "tightening" pair. A revealed row BETWEEN the preamp and poweramp rows (signal order:
+    // input → preamp → EQ → poweramp → cab). eqOn gates the DSP and reveals the row. No library,
+    // so — unlike the NAM rows — the toggle is ALWAYS shown (even on a public build with no .nam).
+    juce::ToggleButton    eqPowerBtn { "AMP EQ" };
+    std::unique_ptr<BAtt> eqPowerAtt;
+    juce::Slider          eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
+    juce::Label           eqBassLabel, eqMidLabel, eqTrebleLabel, eqPresenceLabel;        // static tone captions
+    juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
+    std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt, eqHpfFreqAtt, eqLpfFreqAtt;
+    std::unique_ptr<BAtt> eqHpfOnAtt, eqLpfOnAtt;
+    EqCurve               eqCurve;                                                        // live frequency-response curve (teq::EqEngine::magnitudeDbFor)
+    juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
+    bool eqOnCache = false;                                                               // detect eqOn change on the timer (host automation)
+    void updateEqRow();                                                                   // reveal/hide the row + resize
+    int  eqRowH() const { return 104; }   // one band: compact knobs (left) + curve (fills the rest)
+
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
     int preampRowH() const { return ampRowH(); }                 // same geometry as the poweramp row
@@ -198,6 +218,7 @@ private:
     {
         setSize (1040, kBaseHeight
                        + (hasPreamps   && preampPowerBtn.getToggleState() ? preampRowH() : 0)
+                       + (eqPowerBtn.getToggleState()                     ? eqRowH()     : 0)
                        + (hasPoweramps && ampPowerBtn.getToggleState()    ? ampRowH()    : 0));
     }
 
