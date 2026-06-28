@@ -101,6 +101,15 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     autoLevelParam = apvts.getRawParameterValue ("autoLevel");
     ampOnParam     = apvts.getRawParameterValue ("ampOn");
     preampOnParam  = apvts.getRawParameterValue ("preampOn");
+    eqOnParam       = apvts.getRawParameterValue ("eqOn");
+    eqBassParam     = apvts.getRawParameterValue ("eqBass");
+    eqMidParam      = apvts.getRawParameterValue ("eqMid");
+    eqTrebleParam   = apvts.getRawParameterValue ("eqTreble");
+    eqPresenceParam = apvts.getRawParameterValue ("eqPresence");
+    eqHpfOnParam    = apvts.getRawParameterValue ("eqHpfOn");
+    eqHpfFreqParam  = apvts.getRawParameterValue ("eqHpfFreq");
+    eqLpfOnParam    = apvts.getRawParameterValue ("eqLpfOn");
+    eqLpfFreqParam  = apvts.getRawParameterValue ("eqLpfFreq");
     for (int i = 0; i < 2; ++i)
     {
         const juce::String s = (i == 0 ? "A" : "B");
@@ -1034,6 +1043,15 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.autoLevel    = autoLevelParam->load() > 0.5f;
     p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
     p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);
+    p.eq.on         = eqOnParam->load()    > 0.5f;
+    p.eq.bassDb     = eqBassParam->load();
+    p.eq.midDb      = eqMidParam->load();
+    p.eq.trebleDb   = eqTrebleParam->load();
+    p.eq.presenceDb = eqPresenceParam->load();
+    p.eq.hpfOn      = eqHpfOnParam->load() > 0.5f;
+    p.eq.hpfHz      = eqHpfFreqParam->load();
+    p.eq.lpfOn      = eqLpfOnParam->load() > 0.5f;
+    p.eq.lpfHz      = eqLpfFreqParam->load();
     for (int i = 0; i < 2; ++i)
     {
         p.slot[i].hpfOn    = hpfOnP[i]->load() > 0.5f;

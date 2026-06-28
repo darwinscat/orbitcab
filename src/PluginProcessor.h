@@ -262,6 +262,17 @@ private:
     std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
+    // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.
+    std::atomic<float>* eqOnParam       = nullptr;
+    std::atomic<float>* eqBassParam     = nullptr;
+    std::atomic<float>* eqMidParam      = nullptr;
+    std::atomic<float>* eqTrebleParam   = nullptr;
+    std::atomic<float>* eqPresenceParam = nullptr;
+    std::atomic<float>* eqHpfOnParam    = nullptr;
+    std::atomic<float>* eqHpfFreqParam  = nullptr;
+    std::atomic<float>* eqLpfOnParam    = nullptr;
+    std::atomic<float>* eqLpfFreqParam  = nullptr;
+
     // Cached raw parameter pointers — RT-safe atomic reads in processBlock. Per-slot
     // params are [0]=A, [1]=B.
     std::atomic<float>* hpfOnP[2]   { nullptr, nullptr };

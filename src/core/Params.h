@@ -25,6 +25,23 @@ struct SlotParams
     float dryWet01 = 1.0f;    // 0 = dry, 1 = full wet (the "mix" param / 100)
 };
 
+// Amp tone EQ — a fixed-frequency tone stack (Bass/Mid/Treble) + a Presence shelf + an
+// optional HPF/LPF "tightening" pair. Runs BETWEEN the preamp and poweramp NAM stages, so
+// its cuts shape what hits the poweramp's nonlinearity — distinct from SlotParams' per-slot
+// HPF/LPF, which shape the cab/IR band AFTER the whole amp. Tone gains are dB (0 = flat).
+struct EqParams
+{
+    bool  on         = false;   // master gate for the whole stage (off = bit-exact passthrough)
+    float bassDb     = 0.0f;
+    float midDb      = 0.0f;
+    float trebleDb   = 0.0f;
+    float presenceDb = 0.0f;
+    bool  hpfOn      = false;
+    float hpfHz      = 80.0f;
+    bool  lpfOn      = false;
+    float lpfHz      = 10000.0f;
+};
+
 struct Params
 {
     float inputGainDb  = 0.0f;
@@ -37,6 +54,7 @@ struct Params
     bool  aLoaded      = true;   // slot A has an IR; false = empty (no cab → dry passthrough on A)
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)
 
+    EqParams   eq;               // amp tone EQ, between the preamp and poweramp NAM stages
     SlotParams slot[2];          // [0] = A, [1] = B
 };
 
