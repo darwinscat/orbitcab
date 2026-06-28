@@ -55,6 +55,33 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // PluginProcessor::applyPreamp(). Output loudness-normalisation is always on (no toggle).
     layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "preampOn", kParamVersion }, "Preamp (NAM)", false));
 
+    // ---- AMP EQ: tone stack (Bass/Mid/Treble) + Presence + an HPF/LPF "tightening" pair ----
+    // Runs BETWEEN the preamp and poweramp NAM stages (its cuts shape what the poweramp distorts
+    // — distinct from the per-slot HPF/LPF, which shape the cab/IR band after the whole amp). Tone
+    // corners are fixed in the DSP (cab::AmpEq); these are just the dB amounts. `eqOn` gates the
+    // whole stage (off by default → bit-exact passthrough, shapers-off policy like ampOn/preampOn).
+    {
+        NormalisableRange<float> eqDb (-12.0f, 12.0f, 0.1f);
+        NormalisableRange<float> eqHpfRange (20.0f, 300.0f);    eqHpfRange.setSkewForCentre (std::sqrt (20.0f * 300.0f));
+        NormalisableRange<float> eqLpfRange (4000.0f, 12000.0f); eqLpfRange.setSkewForCentre (std::sqrt (4000.0f * 12000.0f));
+
+        layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "eqOn", kParamVersion }, "Amp EQ", false));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqBass",     kParamVersion }, "EQ Bass",     eqDb, 0.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqMid",      kParamVersion }, "EQ Mid",      eqDb, 0.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqTreble",   kParamVersion }, "EQ Treble",   eqDb, 0.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqPresence", kParamVersion }, "EQ Presence", eqDb, 0.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+        layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "eqHpfOn",   kParamVersion }, "EQ HPF", false));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqHpfFreq", kParamVersion }, "EQ HPF Freq", eqHpfRange, 80.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("Hz").withStringFromValueFunction (hzText)));
+        layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "eqLpfOn",   kParamVersion }, "EQ LPF", false));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqLpfFreq", kParamVersion }, "EQ LPF Freq", eqLpfRange, 10000.0f,
+                                                            AudioParameterFloatAttributes().withLabel ("Hz").withStringFromValueFunction (kHzText)));
+    }
+
     // ---- per slot (A/B): HPF + LPF + Phase + Dry/Wet + Trim-enable ----
     // Cutoff ranges (widened per user): HPF 30–400 Hz (def 80), LPF 2–12 kHz (def 7k);
     // skew to the geometric centre for a musical log-ish feel.

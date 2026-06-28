@@ -98,6 +98,28 @@ target_include_directories(nam_core SYSTEM PUBLIC
 )
 
 # ----------------------------------------------------------------------------
+# teq — reusable, framework-agnostic matched-EQ DSP core (the amp tone stack: cab::AmpEq).
+# Public, AGPL, header-only; pinned by tag like JUCE. SOURCE_SUBDIR pulls ONLY the teq/
+# subdir of the tabby-eq repo — never the TabbyEQ plugin or its JUCE. Link the namespaced
+# target teq::core; consumers then `#include <teq/EqEngine.h>`. Recorded in THIRD_PARTY_NOTICES.md.
+# ----------------------------------------------------------------------------
+set(ORBITCAB_TEQ_TAG "v0.1.0" CACHE STRING "tabby-eq (teq core) git tag to build against")
+FetchContent_Declare(
+    teq
+    GIT_REPOSITORY https://github.com/darwinscat/tabby-eq.git
+    GIT_TAG        ${ORBITCAB_TEQ_TAG}
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  teq
+)
+FetchContent_MakeAvailable(teq)
+# Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
+# (same posture as nam_core / Eigen above).
+get_target_property(_teq_inc teq_core INTERFACE_INCLUDE_DIRECTORIES)
+if(_teq_inc)
+    set_target_properties(teq_core PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_teq_inc}")
+endif()
+
+# ----------------------------------------------------------------------------
 # The plugin target.
 #
 # 4-char codes (LOCKED post-release):
@@ -226,6 +248,7 @@ target_link_libraries(OrbitCab PRIVATE
     # those (unreferenced) objects, so get_dsp() finds no architecture and every load fails.
     # CMake 3.24+ maps this to -force_load (Apple) / --whole-archive (GNU) / /WHOLEARCHIVE (MSVC).
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
+    teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -261,6 +284,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
     OrbitCabPreampData                          # factory preamps (PreampBinaryData) — preamp-embed test
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
+    teq::core
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -295,6 +319,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabData
     OrbitCabPreampData
     nam_core
+    teq::core
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -313,6 +338,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/IRSlotTests.cpp
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
+    tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
     tests/PreampSelectorTests.cpp  # orbitcab::PreampSelector — contextual resolve/visibility (≥2-rule, keep-else-default)
@@ -329,6 +355,7 @@ target_compile_definitions(OrbitCab_Tests PRIVATE
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
+    teq::core                     # cab::AmpEq (AmpEqTests)
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags

@@ -11,19 +11,22 @@
 #include "Params.h"
 #include "IRSlot.h"
 #include "AmpStage.h"
+#include "AmpEq.h"
 #include "AutoLeveler.h"
 #include "SpectrumTap.h"
 
 //==============================================================================
 // cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
 //
-//   global (front): in → [PREAMP (NAM)] → [POWERAMP (NAM)]  — two optional neural stages, in order
+//   global (front): in → [PREAMP (NAM)] → [AMP EQ] → [POWERAMP (NAM)]  — neural + tone, in order
 //   per slot (A/B):  → HPF → LPF → Convolution → Phase → Dry/Wet(blend the amp output)
 //   then:            MIX crossfades the two slot outputs → Auto-level → Output Gain
 //
-// The two NAM stages run before the dry tap, so the dry/wet blend + the auto-level reference are
-// their output (the thing being cab'd), not the clean DI. The preamp feeds the poweramp. Both are
-// the same cab::AmpStage class — `preamp` is just a second instance ahead of `amp`.
+// The front stages run before the dry tap, so the dry/wet blend + the auto-level reference are
+// their output (the thing being cab'd), not the clean DI. The preamp feeds the EQ feeds the
+// poweramp. preamp/amp are the same cab::AmpStage class; the tone stack is cab::AmpEq (a teq::
+// EqEngine) sitting between them, so its cuts shape what the poweramp distorts — distinct from
+// the per-slot HPF/LPF, which shape the cab/IR band after the whole amp.
 //
 // Two cab::IRSlot instances are the per-slot channels (filters + convolver + the IR
 // buffer + trim math); cab::AutoLeveler is the wet->dry match. No JUCE GUI, no APVTS,
@@ -98,7 +101,8 @@ public:
     double sampleRate() const { return currentSampleRate; }
 
 private:
-    AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the poweramp)
+    AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
+    AmpEq       ampEq;                      // amp tone stack, between the preamp and poweramp NAM stages
     AmpStage    amp;                       // optional NAM poweramp, front of the cab
     IRSlot      slot[2];
     AutoLeveler autoLeveler;

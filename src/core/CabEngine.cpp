@@ -20,6 +20,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     currentSampleRate = sampleRate;
 
     preamp.prepare (sampleRate, maxBlock);
+    ampEq.prepare (sampleRate, maxBlock, numChannels);
     amp.prepare (sampleRate, maxBlock);
 
     for (int i = 0; i < 2; ++i)
@@ -55,6 +56,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 void CabEngine::reset()
 {
     preamp.reset();
+    ampEq.reset();
     amp.reset();
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
@@ -148,13 +150,15 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     mixABSmoothed.setTargetValue (abTarget);
     muteGateSmoothed.setTargetValue ((aOn || bOn) ? 1.0f : 0.0f);
 
-    // --- NAM stages (PREAMP → POWERAMP): two nonlinear stages in front of the cab, in signal
-    // order. They run on the signal BEFORE the dry tap, so their output becomes the "dry"
-    // reference for both the per-slot Dry/Wet blend and the auto-level match — i.e. we cab the
-    // amp, not the clean DI. Each is a no-op passthrough when off or no model is loaded. The
-    // preamp feeds the poweramp (both load-normalised to a consistent level). ---
+    // --- front stages (PREAMP → AMP EQ → POWERAMP): two nonlinear NAM stages plus the tone
+    // stack between them, in signal order. They run on the signal BEFORE the dry tap, so their
+    // output becomes the "dry" reference for both the per-slot Dry/Wet blend and the auto-level
+    // match — i.e. we cab the amp, not the clean DI. Each NAM stage is a no-op passthrough when
+    // off or no model is loaded; the EQ is a bit-exact passthrough when eq.on is false. The EQ
+    // sits between the stages so its cuts shape what the poweramp distorts. ---
     if (p.preampOn)
         preamp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+    ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);
     if (p.ampOn)
         amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
 
