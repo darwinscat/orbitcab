@@ -50,7 +50,8 @@ public:
                            juce::Slider& s) override
     {
         auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (6.0f);
-        const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 2.0f;
+        const bool  clockTicks = s.getProperties().getWithDefault ("clockTicks", false);   // gain dial → clock marks
+        const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 2.0f - (clockTicks ? 5.0f : 0.0f);
         const auto  centre = bounds.getCentre();
         const float angle  = startAngle + pos * (endAngle - startAngle);
         const float thick  = juce::jmax (3.0f, radius * 0.18f);
@@ -63,12 +64,42 @@ public:
 
         juce::Path val;
         val.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, startAngle, angle, true);
-        g.setColour (on ? juce::Colour (kAccent) : juce::Colour (0xff55555a));
+        // Honour the slider's OWN fill colour (violet EQ knobs, orange gain dial) instead of a hardcoded accent.
+        g.setColour (on ? s.findColour (juce::Slider::rotarySliderFillColourId) : juce::Colour (0xff55555a));
         g.strokePath (val, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        g.setColour (on ? juce::Colour (kText) : juce::Colour (0xff70707a));
-        g.setFont (juce::FontOptions (juce::jmax (12.0f, radius * 0.5f), juce::Font::bold));
-        g.drawText (s.getTextFromValue (s.getValue()), bounds.toNearestInt(), juce::Justification::centred, false);
+        // Centre text: the UNIT when the slider carries a "unit" property (the EQ knobs — their NUMBER lives
+        // in the text box below); otherwise the value itself when there's no text box (the gain dial → "13h").
+        const auto unitProp = s.getProperties().getWithDefault ("unit", juce::var()).toString();
+        const juce::String centreText = unitProp.isNotEmpty()
+                                       ? unitProp
+                                       : (s.getTextBoxPosition() == juce::Slider::NoTextBox ? s.getTextFromValue (s.getValue())
+                                                                                            : juce::String());
+        if (centreText.isNotEmpty())
+        {
+            g.setColour (on ? juce::Colour (kText) : juce::Colour (0xff70707a));
+            g.setFont (juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
+            g.drawText (centreText, bounds.toNearestInt(), juce::Justification::centred, false);
+        }
+
+        // Clock-style ticks around the dial — one per discrete stop (the gain dial's 7h…17h positions),
+        // lit up to the current value in the dial's own colour, the rest dim. Gated by the "clockTicks" prop.
+        if (clockTicks)
+        {
+            const int   stops   = juce::jmax (2, juce::roundToInt (s.getMaximum() - s.getMinimum()) + 1);
+            const int   litUpTo = juce::roundToInt (pos * (float) (stops - 1));
+            const float r0      = radius + thick * 0.5f + 1.5f;
+            const float r1      = r0 + 3.5f;
+            const auto  litCol  = on ? s.findColour (juce::Slider::rotarySliderFillColourId) : juce::Colour (0xff55555a);
+            for (int i = 0; i < stops; ++i)
+            {
+                const float a   = startAngle + (float) i / (float) (stops - 1) * (endAngle - startAngle);
+                const bool  lit = i <= litUpTo;
+                g.setColour (lit ? litCol : juce::Colour (0xff48484e));
+                g.drawLine (centre.x + std::sin (a) * r0, centre.y - std::cos (a) * r0,
+                            centre.x + std::sin (a) * r1, centre.y - std::cos (a) * r1, lit ? 1.8f : 1.2f);
+            }
+        }
     }
 
     // Checkbox: accent-bordered box, filled inner square when ticked. The

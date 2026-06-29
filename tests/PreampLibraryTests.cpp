@@ -57,9 +57,28 @@ struct PreampLibraryTest : juce::UnitTest
 
         beginTest ("token match is whole-word / range-checked, else part of the name");
         {
-            parse ("ch4 amp");     expect (ch == 0 && n == "ch4 amp");     // ch4 out of range → not a channel
+            parse ("ch5 amp");     expect (ch == 0 && n == "ch5 amp");     // ch5 out of range (max ch4) → not a channel
             parse ("Channel Two"); expect (ch == 0 && n == "Channel Two"); // 'Channel' isn't 'chN'
             parse ("Boosted");     expect (! boost && n == "Boosted");     // contains 'boost' but not whole word
+        }
+
+        beginTest ("channel: chN widened to ch4, and colour words map to a tinted channel + label");
+        {
+            juce::String lbl = "x"; juce::uint32 col = 0xdead;
+            auto parseFull = [&] (const char* base) { parsePreampName (base, n, ch, h, boost, lbl, col); };
+
+            parseFull ("Mesa ch4");      expect (n == "Mesa" && ch == 4 && lbl == "Ch 4" && col == 0);   // ch4 now in range, plain (no tint)
+            parseFull ("Mesa ch1");      expect (ch == 1 && lbl == "Ch 1" && col == 0);
+
+            parseFull ("V4KR red 9h");                                                                    // colour → channel index + tint
+            expect (n == "V4KR" && ch == 1 && h == 9 && lbl == "Red" && col == 0xffe0524e);
+            parseFull ("V4KR GREEN 12h");                                                                 // case-insensitive; label Title-cased
+            expect (n == "V4KR" && ch == 2 && h == 12 && lbl == "Green" && col == 0xff57c06a);
+            parseFull ("V4KR-blue-17h");                                                                  // dash separators + colour
+            expect (n == "V4KR" && ch == 3 && h == 17 && lbl == "Blue");
+
+            parseFull ("Studio Pre");    expect (ch == 0 && lbl.isEmpty() && col == 0);                   // no channel → empty label, no tint
+            parseFull ("Red Llama 12h"); expect (ch == 1 && n == "Llama" && lbl == "Red");               // a colour word IS taken as the channel (documented: use chN to avoid)
         }
 
         beginTest ("tokens are the whole name → keep something to show");

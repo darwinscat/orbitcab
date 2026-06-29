@@ -135,7 +135,7 @@ private:
     static juce::String describeVariant (const orbitcab::PreampEntry& e)
     {
         juce::StringArray parts;
-        if (e.channel > 0) parts.add ("ch" + juce::String (e.channel));
+        if (e.channel > 0) parts.add (e.channelLabel.isNotEmpty() ? e.channelLabel : "ch" + juce::String (e.channel));
         if (e.hours   > 0) parts.add (juce::String (e.hours) + "h");
         if (e.boost)       parts.add ("boost");
         return parts.isEmpty() ? juce::String::fromUTF8 ("\xe2\x80\x94") : parts.joinIntoString (" ");

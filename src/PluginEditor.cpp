@@ -284,25 +284,28 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     addAndMakeVisible (preampTubeDisplay);   // symbolic amp + glowing tube in the revealed row
 
-    // Contextual channel switch (ch1/ch2/ch3) — shown only for the channels the selected NAME has
-    // (and only when ≥2 exist). Param-free, driven by syncPreampSelector (no self-toggle).
-    for (int m = 0; m < 3; ++m)
+    // Contextual channel switch — shown only for the channels the selected NAME has (and only when ≥2
+    // exist). Each slot's caption, colour tint and channel value are data-driven in syncPreampSelector
+    // (a slot may be "CH 2" or a colour like "RED" that glows in the unit's channel colour). Param-free,
+    // no self-toggle; clicking a slot selects whatever channel it currently maps to.
+    for (int m = 0; m < 4; ++m)
     {
-        preampChannelBtn[m].setButtonText ("CH " + juce::String (m + 1));
         preampChannelBtn[m].setClickingTogglesState (false);
         preampChannelBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        preampChannelBtn[m].setTooltip ("Preamp channel " + juce::String (m + 1) + ".");
-        preampChannelBtn[m].onClick = [this, m] { selectPreampChannel (m + 1); };
+        preampChannelBtn[m].onClick = [this, m] { selectPreampChannel (preampChannelBtnCh[m]); };
         addChildComponent (preampChannelBtn[m]);
     }
 
     // Contextual gain: a horizontal discrete slider snapping to the available "<N>h" positions of the
     // current name+channel. One-for-one with the poweramp's hour slider, just labelled "gain".
-    preampGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    preampGainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 38, 22);   // read-only, shows "12h"
-    preampGainSlider.setColour (juce::Slider::trackColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
-    preampGainSlider.setColour (juce::Slider::thumbColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
-    preampGainSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0x00000000));
+    // GAIN — an ORANGE discrete rotary (the brand's Slot-B orange, distinct from the violet EQ knobs),
+    // its stops the captured clock positions (7h…17h); the read-out shows the hour. "By the clock".
+    preampGainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    preampGainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);   // value ("12h") drawn in the dial centre
+    preampGainSlider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    preampGainSlider.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    preampGainSlider.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff3a3a40));
+    preampGainSlider.getProperties().set ("clockTicks", true);   // draw clock marks around the dial (one per gain stop)
     preampGainSlider.setTooltip ("Preamp gain — the knob position the capture was taken at (o'clock).");
     preampGainSlider.textFromValueFunction = [this] (double v)
     {
@@ -330,52 +333,70 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     };
     addChildComponent (preampBoostBtn);
 
-    // Singletons combo (one-off preamps by full filename). Selecting an item picks that capture.
-    preampSingleBox.setTextWhenNothingSelected (juce::String::fromUTF8 ("Preamps\xe2\x80\xa6"));
-    preampSingleBox.setTooltip ("One-off preamp captures (not part of a model family).");
-    preampSingleBox.onChange = [this]
+    // NAME picker — ONE combo listing model families and one-off singletons, grouped Factory / User.
+    // Picking a family resolves to its current channel/gain/boost variant (the contextual controls to the
+    // right then refine it); picking a singleton selects that capture directly. preampBoxTargets maps each
+    // 1-based item id to {isFamily, name|id}.
+    preampBox.setTextWhenNothingSelected (juce::String::fromUTF8 ("Preamp\xe2\x80\xa6"));
+    preampBox.setTooltip ("Preamp model — Factory (embedded) and your User captures.");
+    preampBox.onChange = [this]
     {
-        const int idx = preampSingleBox.getSelectedId() - 1;          // ids are 1-based → entry index
-        if (juce::isPositiveAndBelow (idx, (int) preampSel.lib.size()))
-        { processorRef.selectPreamp (preampSel.lib[(size_t) idx].id); syncPreampSelector(); }
+        const int idx = preampBox.getSelectedId() - 1;            // item id (1-based) → preampBoxTargets index
+        if (! juce::isPositiveAndBelow (idx, (int) preampBoxTargets.size())) return;
+        const auto& t = preampBoxTargets[(size_t) idx];
+        if (t.first) selectPreampName (t.second);                 // a family → keep channel/gain/boost if they exist there
+        else { processorRef.selectPreamp (t.second); syncPreampSelector(); }   // a singleton's entry id
     };
-    addChildComponent (preampSingleBox);
+    addChildComponent (preampBox);
 
     rebuildPreampSelector();           // scan the merged preamp library → name buttons + combo + hasPreamps + power-btn visibility
 
     // ---- AMP EQ: tone stack (Bass/Mid/Treble) + Presence + HPF/LPF, revealed row + bottom toggle ----
     eqPowerBtn.setTooltip (juce::String::fromUTF8 ("Amp tone EQ between the preamp and poweramp \xe2\x80\x94 reveals the knobs below."));
     eqPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-    addAndMakeVisible (eqPowerBtn);
+    addChildComponent (eqPowerBtn);   // HIDDEN — the tone EQ is now part of the preamp; this just mirrors preampOn → eqOn
     eqPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "eqOn", eqPowerBtn);
-    eqPowerBtn.onClick = [this] { updateEqRow(); };          // reveal/hide the row + resize on toggle
+    eqPowerBtn.onClick = [this] { updateEqRow(); };          // show/hide the tone controls + resize
 
-    auto setupKnob = [this] (juce::Slider& k, const juce::String& paramId, std::unique_ptr<SAtt>& att,
-                             double doubleClickReturn, const juce::String& tip)
+    // tone = the Bass/Mid/Treble/Presence knobs (violet, ±dB, discrete 1 dB steps when the pref is on).
+    // The value box INSIDE the knob shows the UNIT (dB / Hz / kHz) — NOT a number; double-clicking to
+    // edit shows a bare number (no unit). The model name sits in the caption above (HPF/LPF: the toggle).
+    auto setupKnob = [this] (CentreUnitSlider& k, const juce::String& paramId, std::unique_ptr<SAtt>& att,
+                             const juce::String& tip, bool tone, const juce::String& unit)
     {
         k.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        k.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 14);
-        k.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
-        k.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kNeutral));
+        k.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 14);   // NUMBER below; double-click it to type a value
+        k.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0x00000000));
+        k.getProperties().set ("unit", unit);   // UNIT drawn in the dial centre by the look-and-feel
+        const auto fill = juce::Colour (tone ? OrbitCabLookAndFeel::kAccent     // violet tone knobs (match the curve)
+                                             : OrbitCabLookAndFeel::kNeutral);  // neutral grey filter knobs
+        k.setColour (juce::Slider::rotarySliderFillColourId, fill);
+        k.setColour (juce::Slider::thumbColourId,            fill);
         k.setTooltip (tip);
         addAndMakeVisible (k);
         att = std::make_unique<SAtt> (processorRef.apvts, paramId, k);
-        k.setDoubleClickReturnValue (true, doubleClickReturn);   // AFTER the attachment (range is set there)
+        if (tone && eqDiscretePref) k.setRange (k.getMinimum(), k.getMaximum(), 1.0);   // whole-dB steps
+        k.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v)); };   // bare number below
         k.valueFromTextFunction = [] (const juce::String& t) { return parseLooseNumber (t); };
+        k.updateText();
     };
-    setupKnob (eqBassKnob,     "eqBass",     eqBassAtt,     0.0,     "Bass \xe2\x80\x94 low shelf ~100 Hz");
-    setupKnob (eqMidKnob,      "eqMid",      eqMidAtt,      0.0,     "Mid \xe2\x80\x94 bell ~600 Hz");
-    setupKnob (eqTrebleKnob,   "eqTreble",   eqTrebleAtt,   0.0,     "Treble \xe2\x80\x94 high shelf ~2.8 kHz");
-    setupKnob (eqPresenceKnob, "eqPresence", eqPresenceAtt, 0.0,     "Presence \xe2\x80\x94 high shelf ~5 kHz");
-    setupKnob (eqHpfKnob,      "eqHpfFreq",  eqHpfFreqAtt,  80.0,    "High-pass into the poweramp (tighten the lows)");
-    setupKnob (eqLpfKnob,      "eqLpfFreq",  eqLpfFreqAtt,  10000.0, "Low-pass into the poweramp (tame the fizz)");
+    setupKnob (eqBassKnob,     "eqBass",     eqBassAtt,     "Bass \xe2\x80\x94 low shelf ~100 Hz",      true,  "dB");
+    setupKnob (eqMidKnob,      "eqMid",      eqMidAtt,      "Mid \xe2\x80\x94 bell ~600 Hz",            true,  "dB");
+    setupKnob (eqTrebleKnob,   "eqTreble",   eqTrebleAtt,   "Treble \xe2\x80\x94 high shelf ~2.8 kHz",  true,  "dB");
+    setupKnob (eqPresenceKnob, "eqPresence", eqPresenceAtt, "Presence \xe2\x80\x94 high shelf ~5 kHz",  true,  "dB");
+    setupKnob (eqHpfKnob,      "eqHpfFreq",  eqHpfFreqAtt,  "High-pass into the poweramp (tighten the lows)", false, "Hz");
+    setupKnob (eqLpfKnob,      "eqLpfFreq",  eqLpfFreqAtt,  "Low-pass into the poweramp (tame the fizz)",     false, "kHz");
+    eqLpfKnob.textFromValueFunction = [] (double v) { return juce::String (v / 1000.0, 1); };                  // number below in kHz
+    eqLpfKnob.valueFromTextFunction = [] (const juce::String& t) { return parseLooseNumber (t) * 1000.0; };    // editor kHz → Hz
+    eqLpfKnob.updateText();
 
+    // Caption above each tone knob = the model NAME (the unit lives inside the knob now).
     styleLabel (eqBassLabel,     "BASS");
     styleLabel (eqMidLabel,      "MID");
     styleLabel (eqTrebleLabel,   "TREBLE");
     styleLabel (eqPresenceLabel, "PRESENCE");
 
-    // HPF/LPF: the toggle doubles as the knob's caption (click the label to enable the cut).
+    // HPF/LPF: the toggle is the caption + enable (click to engage the cut); the unit sits in the knob.
     for (auto* b : { &eqHpfBtn, &eqLpfBtn })
         b->setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
     addAndMakeVisible (eqHpfBtn);
@@ -902,31 +923,50 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
 
 void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
 {
-    for (auto& b : preampNameBtns) removeChildComponent (b.get());
-    preampNameBtns.clear();
-
     preampSel.lib = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
     hasPreamps    = ! preampSel.lib.empty() || processorRef.selectedPreampId().isNotEmpty();   // restored/pooled model shows even with an empty local library
 
-    // GROUPS: a display name shared by ≥2 captures → one name button (model families).
-    preampGroupNames = preampSel.groupNames();
-    for (const auto& nm : preampGroupNames)
-    {
-        auto b = std::make_unique<juce::TextButton> (nm);
-        b->setClickingTogglesState (false);   // visual state driven by syncPreampSelector (no stuck-fill bug)
-        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        b->setTooltip ("Preamp capture family (pick channel / gain / boost below).");
-        const auto name = nm;
-        b->onClick = [this, name] { selectPreampName (name); };
-        addChildComponent (*b);
-        preampNameBtns.push_back (std::move (b));
-    }
+    // Unified NAME combo: model families (a name shared by ≥2 captures) + one-off singletons, split into
+    // Factory and User sections. preampBoxTargets[itemId-1] records what each row selects:
+    //   {true,  name} → a family  (selecting it resolves to its current channel/gain/boost variant)
+    //   {false, id}   → a singleton entry (selected directly)
+    preampBox.clear (juce::dontSendNotification);
+    preampBoxTargets.clear();
+    const auto groups = preampSel.groupNames();   // family names, first-seen order
 
-    // SINGLETONS: a one-off capture → the combo, shown by its full filename. Item id = entry index + 1.
-    preampSingleBox.clear (juce::dontSendNotification);
-    for (int i = 0; i < (int) preampSel.lib.size(); ++i)
-        if (! preampSel.isGroupName (preampSel.lib[(size_t) i].name))
-            preampSingleBox.addItem (preampSel.lib[(size_t) i].id.fromFirstOccurrenceOf (":", false, false), i + 1);
+    auto familyIsFactory = [this] (const juce::String& nm)
+    {
+        for (const auto& e : preampSel.lib) if (e.name == nm) return e.factory;   // a family's source = its first variant's
+        return true;
+    };
+    auto addSection = [this, &groups, &familyIsFactory] (bool factory, const char* header)
+    {
+        bool wroteHeader = false;
+        auto ensureHeader = [&] { if (! wroteHeader) { preampBox.addSectionHeading (header); wroteHeader = true; } };
+        for (const auto& nm : groups)
+            if (familyIsFactory (nm) == factory)
+            {
+                ensureHeader();
+                preampBoxTargets.push_back ({ true, nm });
+                preampBox.addItem (nm, (int) preampBoxTargets.size());
+            }
+        for (const auto& e : preampSel.lib)
+            if (e.factory == factory && ! preampSel.isGroupName (e.name))
+            {
+                ensureHeader();
+                preampBoxTargets.push_back ({ false, e.id });
+                preampBox.addItem (e.name, (int) preampBoxTargets.size());
+            }
+    };
+    addSection (true,  "Factory");
+    addSection (false, "User");
+
+    // BYPASS — last entry: no neural preamp (the stage passes through), but the tone EQ still runs, so
+    // this is a standalone EQ (IR cab + tone). Sentinel id "bypass" (handled in applyPreamp).
+    if (preampBox.getNumItems() > 0)
+        preampBox.addSeparator();
+    preampBoxTargets.push_back ({ false, "bypass" });
+    preampBox.addItem (juce::String::fromUTF8 ("BYPASS \xe2\x80\x94 EQ only"), (int) preampBoxTargets.size());
 
     preampPowerBtn.setVisible (hasPreamps);
 }
@@ -966,28 +1006,45 @@ void OrbitCabAudioProcessorEditor::syncPreampSelector()
     auto* cur = preampSel.entryById (preampSyncedId);
     const auto v = preampSel.viewFor (preampSyncedId);
 
-    // name buttons — highlight the selected group's name
-    for (size_t i = 0; i < preampNameBtns.size(); ++i)
-        preampNameBtns[i]->setToggleState (v.group && cur != nullptr && cur->name == preampGroupNames[i],
-                                           juce::dontSendNotification);
-
-    // singletons combo — reflect (or clear) the selection
-    if (cur != nullptr && ! v.group)
+    // unified NAME combo — reflect (or clear) the selection: a family selection matches its {true,name}
+    // target row, a singleton its {false,id} row, BYPASS its {false,"bypass"} sentinel row.
+    int selItem = 0;
+    for (int i = 0; i < (int) preampBoxTargets.size(); ++i)
     {
-        for (int i = 0; i < (int) preampSel.lib.size(); ++i)
-            if (preampSel.lib[(size_t) i].id == cur->id) { preampSingleBox.setSelectedId (i + 1, juce::dontSendNotification); break; }
+        const auto& t = preampBoxTargets[(size_t) i];
+        const bool hit = preampSyncedId == "bypass" ? (! t.first && t.second == "bypass")
+                       : cur != nullptr ? (v.group ? (t.first && t.second == cur->name)
+                                                    : (! t.first && t.second == cur->id))
+                       : false;
+        if (hit) { selItem = i + 1; break; }
     }
-    else
-        preampSingleBox.setSelectedId (0, juce::dontSendNotification);
+    preampBox.setSelectedId (selItem, juce::dontSendNotification);
 
-    // contextual channel switch — a button per channel the name has, shown only when ≥2 exist
+    // contextual channel switch — one button per REAL channel the name has (channel 0 = "none" gets no
+    // button), shown only when ≥2 exist. Each slot is captioned + tinted from that channel's entry, so a
+    // colour channel (e.g. a red/green amp) reads and glows in its own colour; chN stays accent.
+    std::vector<int> chans;
+    for (int c : v.channels) if (c > 0) chans.push_back (c);
     const bool showChannels = on && v.showChannels;
-    for (int m = 0; m < 3; ++m)
+    for (int m = 0; m < 4; ++m)
     {
-        const int channel = m + 1;
-        const bool exists  = std::find (v.channels.begin(), v.channels.end(), channel) != v.channels.end();
-        preampChannelBtn[m].setVisible (showChannels && exists);
-        preampChannelBtn[m].setToggleState (v.currentChannel == channel, juce::dontSendNotification);
+        auto& btn = preampChannelBtn[m];
+        const bool used = m < (int) chans.size();
+        if (used)
+        {
+            const int channel = chans[(size_t) m];
+            preampChannelBtnCh[m] = channel;
+            const auto* e = cur != nullptr ? preampSel.anyEntryFor (cur->name, channel) : nullptr;
+            const juce::String label = (e != nullptr && e->channelLabel.isNotEmpty())
+                                           ? e->channelLabel : ("Ch " + juce::String (channel));
+            btn.setButtonText (label.toUpperCase());
+            btn.setColour (juce::TextButton::buttonOnColourId,
+                           (e != nullptr && e->channelColour != 0) ? juce::Colour (e->channelColour)
+                                                                   : juce::Colour (OrbitCabLookAndFeel::kAccent));
+            btn.setTooltip ("Preamp channel: " + label);
+            btn.setToggleState (v.currentChannel == channel, juce::dontSendNotification);
+        }
+        btn.setVisible (showChannels && used);
     }
 
     // contextual gain slider — its discrete stops are this name+channel's positions (hidden when <2)
@@ -1022,16 +1079,20 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     const bool on = hasPreamps && preampPowerBtn.getToggleState();
     preampOnCache = preampPowerBtn.getToggleState();
 
+    // The tone EQ is part of the preamp now: its DSP + controls follow the preamp's power. Driving the
+    // (hidden) eqPowerBtn keeps the eqOn parameter and the tone-control visibility in lock-step.
+    eqPowerBtn.setToggleState (on, juce::sendNotificationSync);
+
     // Powering on with no resolvable selection → default to the first library entry (never "on but
-    // silent"). A restored session that already carries a valid "preampSel" keeps it.
+    // silent"). A restored session that already carries a valid "preampSel" keeps it. "bypass" counts as
+    // a real (non-empty) selection, so it is preserved (standalone EQ).
     if (on && ! preampSel.lib.empty() && processorRef.selectedPreampId().isEmpty())
         processorRef.selectPreamp (preampSel.lib.front().id);
 
     preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
     preampTubeDisplay.setVisible (on);
 
-    for (auto& b : preampNameBtns) b->setVisible (on);                       // name buttons always visible when on
-    preampSingleBox.setVisible (on && preampSingleBox.getNumItems() > 0);    // combo only if there are singletons
+    preampBox.setVisible (on && preampBox.getNumItems() > 0);                // the unified NAME combo
 
     resizeForAmpRows();                               // grow/shrink for both NAM rows (triggers resized on change)
     syncPreampSelector();                             // contextual controls + tube + final re-flow
@@ -1621,88 +1682,84 @@ void OrbitCabAudioProcessorEditor::resized()
     else
         ampRowBounds = {};
 
-    // Revealed AMP EQ row (between the preamp row above and the poweramp row below — signal order).
-    // A title on the left, then six equal knob cells. Tone knobs (Bass/Mid/Treble/Presence) have a
-    // static caption; HPF/LPF use their enable toggle as the caption.
-    if (eqPowerBtn.getToggleState())
+    // Revealed PREAMP + TONE row — ONE merged strip above the poweramp row (signal order: preamp → EQ →
+    // poweramp). Preamp picks sit on the LEFT, laid out in signal order: tube · NAME combo · orange GAIN
+    // dial · vertical channel radios · BOOST. The tone EQ fills the rest on the RIGHT: violet tone knobs ·
+    // response curve · HPF/LPF (after the curve). Each half shows by its own toggle; eqRowBounds stays
+    // empty (this single panel is painted via preampRowBounds).
+    const bool preShown = hasPreamps && preampPowerBtn.getToggleState();
+    const bool eqShown  = eqPowerBtn.getToggleState();
+    eqRowBounds = {};
+    if (preShown || eqShown)
     {
-        eqRowBounds = r.removeFromBottom (eqRowH());
-        auto inner = eqRowBounds.reduced (16, 10);
+        preampRowBounds = r.removeFromBottom (frontRowH());
+        auto inner = preampRowBounds.reduced (16, 9);
 
-        // Six COMPACT knob cells packed on the LEFT (fixed width + fixed gap); the response curve
-        // takes 100% of the remaining width on the right. Tone knobs get a static caption; HPF/LPF
-        // use their enable toggle as the caption.
-        struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
-        const Cell cells[6] = {
-            { &eqBassKnob,     &eqBassLabel,     nullptr },
-            { &eqMidKnob,      &eqMidLabel,      nullptr },
-            { &eqTrebleKnob,   &eqTrebleLabel,   nullptr },
-            { &eqPresenceKnob, &eqPresenceLabel, nullptr },
-            { &eqHpfKnob,      nullptr,          &eqHpfBtn },
-            { &eqLpfKnob,      nullptr,          &eqLpfBtn },
-        };
-        constexpr int kKnobW = 74, kKnobGap = 6;
-        for (auto& c : cells)
+        // ---- preamp picks (left, signal order) ----
+        if (preShown)
         {
-            auto cell = inner.removeFromLeft (kKnobW);
-            auto cap  = cell.removeFromTop (15);                          // caption strip at the top
-            if (c.label)  c.label->setBounds (cap);
-            if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (kKnobW, 15));
-            c.knob->setBounds (cell);                                     // rotary + its value textbox fill the rest
-            inner.removeFromLeft (kKnobGap);                              // fixed gap between knobs
-        }
-        inner.removeFromLeft (10);                                        // breathing room before the curve
-        eqCurve.setBounds (inner.reduced (0, 2));                         // curve fills the remaining width
-    }
-    else
-        eqRowBounds = {};
+            preampTubeDisplay.setBounds (inner.removeFromLeft (showTubesPref ? 92 : 44));
+            inner.removeFromLeft (12);
 
-    // Revealed PREAMP row (above the poweramp row). Same geometry as the poweramp row, but with the
-    // preamp's contextual controls laid out from the right: singletons combo, boost, gain, channel.
-    if (hasPreamps && preampPowerBtn.getToggleState())
-    {
-        preampRowBounds = r.removeFromBottom (preampRowH());
-        auto row = preampRowBounds.reduced (16, 10);
-        preampTubeDisplay.setBounds (row.removeFromLeft (showTubesPref ? 152 : 52));
-        row.removeFromLeft (16);
+            preampBox.setBounds (inner.removeFromLeft (150).withSizeKeepingCentre (150, 28));
+            inner.removeFromLeft (12);
 
-        if (preampSingleBox.isVisible())
-        {
-            preampSingleBox.setBounds (row.removeFromRight (160).withSizeKeepingCentre (160, 28));
-            row.removeFromRight (14);
-        }
-        if (preampBoostBtn.isVisible())
-        {
-            preampBoostBtn.setBounds (row.removeFromRight (60).withSizeKeepingCentre (60, 26));
-            row.removeFromRight (12);
-        }
-        if (preampGainSlider.isVisible())
-        {
-            preampGainSlider.setBounds (row.removeFromRight (132).withSizeKeepingCentre (132, 26));
-            row.removeFromRight (12);
-        }
-        {
+            if (preampGainSlider.isVisible())   // orange rotary GAIN — a bit bigger; square cell keeps the dial round
+            {
+                preampGainSlider.setBounds (inner.removeFromLeft (84).withSizeKeepingCentre (84, juce::jmin (inner.getHeight(), 84)));
+                inner.removeFromLeft (10);
+            }
+
+            // CHANNEL — vertical radio stack of the visible channel buttons (red/green glow)
             int nc = 0; for (auto& b : preampChannelBtn) if (b.isVisible()) ++nc;
             if (nc > 0)
             {
-                constexpr int cw = 46, cg = 3;
-                auto ca = row.removeFromRight (nc * cw + (nc - 1) * cg).withSizeKeepingCentre (nc * cw + (nc - 1) * cg, 26);
-                for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (ca.removeFromLeft (cw)); ca.removeFromLeft (cg); }
-                row.removeFromRight (14);
+                auto colArea = inner.removeFromLeft (56);
+                const int bh = juce::jlimit (18, 28, (colArea.getHeight() - (nc - 1) * 4) / nc);
+                auto stack = colArea.withSizeKeepingCentre (56, nc * bh + (nc - 1) * 4);
+                for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (stack.removeFromTop (bh)); stack.removeFromTop (4); }
+                inner.removeFromLeft (10);
+            }
+
+            if (preampBoostBtn.isVisible())
+            {
+                preampBoostBtn.setBounds (inner.removeFromLeft (56).withSizeKeepingCentre (56, 26));
+                inner.removeFromLeft (12);
             }
         }
 
-        auto ctl = row.withSizeKeepingCentre (row.getWidth(), 30);
-        const int n = (int) preampNameBtns.size();
-        if (n > 0)
+        // ---- tone EQ (right) ----
+        if (eqShown)
         {
-            const int gap = 6;
-            const int bw  = juce::jlimit (44, 132, (ctl.getWidth() - gap * (n - 1)) / n);
-            for (auto& b : preampNameBtns)
+            inner.removeFromLeft (preShown ? 8 : 0);   // small gap after the preamp half (panel paints a divider)
+
+            struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
+            const Cell tone[4] = {
+                { &eqBassKnob,     &eqBassLabel,     nullptr },
+                { &eqMidKnob,      &eqMidLabel,      nullptr },
+                { &eqTrebleKnob,   &eqTrebleLabel,   nullptr },
+                { &eqPresenceKnob, &eqPresenceLabel, nullptr },
+            };
+            const Cell hpf { &eqHpfKnob, nullptr, &eqHpfBtn };
+            const Cell lpf { &eqLpfKnob, nullptr, &eqLpfBtn };
+
+            constexpr int kKnobW = 56, kKnobGap = 2;   // tighter spacing than before
+            auto place = [&] (const Cell& c, juce::Rectangle<int> cell)
             {
-                b->setBounds (ctl.removeFromLeft (bw).reduced (1, 0));
-                ctl.removeFromLeft (gap);
-            }
+                auto cap = cell.removeFromTop (14);
+                if (c.label)  c.label->setBounds (cap);
+                if (c.toggle) c.toggle->setBounds (cap.withSizeKeepingCentre (kKnobW, 14));
+                c.knob->setBounds (cell);
+            };
+
+            for (auto& c : tone) { place (c, inner.removeFromLeft (kKnobW)); inner.removeFromLeft (kKnobGap); }
+
+            // HPF/LPF AFTER the curve — peeled from the right so order reads … curve | HPF | LPF.
+            place (lpf, inner.removeFromRight (kKnobW)); inner.removeFromRight (kKnobGap);
+            place (hpf, inner.removeFromRight (kKnobW)); inner.removeFromRight (kKnobGap);
+
+            inner.removeFromLeft (8);
+            eqCurve.setBounds (inner.reduced (0, 4));   // curve fills the middle
         }
     }
     else
@@ -1712,14 +1769,12 @@ void OrbitCabAudioProcessorEditor::resized()
     mixStripBounds = strip;                       // repaint region for the A→B gradient
     versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 15));   // version always bottom-right
     perfBadge.setBounds    (strip.removeFromRight (140).reduced (6, 15));   // latency + DSP load, just left of it
-    // Bottom-left power checkboxes, in signal order: PREAMP, AMP EQ, POWERAMP. Share one 108-wide
-    // column, stacked evenly. PREAMP/POWERAMP appear only when their library is non-empty; AMP EQ has
-    // no library, so it's always present (a single checkbox is centred).
+    // Bottom-left power checkboxes, in signal order: PREAMP, POWERAMP. (The tone EQ is now part of the
+    // PREAMP stage — no separate toggle.) Each appears only when its library is non-empty.
     {
-        std::array<juce::ToggleButton*, 3> col {};
+        std::array<juce::ToggleButton*, 2> col {};
         int n = 0;
         if (hasPreamps)   col[(size_t) n++] = &preampPowerBtn;
-        col[(size_t) n++] = &eqPowerBtn;
         if (hasPoweramps) col[(size_t) n++] = &ampPowerBtn;
 
         auto amps = strip.removeFromLeft (108).reduced (12, 2);
