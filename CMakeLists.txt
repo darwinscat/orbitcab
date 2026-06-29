@@ -252,6 +252,7 @@ target_link_libraries(OrbitCab PRIVATE
     # CMake 3.24+ maps this to -force_load (Apple) / --whole-archive (GNU) / /WHOLEARCHIVE (MSVC).
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
+    felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -288,6 +289,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabPreampData                          # factory preamps (PreampBinaryData) — preamp-embed test
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
+    felitronics::analysis
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -323,6 +325,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabPreampData
     nam_core
     teq::core
+    felitronics::analysis
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -359,6 +362,7 @@ target_compile_definitions(OrbitCab_Tests PRIVATE
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     teq::core                     # cab::AmpEq (AmpEqTests)
+    felitronics::analysis         # cab::CabEngine SpectrumTap capture
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags

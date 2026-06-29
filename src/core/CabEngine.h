@@ -13,7 +13,7 @@
 #include "AmpStage.h"
 #include "AmpEq.h"
 #include "AutoLeveler.h"
-#include "SpectrumTap.h"
+#include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
 
 //==============================================================================
 // cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
@@ -43,8 +43,8 @@ class CabEngine
 {
 public:
     // FFT contract for the GUI analyser (mirrors the audio-side tap window).
-    static constexpr int fftOrder = kSpectrumFftOrder;
-    static constexpr int fftSize  = kSpectrumFftSize;
+    static constexpr int fftOrder = felitronics::analysis::kSpectrumFftOrder;
+    static constexpr int fftSize  = felitronics::analysis::kSpectrumFftSize;
 
     // Allocate + configure for this stream and seed smoothers from the initial parameter
     // values (so a restored session doesn't ramp from zero). Not the audio thread.
@@ -132,7 +132,7 @@ private:
     std::atomic<float> inLevel  { 0.0f };
     std::atomic<float> outLevel { 0.0f };
 
-    SpectrumTap preTap, postTap;
+    felitronics::analysis::SpectrumTap preTap, postTap;
     std::atomic<bool> spectrumActive { false };
 
     // DSP load meter state. pct[5] = {total, preamp, eq, poweramp, cab}. accumulateLoads() EMA-

@@ -124,7 +124,7 @@ public:
 
     // Spectrum capture (for the editor's pre/post analyser). The audio thread fills a
     // fixed window in the engine; the editor pulls the latest ready frame on its timer
-    // and runs the FFT itself. The FFT-size contract lives in the core (cab::SpectrumTap);
+    // and runs the FFT itself. The FFT-size contract lives in the core (felitronics::analysis::SpectrumTap);
     // these aliases keep the editor's references stable. `pre` = dry input, else = output.
     static constexpr int fftOrder = cab::CabEngine::fftOrder;   // 2048-point
     static constexpr int fftSize  = cab::CabEngine::fftSize;
