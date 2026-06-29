@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Cache JUCE (FetchContent)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: build/_deps
           key: juce-windows-${{ hashFiles('CMakeLists.txt') }}
