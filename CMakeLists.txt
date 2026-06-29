@@ -103,15 +103,12 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # subdir of the tabby-eq repo — never the TabbyEQ plugin or its JUCE. Link the namespaced
 # target teq::core; consumers then `#include <teq/EqEngine.h>`. Recorded in THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_TEQ_TAG "v0.1.0" CACHE STRING "tabby-eq (teq core) git tag to build against")
-FetchContent_Declare(
-    teq
-    GIT_REPOSITORY https://github.com/darwinscat/tabby-eq.git
-    GIT_TAG        ${ORBITCAB_TEQ_TAG}
-    GIT_SHALLOW    TRUE
-    SOURCE_SUBDIR  teq
-)
-FetchContent_MakeAvailable(teq)
+# Migrated to felitronics-core (the shared JUCE-free DSP core); `teq::core` is the transitional compat
+# shim (<teq/*.h> re-exports), so the source below is unchanged. Local dev consumes the sibling checkout
+# via SOURCE_DIR; switch to GIT_REPOSITORY + GIT_TAG when felitronics-core is published.
+set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "felitronics-core source (local dev)")
+FetchContent_Declare(felitronics_core SOURCE_DIR "${ORBITCAB_FCORE_DIR}")
+FetchContent_MakeAvailable(felitronics_core)
 # Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
 # (same posture as nam_core / Eigen above).
 get_target_property(_teq_inc teq_core INTERFACE_INCLUDE_DIRECTORIES)
