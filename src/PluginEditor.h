@@ -27,6 +27,12 @@
 #include <vector>
 
 //==============================================================================
+// CentreUnitSlider — the EQ knobs. A plain rotary whose NUMBER shows in the text box BELOW (double-click
+// it to type a value); the UNIT (dB / Hz / kHz, set via the "unit" property) is drawn in the dial CENTRE
+// by OrbitCabLookAndFeel, with the NAME in the caption above. Named only so the members read clearly.
+class CentreUnitSlider : public juce::Slider {};
+
+//==============================================================================
 // OrbitCab editor — direct-manipulation layout. Two IR slots A|B side by
 // side, each a full channel: browser (Open file/folder, ‹ ›, click-name popup) + a
 // waveform hosting TRIM (drag) and the HPF/LPF EQ curve, plus per-slot control rows
@@ -169,13 +175,14 @@ private:
     std::unique_ptr<BAtt> preampPowerAtt;
     TubeDisplay           preampTubeDisplay;
     orbitcab::PreampSelector                       preampSel;          // pure resolve/view-model (owns the merged library snapshot)
-    std::vector<juce::String>                      preampGroupNames;   // group names, ordered (mirrors preampSel.groupNames(); maps name buttons)
-    std::vector<std::unique_ptr<juce::TextButton>> preampNameBtns;     // one per group name
-    juce::TextButton      preampChannelBtn[3];   // contextual 3-way channel switch (ch1/ch2/ch3; shown when ≥2 exist)
-    juce::Slider          preampGainSlider;      // contextual horizontal discrete slider over the available <N>h (gain)
-    std::vector<int>      preampGainVals;        // gain hour at each slider index (sorted; snaps to these stops)
+    juce::ComboBox        preampBox;             // unified NAME picker: families + singletons, grouped Factory / User
+    // What each preampBox item id selects: {true,name} = a model family (→ resolveName); {false,id} = a singleton entry.
+    std::vector<std::pair<bool, juce::String>> preampBoxTargets;   // index = item id - 1
+    juce::TextButton      preampChannelBtn[4];   // contextual channel switch (up to 4; chN or colour-tinted; shown when ≥2 exist) — stacked vertically as radios
+    int                   preampChannelBtnCh[4] {};   // channel value each switch slot currently maps to (set in syncPreampSelector)
+    juce::Slider          preampGainSlider;      // contextual gain — orange discrete rotary over the available <N>h (clock positions)
+    std::vector<int>      preampGainVals;        // gain hour at each stop (sorted; snaps to these)
     juce::TextButton      preampBoostBtn { "BOOST" };   // contextual boost toggle (shown when both on+off variants exist)
-    juce::ComboBox        preampSingleBox;       // SINGLETONS (one-off preamps) listed by full filename
 
     void rebuildPreampSelector();                // rescan library → groups/singletons → (re)create controls
     void selectPreampName    (const juce::String& name);   // pick a group (keep channel/gain/boost if they exist there)
@@ -197,7 +204,7 @@ private:
     // so — unlike the NAM rows — the toggle is ALWAYS shown (even on a public build with no .nam).
     juce::ToggleButton    eqPowerBtn { "AMP EQ" };
     std::unique_ptr<BAtt> eqPowerAtt;
-    juce::Slider          eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
+    CentreUnitSlider      eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
     juce::Label           eqBassLabel, eqMidLabel, eqTrebleLabel, eqPresenceLabel;        // static tone captions
     juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
     std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt, eqHpfFreqAtt, eqLpfFreqAtt;
@@ -205,21 +212,23 @@ private:
     EqCurve               eqCurve;                                                        // live frequency-response curve (teq::EqEngine::magnitudeDbFor)
     juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
     bool eqOnCache = false;                                                               // detect eqOn change on the timer (host automation)
+    bool eqDiscretePref = true;                                                           // config: tone knobs snap to whole-dB steps (HPF/LPF stay smooth)
     void updateEqRow();                                                                   // reveal/hide the row + resize
-    int  eqRowH() const { return 104; }   // one band: compact knobs (left) + curve (fills the rest)
+    int  eqRowH()    const { return 104; }   // (legacy, unused since the merge)
+    int  frontRowH() const { return 112; }   // merged PREAMP+TONE strip: combo/gain/channel/boost (left) + tone knobs/curve/HPF-LPF (right)
 
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without
-    int preampRowH() const { return ampRowH(); }                 // same geometry as the poweramp row
+    int preampRowH() const { return ampRowH(); }                 // (legacy)
 
-    // Window height = base + whichever NAM rows are revealed (each stage independent). One helper so
-    // updateAmpRow()/updatePreampRow() can't disagree on the total. setSize is a no-op when unchanged.
+    // Window height = base + the merged front strip (revealed when the preamp and/or the EQ is on) + the
+    // poweramp row when revealed. One helper so the toggles can't disagree on the total.
     void resizeForAmpRows()
     {
+        const bool front = (hasPreamps && preampPowerBtn.getToggleState()) || eqPowerBtn.getToggleState();
         setSize (1040, kBaseHeight
-                       + (hasPreamps   && preampPowerBtn.getToggleState() ? preampRowH() : 0)
-                       + (eqPowerBtn.getToggleState()                     ? eqRowH()     : 0)
-                       + (hasPoweramps && ampPowerBtn.getToggleState()    ? ampRowH()    : 0));
+                       + (front ? frontRowH() : 0)
+                       + (hasPoweramps && ampPowerBtn.getToggleState() ? ampRowH() : 0));
     }
 
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B

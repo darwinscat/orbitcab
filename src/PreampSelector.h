@@ -37,6 +37,14 @@ struct PreampSelector
         return nullptr;
     }
 
+    // First entry of a name+channel — the editor reads its channelLabel/channelColour to caption and
+    // tint that channel's switch button (label/colour are constant across a channel's gain/boost set).
+    const PreampEntry* anyEntryFor (const juce::String& name, int channel) const
+    {
+        for (const auto& e : lib) if (e.name == name && e.channel == channel) return &e;
+        return nullptr;
+    }
+
     bool isGroupName (const juce::String& name) const   // ≥2 entries share this display name → a "family"
     {
         int n = 0;

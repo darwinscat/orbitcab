@@ -680,7 +680,7 @@ std::vector<orbitcab::PreampEntry> OrbitCabAudioProcessor::preampLibrary() const
         e.factory = true;
         const auto base = fn.dropLastCharacters (4);     // strip ".nam"
         e.id = "fp:" + base;
-        orbitcab::parsePreampName (base, e.name, e.channel, e.hours, e.boost);
+        orbitcab::parsePreampName (base, e.name, e.channel, e.hours, e.boost, e.channelLabel, e.channelColour);
         out.push_back (std::move (e));
     }
     std::sort (out.begin(), out.end(), [] (const auto& a, const auto& b)
@@ -752,7 +752,7 @@ void OrbitCabAudioProcessor::applyPreamp()
     }
 
     const auto sel = selectedPreampId();
-    if (sel.isNotEmpty())
+    if (sel.isNotEmpty() && sel != "bypass")   // "bypass" = preamp stage ON but no model → clean passthrough (standalone EQ)
     {
         // 1) Prefer an embedded blob (a restored session/preset carries the .nam in its PreampPool).
         juce::MemoryBlock pooled;
