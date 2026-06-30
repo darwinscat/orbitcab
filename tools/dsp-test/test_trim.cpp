@@ -17,7 +17,8 @@ int main()
     std::printf ("[dsp] main\n");
     juce::ScopedJuceInitialiser_GUI gui;          // MessageManager for the AsyncUpdater
     std::printf ("[dsp] juce-init\n");
-    OrbitCabAudioProcessor proc;
+    auto procOwned = std::make_unique<OrbitCabAudioProcessor>();   // heap, not stack — the processor is large
+    auto& proc = *procOwned;                                       // (MSVC's 1 MB stack overflows constructing it)
     std::printf ("[dsp] proc-constructed\n");
 
     const double sr = 48000.0;
