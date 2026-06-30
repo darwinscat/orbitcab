@@ -13,6 +13,7 @@
 #include "AmpStage.h"
 #include "AmpEq.h"
 #include "AutoLeveler.h"
+#include "../poweramp/PowerAmpRouter.h"          // the poweramp seam: NAM capture <-> white-box tube
 #include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
 
 //==============================================================================
@@ -87,6 +88,7 @@ public:
     double ampModelLoudness()    const                  { return amp.modelLoudness(); }
     bool   ampModelHasLoudness() const                  { return amp.modelHasLoudness(); }
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
+    int    tubePowerAmpLatencySamples() const           { return powerAmpRouter.tubeLatencySamples(); }
 
     bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f) { return preamp.loadModelFromMemory (data, size, trimDb); }
     void   clearPreampModel()                           { preamp.clearModel(); }
@@ -113,7 +115,8 @@ public:
 private:
     AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
     AmpEq       ampEq;                      // amp tone stack, between the preamp and poweramp NAM stages
-    AmpStage    amp;                       // optional NAM poweramp, front of the cab
+    AmpStage    amp;                       // optional NAM poweramp (capture mode), front of the cab
+    poweramp::PowerAmpRouter powerAmpRouter; // poweramp seam: ampOn/mode → capture(amp) | tube, click-free
     IRSlot      slot[2];
     AutoLeveler autoLeveler;
     juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch

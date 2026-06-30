@@ -42,6 +42,11 @@ struct EqParams
     float lpfHz      = 10000.0f;
 };
 
+// Which power-amp runs at the poweramp seam when `ampOn` is true: the NAM capture
+// (cab::AmpStage, default) or the white-box analytic tube stage (cab::poweramp::TubePowerAmp).
+// `ampOn` stays the master gate (off => neither runs) — this only picks between the two.
+enum class PowerAmpMode { capture, tube };
+
 struct Params
 {
     float inputGainDb  = 0.0f;
@@ -50,6 +55,7 @@ struct Params
     bool  bypass       = false;
     bool  preampOn     = false;  // run the NAM preamp stage first (input → PREAMP → POWERAMP → cab)
     bool  ampOn        = false;  // run the NAM poweramp stage in front of the cab
+    PowerAmpMode powerAmpMode = PowerAmpMode::capture;  // when ampOn: capture (NAM) vs tube (white-box)
     bool  autoLevel    = true;
     bool  aLoaded      = true;   // slot A has an IR; false = empty (no cab → dry passthrough on A)
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)

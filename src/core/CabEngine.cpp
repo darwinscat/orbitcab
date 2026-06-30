@@ -23,6 +23,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     preamp.prepare (sampleRate, maxBlock);
     ampEq.prepare (sampleRate, maxBlock, numChannels);
     amp.prepare (sampleRate, maxBlock);
+    powerAmpRouter.prepare (sampleRate, maxBlock, numChannels);
 
     for (int i = 0; i < 2; ++i)
         slot[i].prepare (sampleRate, maxBlock, numChannels);
@@ -59,6 +60,7 @@ void CabEngine::reset()
     preamp.reset();
     ampEq.reset();
     amp.reset();
+    powerAmpRouter.reset();
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
     autoLeveler.reset();
@@ -175,8 +177,11 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);
       nsEq = elapsedNs (a); }
     { const auto a = PerfClock::now();
-      if (p.ampOn)
-          amp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+      // The poweramp seam: ampOn gates the stage; powerAmpMode picks NAM capture (`amp`, default)
+      // vs the white-box tube stage. The router crossfades click-free on a live capture<->tube
+      // switch and keeps the NAM path bit-identical to the legacy `if (p.ampOn) amp.process(...)`.
+      powerAmpRouter.process (buffer.getArrayOfWritePointers(), numCh, numSamples,
+                              p.ampOn, p.powerAmpMode, amp);
       nsPwr = elapsedNs (a); }
 
     // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---

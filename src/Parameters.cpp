@@ -49,6 +49,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // (Output loudness-normalisation is always on — there's no user reason to hear models at
     // mismatched levels — so no param/toggle for it either.)
     layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "ampOn", kParamVersion }, "Amp (NAM)", false));
+    // POWERAMP MODE — picks WHICH power-amp runs when `ampOn` is on: the NAM capture (default, index 0)
+    // or the white-box analytic tube stage (index 1). `ampOn` stays the master gate; this is the
+    // project's first choice param. The engine crossfades click-free on a live capture<->tube switch
+    // (cab::poweramp::PowerAmpRouter). New ID at v1 — an old session with no "ampMode" restores to Capture.
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "ampMode", kParamVersion }, "Power-Amp Mode",
+                                                        StringArray { "Capture", "Tube" }, 0));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

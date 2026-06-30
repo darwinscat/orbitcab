@@ -177,6 +177,8 @@ target_sources(OrbitCab PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
     src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
+    src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
+    src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
 
 # ----------------------------------------------------------------------------
@@ -295,6 +297,8 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_compile_definitions(orbitcab_dsp_test PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -335,6 +339,8 @@ target_sources(orbitcab_fade_measure PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_compile_definitions(orbitcab_fade_measure PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -380,6 +386,8 @@ target_sources(OrbitCab_Tests PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
@@ -405,6 +413,16 @@ add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
 target_include_directories(orbitcab_coreconv_golden PRIVATE src)
 target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
+
+# ----------------------------------------------------------------------------
+# Headless golden test for the white-box tube poweramp scaffold (block 1): cab::poweramp::
+# TubePowerAmp is a STRICT pass-through (bit-exact identity, zero latency) before any DSP lands,
+# so later blocks measure their deltas against a known-clean baseline. JUCE-free — compiles only
+# the (header-light) stage, links nothing. CI gate (non-zero on failure).
+# ----------------------------------------------------------------------------
+add_executable(orbitcab_poweramp_scaffold_golden tests/PowerAmpScaffoldGolden.cpp src/poweramp/TubePowerAmp.cpp)
+target_include_directories(orbitcab_poweramp_scaffold_golden PRIVATE src)
+target_compile_features(orbitcab_poweramp_scaffold_golden PRIVATE cxx_std_20)
 
 # Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
 # real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).

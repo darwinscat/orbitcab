@@ -267,6 +267,7 @@ private:
     std::atomic<float>* inputGainParam = nullptr;
     std::atomic<float>* bypassParam    = nullptr;
     std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
+    std::atomic<float>* ampModeParam   = nullptr;   // poweramp mode: 0 = Capture (NAM), 1 = Tube (white-box)
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
     // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.
@@ -321,6 +322,7 @@ private:
     std::atomic<bool> pendingTrimReloadB { false };
     std::atomic<bool> pendingPowerampReload { false };   // ampOn toggled / selection changed → reload the .nam
     std::atomic<bool> pendingPreampReload   { false };   // preampOn toggled / selection changed → reload the .nam
+    std::atomic<bool> pendingLatencyRefresh { false };   // ampMode (capture<->tube) changed → recompute PDC only (no reload)
     std::atomic<bool> enginePrepared     { false };
 
     // Per-model output makeup (dB) applied on top of loudness normalisation — a single flat

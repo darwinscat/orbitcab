@@ -100,6 +100,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     gainParam      = apvts.getRawParameterValue ("gain");
     autoLevelParam = apvts.getRawParameterValue ("autoLevel");
     ampOnParam     = apvts.getRawParameterValue ("ampOn");
+    ampModeParam   = apvts.getRawParameterValue ("ampMode");
     preampOnParam  = apvts.getRawParameterValue ("preampOn");
     eqOnParam       = apvts.getRawParameterValue ("eqOn");
     eqBassParam     = apvts.getRawParameterValue ("eqBass");
@@ -134,6 +135,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     // selectPoweramp() flags the reload directly from the message thread.
     apvts.addParameterListener ("ampOn", this);
     apvts.addParameterListener ("preampOn", this);
+    apvts.addParameterListener ("ampMode", this);   // mode switch changes the reported PDC (capture vs tube latency)
 
     // Preset-centric first start: the live state IS a preset, and that preset is the bundled
     // default (Roche Limit) — not an ad-hoc bootstrap. Establishing it here (decode + store the
@@ -159,6 +161,7 @@ OrbitCabAudioProcessor::~OrbitCabAudioProcessor()
     apvts.removeParameterListener ("trimOnB", this);
     apvts.removeParameterListener ("ampOn", this);
     apvts.removeParameterListener ("preampOn", this);
+    apvts.removeParameterListener ("ampMode", this);
 }
 
 void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
@@ -170,6 +173,7 @@ void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
     else if (id == "trimOnB")  pendingTrimReloadB.store (true, std::memory_order_relaxed);
     else if (id == "ampOn")    pendingPowerampReload.store (true, std::memory_order_relaxed);
     else if (id == "preampOn") pendingPreampReload.store  (true, std::memory_order_relaxed);
+    else if (id == "ampMode")  pendingLatencyRefresh.store (true, std::memory_order_relaxed);
 }
 
 void OrbitCabAudioProcessor::timerCallback()
@@ -187,6 +191,7 @@ void OrbitCabAudioProcessor::timerCallback()
     if (pendingTrimReloadB.exchange (false)) applyTrimAndLoad (false);
     if (pendingPowerampReload.exchange (false)) { applyPoweramp(); updateLatency(); }
     if (pendingPreampReload.exchange  (false)) { applyPreamp();   updateLatency(); }
+    if (pendingLatencyRefresh.exchange (false)) updateLatency();   // poweramp mode (capture<->tube) changed: PDC only, no reload
 
     // Land any IR swap the convolver rejected while mid-crossfade (coalescing — see Convolver::flushPending).
     engine.pumpConvolverReloads();
@@ -817,8 +822,13 @@ void OrbitCabAudioProcessor::updateLatency()
     // them and rate-match only once — a single round-trip instead of two).
     const bool ampOn    = ampOnParam    != nullptr && ampOnParam->load()    > 0.5f;
     const bool preampOn = preampOnParam != nullptr && preampOnParam->load() > 0.5f;
-    const int lat = (ampOn    ? engine.ampLatencySamples()    : 0)
-                  + (preampOn ? engine.preampLatencySamples() : 0);
+    const bool tubeMode = ampModeParam  != nullptr && ampModeParam->load()  > 0.5f;
+    // Poweramp latency follows the active mode: Capture = the NAM rate-match, Tube = the tube
+    // stage (0 until oversampling lands). The two front NAM stages' latencies still sum.
+    const int pwrLat = ampOn ? (tubeMode ? engine.tubePowerAmpLatencySamples()
+                                          : engine.ampLatencySamples())
+                             : 0;
+    const int lat = pwrLat + (preampOn ? engine.preampLatencySamples() : 0);
     setLatencySamples (lat);
 }
 
@@ -1043,6 +1053,7 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.bypass       = bypassParam->load()    > 0.5f;
     p.preampOn     = preampOnParam->load()  > 0.5f;
     p.ampOn        = ampOnParam->load()     > 0.5f;
+    p.powerAmpMode = (ampModeParam->load() > 0.5f) ? cab::PowerAmpMode::tube : cab::PowerAmpMode::capture;
     p.autoLevel    = autoLevelParam->load() > 0.5f;
     p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
     p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);
