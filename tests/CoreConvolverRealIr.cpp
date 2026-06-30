@@ -11,7 +11,7 @@
 // (A direct JUCE-vs-core null was tried first, but juce::dsp::Convolution's async IR loader races without a
 //  message loop in a bare console app — non-deterministic; the math is the stronger, stable reference anyway.)
 
-#include "core/CoreConvolver.h"
+#include "core/Convolver.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -108,7 +108,7 @@ int main (int argc, char** argv)
         for (float& v : expIr) v *= g;
 
         const float* irp[1] { ir.data() };
-        cab::CoreConvolver<> cc; cc.prepare (sr, 512, 2, std::max (0.6, (int) expIr.size() / sr + 0.1)); cc.loadIR (irp, 1, irLen, irSr);
+        cab::Convolver cc; cc.prepare (sr, 512, 2, std::max (0.6, (int) expIr.size() / sr + 0.1)); cc.loadIR (irp, 1, irLen, irSr);
         runBlocks (cc, cL, cR, total);
 
         const int    from = warm + (int) expIr.size(), to = total;                            // steady region

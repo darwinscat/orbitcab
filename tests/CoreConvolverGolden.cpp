@@ -9,13 +9,13 @@
 //   • a true-stereo IR convolves each channel with its own IR.
 // JUCE-free — direct convolution is the ground truth; the live JUCE-vs-core ear A/B is the plugin.
 
-#include "core/CoreConvolver.h"
+#include "core/Convolver.h"
 
 #include <cmath>
 #include <cstdio>
 #include <vector>
 
-using cab::CoreConvolver;
+using cab::Convolver;
 
 namespace
 {
@@ -48,7 +48,7 @@ double maxAbsDiff (const std::vector<float>& a, const std::vector<float>& b, int
 }
 
 // process `total` samples through the convolver in a hostile variable block sweep (all <= maxBlock).
-void runVariableBlocks (CoreConvolver<>& c, std::vector<float>& L, std::vector<float>& R, int total)
+void runVariableBlocks (Convolver& c, std::vector<float>& L, std::vector<float>& R, int total)
 {
     static const int blk[] = { 1, 17, 64, 128, 333, 512 };
     int pos = 0, bi = 0;
@@ -71,7 +71,7 @@ int main()
 
     // --- Test 1: impulse -> IR (mono, gain 1) + mono broadcast to R ---
     {
-        CoreConvolver<> c; c.prepare (sr, 512, 2, maxIrSec);
+        Convolver c; c.prepare (sr, 512, 2, maxIrSec);
         const float* irp[1] { ir.data() }; c.loadIR (irp, 1, irLen, sr);
         std::vector<float> L ((std::size_t) total, 0.0f), R ((std::size_t) total, 0.0f);
         L[(std::size_t) warm] = 1.0f; R[(std::size_t) warm] = 1.0f;
@@ -84,7 +84,7 @@ int main()
 
     // --- Test 2: noise == direct conv (mono IR, independent L/R input) ---
     {
-        CoreConvolver<> c; c.prepare (sr, 512, 2, maxIrSec);
+        Convolver c; c.prepare (sr, 512, 2, maxIrSec);
         const float* irp[1] { ir.data() }; c.loadIR (irp, 1, irLen, sr);
         std::vector<float> L ((std::size_t) total, 0.0f), R ((std::size_t) total, 0.0f), Lin ((std::size_t) total, 0.0f), Rin ((std::size_t) total, 0.0f);
         Lcg rl { 999 }, rr { 55555 };
@@ -101,7 +101,7 @@ int main()
     {
         std::vector<float> irL = ir, irR ((std::size_t) irLen);
         { Lcg r { 777 }; for (int n = 0; n < irLen; ++n) { const float env = std::exp (-2.0f * (float) n / irLen); irR[(std::size_t) n] = env * (0.4f * r.next() + (n == 0 ? 0.8f : 0.0f)); } }
-        CoreConvolver<> c; c.prepare (sr, 512, 2, maxIrSec);
+        Convolver c; c.prepare (sr, 512, 2, maxIrSec);
         const float* irp[2] { irL.data(), irR.data() }; c.loadIR (irp, 2, irLen, sr);
         std::vector<float> L ((std::size_t) total, 0.0f), R ((std::size_t) total, 0.0f), Lin ((std::size_t) total, 0.0f), Rin ((std::size_t) total, 0.0f);
         Lcg rl { 222 }, rr { 333 };

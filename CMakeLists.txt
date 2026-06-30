@@ -104,7 +104,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.1" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.1.2" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -261,6 +261,7 @@ target_link_libraries(OrbitCab PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
+    felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -298,6 +299,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
     felitronics::analysis
+    felitronics::convolution
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -334,6 +336,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::convolution
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -371,6 +374,7 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     teq::core                     # cab::AmpEq (AmpEqTests)
     felitronics::analysis         # cab::CabEngine SpectrumTap capture
+    felitronics::convolution      # cab::Convolver
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
