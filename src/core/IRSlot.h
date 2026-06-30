@@ -37,6 +37,10 @@ public:
     // original buffer, no trim. Rare — only if the normal sample decode failed upstream.
     void loadBytesFallback (const void* data, size_t size);
 
+    // Retry a reload that the convolver rejected while mid-crossfade (coalescing — the engine accepts
+    // once idle). Call periodically from the message-thread reload poll. No-op when nothing is pending.
+    void pumpReload() { conv.flushPending(); }
+
     // Rebuild the truncated (trimOn + fraction) / head-trimmed (headOn skips the detected
     // leading silence) IR from the original, ~2 ms fade on the cut, atomic-swap into the
     // convolver. Coalesces identical reloads. Returns the resulting IR length in seconds.

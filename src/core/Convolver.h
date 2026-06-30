@@ -66,6 +66,17 @@ public:
     bool isBusy() const noexcept { return engine_.isBusy(); }
     static constexpr int latencySamples() noexcept { return 0; }
 
+    // Message thread. If a previous loadIR() was rejected because the engine was mid-crossfade, retry it
+    // now (the latest IR is kept staged in ir_). The engine accepts once its crossfade finishes, so a
+    // periodic caller (the reload poll) lands the coalesced swap. Returns true when nothing is pending.
+    bool flushPending()
+    {
+        if (pendingLen_ <= 0) return true;
+        if (engine_.setIr (ptrs_.data(), pendingNch_, pendingLen_)) { pendingLen_ = 0; return true; }
+        return false;
+    }
+    bool hasPending() const noexcept { return pendingLen_ > 0; }
+
 private:
     void buildAndStage (const float* const* samples, int nch, int len, double irSr, bool normaliseYes)
     {
