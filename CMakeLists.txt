@@ -386,3 +386,16 @@ add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
 target_include_directories(orbitcab_coreconv_golden PRIVATE src)
 target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
+
+# Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
+# real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).
+juce_add_console_app(orbitcab_realir PRODUCT_NAME "OrbitCabRealIr")
+target_sources(orbitcab_realir PRIVATE tests/CoreConvolverRealIr.cpp)
+target_include_directories(orbitcab_realir PRIVATE src)
+target_compile_definitions(orbitcab_realir PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+target_link_libraries(orbitcab_realir PRIVATE
+    felitronics::convolution
+    juce::juce_dsp
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)

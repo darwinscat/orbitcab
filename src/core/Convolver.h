@@ -32,6 +32,9 @@ public:
 
     void reset() { conv.reset(); }
 
+    // Active IR length once JUCE's async load has swapped it in (0 while still loading). For tests/UI.
+    int currentIrSize() const noexcept { return (int) conv.getCurrentIRSize(); }
+
     // Load a (planar) IR. The heavy FFT prep + atomic swap run on JUCE's loader
     // thread — RT-safe — so this is callable from the message thread. Loaded AS-IS
     // (Normalise::no); the engine's auto-level does the leveling. Stereo::yes => a
