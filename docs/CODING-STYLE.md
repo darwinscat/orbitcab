@@ -29,7 +29,7 @@ Params&)` + a `Params` POD. The Core never reads APVTS — the adapter packs the
 Inside `process()` and anything it calls: **no allocation, no locks, no IO, no `throw`.**
 
 - Preallocate in `prepare()` (filters, convolvers, scratch buffers).
-- Cross threads with `std::atomic` or lock-free FIFOs (see `cab::SpectrumTap`).
+- Cross threads with `std::atomic` or lock-free FIFOs (see `felitronics::analysis::SpectrumTap`).
 - IR loads run off-thread + atomic-swap inside `cab::Convolver` — never in `process()`.
 - Packing `Params` from APVTS atomics is plain float loads — RT-safe.
 
@@ -48,7 +48,7 @@ Inside `process()` and anything it calls: **no allocation, no locks, no IO, no `
 ## Files
 
 - One responsibility per file. Header-only for tiny pure units (`Params.h`, `AutoLeveler.h`,
-  `SpectrumTap.h`, `Convolver.h`, `IRSlot.h`); a `.cpp` only where there's real logic to
+  `Convolver.h`, `IRSlot.h`); a `.cpp` only where there's real logic to
   compile once and link into the test target (`CabEngine.cpp`, `IRSlot.cpp`).
 - **Abstraction only when there's a second user (YAGNI).** `Convolver` is concrete — its
   signatures are JUCE-free so a web/embedded backend can slot in later, but no `IConvolver`

@@ -86,7 +86,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
 {
     formatManager.registerBasicFormats();   // WAV/AIFF/FLAC… for IR decode (bundled + user files)
 
-    // Stamp the saved state with a version from day one (CLAUDE.md non-negotiable);
+    // Stamp the saved state with a version from day one (forward-compat is non-negotiable);
     // the migration logic that reads it back comes later.
     apvts.state.setProperty ("stateVersion", 1, nullptr);
 

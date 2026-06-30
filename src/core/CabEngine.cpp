@@ -317,12 +317,9 @@ double CabEngine::slotOriginalSampleRate (int s) const               { return sl
 
 bool CabEngine::pullSpectrum (bool pre, float* destFftSize)
 {
-    auto& tap = pre ? preTap : postTap;
-    if (! tap.ready.load (std::memory_order_acquire))
-        return false;
-    juce::FloatVectorOperations::copy (destFftSize, tap.data, fftSize);
-    tap.ready.store (false, std::memory_order_release);
-    return true;
+    // The SPSC ready-handshake lives in felitronics::analysis::SpectrumTap::tryPull: it copies the
+    // latest ready frame into destFftSize[fftSize] and re-arms, or returns false if none is ready.
+    return (pre ? preTap : postTap).tryPull (destFftSize);
 }
 
 } // namespace cab
