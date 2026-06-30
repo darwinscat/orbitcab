@@ -98,16 +98,24 @@ target_include_directories(nam_core SYSTEM PUBLIC
 )
 
 # ----------------------------------------------------------------------------
-# teq — reusable, framework-agnostic matched-EQ DSP core (the amp tone stack: cab::AmpEq).
-# Public, AGPL, header-only; pinned by tag like JUCE. SOURCE_SUBDIR pulls ONLY the teq/
-# subdir of the tabby-eq repo — never the TabbyEQ plugin or its JUCE. Link the namespaced
-# target teq::core; consumers then `#include <teq/EqEngine.h>`. Recorded in THIRD_PARTY_NOTICES.md.
+# felitronics-core — the shared, JUCE-free, header-only DSP core. OrbitCab consumes `teq::core`
+# (the amp tone stack cab::AmpEq, via the transitional `<teq/*.h>` compat shim — src/ unchanged) and
+# `felitronics::analysis` (the cab::CabEngine SpectrumTap). Public, AGPL, pinned by tag like JUCE.
+# HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
+# public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-# Migrated to felitronics-core (the shared JUCE-free DSP core); `teq::core` is the transitional compat
-# shim (<teq/*.h> re-exports), so the source below is unchanged. Local dev consumes the sibling checkout
-# via SOURCE_DIR; switch to GIT_REPOSITORY + GIT_TAG when felitronics-core is published.
-set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "felitronics-core source (local dev)")
-FetchContent_Declare(felitronics_core SOURCE_DIR "${ORBITCAB_FCORE_DIR}")
+set(ORBITCAB_FCORE_TAG "v0.1.1" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
+if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
+    message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
+    FetchContent_Declare(felitronics_core SOURCE_DIR "${ORBITCAB_FCORE_DIR}")
+else()
+    message(STATUS "felitronics-core: fetching ${ORBITCAB_FCORE_TAG} from GitHub")
+    FetchContent_Declare(felitronics_core
+        GIT_REPOSITORY https://github.com/darwinscat/felitronics-core.git
+        GIT_TAG        ${ORBITCAB_FCORE_TAG}
+        GIT_SHALLOW    TRUE)
+endif()
 FetchContent_MakeAvailable(felitronics_core)
 # Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
 # (same posture as nam_core / Eigen above).
