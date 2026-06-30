@@ -63,8 +63,9 @@ convergence/clamp/gate). `tools/dsp-test` drives the full processor for integrat
 round-trip. Both are CI gates.
 
 **File map.** `src/core/` = `Params.h · CabEngine.{h,cpp} · IRSlot.{h,cpp} · Convolver.h ·
-AmpStage.{h,cpp} (NAM poweramp seam) · StreamResampler.h (rate-match) · AutoLeveler.h ·
-SpectrumTap.h`. `src/` (adapter) = `PluginProcessor.{h,cpp} · Parameters.{h,cpp} · IRLibrary.h`.
+AmpStage.{h,cpp} (NAM poweramp seam) · StreamResampler.h (rate-match) · AutoLeveler.h`
+(the analyser `SpectrumTap` now comes from `felitronics::analysis`). `src/` (adapter) =
+`PluginProcessor.{h,cpp} · Parameters.{h,cpp} · IRLibrary.h`.
 `src/ui/` = the draw-only leaves (incl. `TubeDisplay.h` — the glowing poweramp tubes).
 `tests/` = the headless core tests (incl. `AmpStageTests.cpp`).
 

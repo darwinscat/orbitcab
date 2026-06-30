@@ -7,7 +7,7 @@
 ## Toolchain
 
 - **CMake** ≥ 3.22 — drives everything.
-- **JUCE 8** — fetched by CMake (`FetchContent`, pinned to tag `8.0.13`). Not
+- **JUCE 8** — fetched by CMake (`FetchContent`, pinned to tag `8.0.14`). Not
   vendored, not system-installed. The version is the single knob `ORBITCAB_JUCE_TAG` in
   `CMakeLists.txt` — bump it there to upgrade JUCE.
 - **Compiler:** Apple clang on macOS, MSVC on Windows. **C++20**.

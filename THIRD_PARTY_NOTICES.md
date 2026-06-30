@@ -53,14 +53,15 @@ The bundled content (IRs, font) is ledgered in
   - **nlohmann/json** (`json.hpp`, header-only) — **MIT** — © Niels Lohmann —
     https://github.com/nlohmann/json (vendored in the NAM repo).
 
-### teq (matched-EQ DSP core — the amp tone stack)
+### felitronics-core (shared JUCE-free DSP core — the amp tone stack + the analyser tap)
 - **License:** GNU AGPLv3-or-later (same as OrbitCab; AGPL-compatible by identity).
-- **Copyright:** © Darwin's Cat — Oleh Tsymaienko. First-party, but a **separately
-  versioned** sibling library (the JUCE-free DSP core of TabbyEQ), so it's recorded here.
-- **Source:** https://github.com/darwinscat/tabby-eq — fetched via CMake `FetchContent`
-  at a pinned tag (`ORBITCAB_TEQ_TAG` in [`CMakeLists.txt`](CMakeLists.txt)) using
-  `SOURCE_SUBDIR teq`, so only the header-only `teq/` core is pulled in (not the TabbyEQ
-  plugin or its JUCE). Linked as `teq::core`; used by `cab::AmpEq` for the amp EQ stage.
+- **Copyright:** © Darwin's Cat — Oleh Tsymaienko and Alisa Lafoks. First-party, but a
+  **separately versioned** sibling library (the shared JUCE-free DSP core), so it's recorded here.
+- **Source:** https://github.com/darwinscat/felitronics-core — fetched via CMake `FetchContent`
+  at a pinned release tag (`ORBITCAB_FCORE_TAG` in [`CMakeLists.txt`](CMakeLists.txt)), or a local
+  sibling checkout for core co-development. Header-only, JUCE-free. Linked as `teq::core` (the
+  matched-EQ engine via the `<teq/*.h>` compat shim; used by `cab::AmpEq`) and `felitronics::analysis`
+  (the lock-free `SpectrumTap` used by `cab::CabEngine`).
 
 ---
 
