@@ -4,10 +4,27 @@
 #include "IRSlot.h"
 #include "IRMath.h"
 
+#include <juce_audio_formats/juce_audio_formats.h>   // MemoryInputStream + WAV reader for the byte-decode fallback
 #include <cmath>
 
 namespace cab
 {
+
+//==============================================================================
+// Bundled-IR fallback: decode encoded bytes here (adapter-level, JUCE) into planar samples, then hand
+// them to the JUCE-free convolver with the Normalise::yes energy norm (mirrors the old
+// juce::dsp::Convolution byte path). Rare — hit only when the normal sample decode failed upstream.
+void IRSlot::loadBytesFallback (const void* data, size_t size)
+{
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> rd (
+        fm.createReaderFor (std::make_unique<juce::MemoryInputStream> (data, size, false)));
+    if (rd == nullptr || rd->lengthInSamples <= 0) return;
+    const int n = (int) rd->lengthInSamples;
+    juce::AudioBuffer<float> ir ((int) rd->numChannels, n);
+    rd->read (&ir, 0, n, 0, true, true);
+    conv.loadIRNormalised (ir.getArrayOfReadPointers(), ir.getNumChannels(), n, rd->sampleRate);
+}
 
 //==============================================================================
 void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
