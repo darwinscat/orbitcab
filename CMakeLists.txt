@@ -110,7 +110,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.2" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.1.3" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -280,6 +280,9 @@ target_link_libraries(OrbitCab PRIVATE
 # DSP behaviour (e.g. TRIM actually shortens the IR). Not part of the plugin build.
 # ----------------------------------------------------------------------------
 juce_add_console_app(orbitcab_dsp_test PRODUCT_NAME "OrbitCabDspTest")
+if(MSVC)
+    target_link_options(orbitcab_dsp_test PRIVATE /STACK:8388608)   # large processor on the stack — 1 MB default overflows
+endif()
 target_sources(orbitcab_dsp_test PRIVATE
     tools/dsp-test/test_trim.cpp
     src/PluginProcessor.cpp
@@ -317,6 +320,9 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
 # mute<->auto-level interaction is measured, not ear-guessed. Dev tool; not a CI gate.
 # ----------------------------------------------------------------------------
 juce_add_console_app(orbitcab_fade_measure PRODUCT_NAME "OrbitCabFadeMeasure")
+if(MSVC)
+    target_link_options(orbitcab_fade_measure PRIVATE /STACK:8388608)
+endif()
 target_sources(orbitcab_fade_measure PRIVATE
     tools/dsp-test/measure_fades.cpp
     src/PluginProcessor.cpp
@@ -355,6 +361,9 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
 # core/adapter split. Run it as a CI gate (returns non-zero on any failure).
 # ----------------------------------------------------------------------------
 juce_add_console_app(OrbitCab_Tests PRODUCT_NAME "OrbitCabTests")
+if(MSVC)
+    target_link_options(OrbitCab_Tests PRIVATE /STACK:8388608)
+endif()
 target_sources(OrbitCab_Tests PRIVATE
     tests/TestMain.cpp
     tests/CabEngineTests.cpp
