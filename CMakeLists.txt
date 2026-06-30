@@ -376,3 +376,13 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+# ----------------------------------------------------------------------------
+# Headless golden test for the JUCE-FREE cab convolution backend (cab::CoreConvolver over
+# felitronics::convolution) vs a direct-convolution reference. No JUCE at all — proves the de-JUCE
+# convolution is sound-preserving before the in-plugin A/B switch. CI gate (non-zero on failure).
+# ----------------------------------------------------------------------------
+add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
+target_include_directories(orbitcab_coreconv_golden PRIVATE src)
+target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
+target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
