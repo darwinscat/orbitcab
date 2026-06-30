@@ -13,8 +13,12 @@
 
 int main()
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);    // [DIAG] unbuffered — a Windows crash must not swallow output
+    std::printf ("[dsp] main\n");
     juce::ScopedJuceInitialiser_GUI gui;          // MessageManager for the AsyncUpdater
+    std::printf ("[dsp] juce-init\n");
     OrbitCabAudioProcessor proc;
+    std::printf ("[dsp] proc-constructed\n");
 
     const double sr = 48000.0;
     const int    block = 512;
@@ -40,8 +44,10 @@ int main()
     auto tailMs = [&] (float trim) -> double
     {
         proc.setTrim (trim, true);
-        pump (500);                                // async reload + background engine build
-        for (int b = 0; b < 12; ++b) { buf.clear(); proc.processBlock (buf, midi); }  // settle crossfade
+        pump (300);                                // let the message-thread reload kick off
+        // Model the plugin's CONCURRENT audio + 30 Hz reload poll: advance the crossfade with audio AND
+        // pump the poll, so a swap the convolver coalesced (rejected mid-crossfade) lands, then settles.
+        for (int b = 0; b < 48; ++b) { buf.clear(); proc.processBlock (buf, midi); if (b % 4 == 3) pump (40); }
 
         double lastMs = 0.0;
         int    total  = 0;
@@ -100,8 +106,8 @@ int main()
     {
         setP ("trimOnA", 0.0f);
         proc.setHeadTrim (head);                   // global session setting (no longer a param)
-        pump (500);
-        for (int b = 0; b < 12; ++b) { buf.clear(); proc.processBlock (buf, midi); }   // settle
+        pump (300);
+        for (int b = 0; b < 48; ++b) { buf.clear(); proc.processBlock (buf, midi); if (b % 4 == 3) pump (40); }  // concurrent audio + reload poll
 
         int total = 0;
         const int blocks = (int) (1.0 * sr / block);

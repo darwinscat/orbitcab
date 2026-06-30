@@ -15,6 +15,12 @@ project(OrbitCab VERSION 1.6.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(MSVC)
+    # 8 MB stack (the Unix default). The dsp-test console apps put the whole OrbitCabAudioProcessor on the
+    # stack; MSVC's 1 MB default overflows on construction → an instant, output-less crash. Match Unix.
+    add_link_options(/STACK:8388608)
+endif()
+
 # Universal binary on Apple Silicon + Intel. Set at configure time only (it has
 # no effect after the cache is written). Skipped if the caller already chose.
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
@@ -104,7 +110,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.1" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.1.2" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -261,6 +267,7 @@ target_link_libraries(OrbitCab PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
+    felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -298,6 +305,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
     felitronics::analysis
+    felitronics::convolution
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -334,6 +342,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::convolution
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -371,8 +380,32 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     teq::core                     # cab::AmpEq (AmpEqTests)
     felitronics::analysis         # cab::CabEngine SpectrumTap capture
+    felitronics::convolution      # cab::Convolver
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+# ----------------------------------------------------------------------------
+# Headless golden test for the JUCE-FREE cab convolution backend (cab::CoreConvolver over
+# felitronics::convolution) vs a direct-convolution reference. No JUCE at all — proves the de-JUCE
+# convolution is sound-preserving before the in-plugin A/B switch. CI gate (non-zero on failure).
+# ----------------------------------------------------------------------------
+add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
+target_include_directories(orbitcab_coreconv_golden PRIVATE src)
+target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
+target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
+
+# Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
+# real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).
+juce_add_console_app(orbitcab_realir PRODUCT_NAME "OrbitCabRealIr")
+target_sources(orbitcab_realir PRIVATE tests/CoreConvolverRealIr.cpp)
+target_include_directories(orbitcab_realir PRIVATE src)
+target_compile_definitions(orbitcab_realir PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+target_link_libraries(orbitcab_realir PRIVATE
+    felitronics::convolution
+    juce::juce_dsp
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)

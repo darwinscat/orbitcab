@@ -187,6 +187,9 @@ void OrbitCabAudioProcessor::timerCallback()
     if (pendingTrimReloadB.exchange (false)) applyTrimAndLoad (false);
     if (pendingPowerampReload.exchange (false)) { applyPoweramp(); updateLatency(); }
     if (pendingPreampReload.exchange  (false)) { applyPreamp();   updateLatency(); }
+
+    // Land any IR swap the convolver rejected while mid-crossfade (coalescing — see Convolver::flushPending).
+    engine.pumpConvolverReloads();
 }
 
 //==============================================================================

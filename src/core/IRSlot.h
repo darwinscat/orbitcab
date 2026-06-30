@@ -33,9 +33,13 @@ public:
     void clearOriginal();
     bool hasOriginal() const { return original.getNumSamples() > 0; }
 
-    // Bundled fallback: load encoded bytes straight into the convolver (JUCE normalises);
-    // no original buffer, no trim.
-    void loadBytesFallback (const void* data, size_t size) { conv.loadIRBytes (data, size); }
+    // Bundled fallback: decode encoded bytes (adapter-level) and load with the energy-norm; no
+    // original buffer, no trim. Rare — only if the normal sample decode failed upstream.
+    void loadBytesFallback (const void* data, size_t size);
+
+    // Retry a reload that the convolver rejected while mid-crossfade (coalescing — the engine accepts
+    // once idle). Call periodically from the message-thread reload poll. No-op when nothing is pending.
+    void pumpReload() { conv.flushPending(); }
 
     // Rebuild the truncated (trimOn + fraction) / head-trimmed (headOn skips the detected
     // leading silence) IR from the original, ~2 ms fade on the cut, atomic-swap into the

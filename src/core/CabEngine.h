@@ -73,6 +73,7 @@ public:
     double slotTrimmedSeconds   (int slot) const;
     const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
     double slotOriginalSampleRate (int slot) const;
+    void   pumpConvolverReloads() { slot[0].pumpReload(); slot[1].pumpReload(); }   // retry coalesced IR swaps (poll)
 
     //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStages ----------
     // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
