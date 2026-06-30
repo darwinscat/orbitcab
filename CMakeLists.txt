@@ -110,7 +110,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.2" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.1.3" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
