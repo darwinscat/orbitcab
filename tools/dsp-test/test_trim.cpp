@@ -13,8 +13,12 @@
 
 int main()
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);    // [DIAG] unbuffered — a Windows crash must not swallow output
+    std::printf ("[dsp] main\n");
     juce::ScopedJuceInitialiser_GUI gui;          // MessageManager for the AsyncUpdater
+    std::printf ("[dsp] juce-init\n");
     OrbitCabAudioProcessor proc;
+    std::printf ("[dsp] proc-constructed\n");
 
     const double sr = 48000.0;
     const int    block = 512;

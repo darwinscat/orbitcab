@@ -15,6 +15,12 @@ project(OrbitCab VERSION 1.6.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(MSVC)
+    # 8 MB stack (the Unix default). The dsp-test console apps put the whole OrbitCabAudioProcessor on the
+    # stack; MSVC's 1 MB default overflows on construction → an instant, output-less crash. Match Unix.
+    add_link_options(/STACK:8388608)
+endif()
+
 # Universal binary on Apple Silicon + Intel. Set at configure time only (it has
 # no effect after the cache is written). Skipped if the caller already chose.
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
