@@ -64,7 +64,7 @@ design** (2nd consilium + blind) → implement tests → fix real bugs / documen
 Pure kernel free of OS; OS factor injectable via `prepare(sr, maxBlock, osFactor=4)`. Shipping callers
 pass the default → identical codegen. Enables exact kernel asserts + the 4x-vs-32x aliasing method.
 
-### Maniacal battery (26 checks, all green) — written to BREAK the idea, not to pass
+### Maniacal battery (30 checks, all green) — written to BREAK the idea, not to pass
 Kernel: PP exactly odd (`max|f(x)+f(-x)| = 0.0`, even harmonics −172 dBc), SE asymmetric, bounded.
 Stage: measured impulse latency == 31; block-size determinism **bit-exact (0.0)**; THD monotonic per
 tube; PP even < −90 dBc & SE even present; drive-comp small-signal unity **within 0.002 dB**; near-identity
@@ -91,7 +91,7 @@ cross-instance determinism, stereo isolation+symmetry, param-change zipper, PP-u
 
 ### Validation
 Whole project builds (plugin + dsp_test + fade_measure + tests + golden) EXIT 0, zero warnings in poweramp
-files. Core unit tests **491/491**. Maniacal golden **26/26**. Backward compat preserved.
+files. Core unit tests **491/491**. Maniacal golden **30/30**. Backward compat preserved.
 
 ### After-review hardening (3 Claude review agents on the block-2 diff + a maniacal test-rigor audit)
 The DSP core was confirmed correct; the review found + fixed:
@@ -103,8 +103,11 @@ The DSP core was confirmed correct; the review found + fixed:
   **reference-free non-harmonic** metric (no 32x reference) that reveals the honest **~-73 dBc 4x/tpp=32
   oversampler floor** — constant vs drive ⇒ it's the OS filter quality, and the stage adds NOTHING above it
   in the guitar range (the MAP proves it). Tightened S7 (~10x), added a non-finite-param test, honest
-  renames. Battery now **28/28**.
+  renames, plus a linear-phase (IR-symmetry) and a sample-rate-independence (44.1/88.2/96/192 kHz) test.
+  Battery now **30/30**.
 - **CI:** the core golden was compiled but never RUN — added it as a hard gate in `build.yml`.
+- **Rebased** onto `origin/main` (`22f0f93`, PR #90): the MSVC win-stack fixes + the felitronics-core
+  **v0.1.3** pin — clean rebase (no conflicts), re-verified 491/491 + 30/30 on the new base.
 - **Deferred (documented):** the capture↔tube crossfade isn't latency-aligned now that tube latency = 31
   (a ~0.65 ms comb during a *manual* mode switch; a delay-line align is a small later fix). Beating the
   -73 dBc OS floor needs a sharper OS (higher tpp/factor) → a CPU + latency tradeoff, unnecessary under a cab IR.

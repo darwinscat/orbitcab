@@ -258,6 +258,31 @@ int main()
         std::printf ("       S7 near-identity max-abs = %.2e (input amp 0.01)\n", mx);
         check (mx < 2.5e-4, "S7 near-identity at Drive=min (max-abs < 2.5e-4 on amp 0.01, latency-aligned)");
     }
+    // S8: linear phase — the OS FIR round-trip is symmetric about its +31 centre. A min-phase regression
+    // that kept the peak at +31 would still break symmetry. Small impulse ⇒ ~linear; assert the main lobe
+    // is symmetric (the one-pole DC-block adds only a tiny sub-10 Hz asymmetric tail, negligible in-lobe).
+    {
+        std::vector<float> in (4096, 0.0f); in[1000] = 1e-3f;
+        auto out = runStage (P (0.0f, false), in);
+        const int c = 1000 + kLat; const double pk = std::fabs (out[(std::size_t) c]); double asym = 0;
+        for (int k = 1; k <= 20; ++k) asym = std::max (asym, (double) std::fabs (out[(std::size_t) (c + k)] - out[(std::size_t) (c - k)]));
+        std::printf ("       S8 impulse asymmetry about +31 = %.2f%% of peak\n", 100.0 * asym / std::max (1e-30, pk));
+        check (asym < 0.02 * pk, "S8 linear phase: impulse response symmetric about +31 (main lobe)");
+    }
+    // S9: sample-rate independence — latency 31, finite, bounded at 44.1/88.2/96/192 kHz. The DC-block
+    // coeff, the FIR cutoff, and the 25 ms smoothing all scale with fs; hard-coding 48 k would hide an fs bug.
+    {
+        bool ok = true;
+        for (double sr : { 44100.0, 88200.0, 96000.0, 192000.0 })
+        {
+            TubePowerAmp d; d.prepare (sr, kMaxBlk, 4);
+            ok = ok && (d.latencySamples() == kLat);
+            std::vector<float> v (4096); { unsigned long long s = 7; for (auto& x : v) { s = s * 6364136223846793005ULL + 1ULL; x = 0.5f * ((float) ((s >> 40) & 0xFFFFFF) / 8388608.0f - 1.0f); } }
+            for (int pos = 0; pos < 4096; pos += 512) { d.setParams (P (24.0f, true, 2)); float* io[1] { v.data() + pos }; d.process (io, 1, 512); }
+            ok = ok && allFinite (v) && maxAbs (v, 0, 4096) < 4.0;
+        }
+        check (ok, "S9 sample-rate independence: latency 31 + finite + bounded at 44.1/88.2/96/192 kHz");
+    }
 
     // ===================== ALIASING — reference-free non-harmonic energy =====================
     // A memoryless waveshaper on a pure sine emits ONLY exact harmonics k·f0, so ANY energy at NON-harmonic
