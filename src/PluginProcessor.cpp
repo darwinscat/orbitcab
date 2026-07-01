@@ -830,11 +830,12 @@ void OrbitCabAudioProcessor::updateLatency()
     const bool ampOn    = ampOnParam    != nullptr && ampOnParam->load()    > 0.5f;
     const bool preampOn = preampOnParam != nullptr && preampOnParam->load() > 0.5f;
     const bool tubeMode = ampModeParam  != nullptr && ampModeParam->load()  > 0.5f;
-    // Poweramp latency follows the active mode: Capture = the NAM rate-match, Tube = the tube
-    // stage (0 until oversampling lands). The two front NAM stages' latencies still sum.
-    const int pwrLat = ampOn ? (tubeMode ? engine.tubePowerAmpLatencySamples()
-                                          : engine.ampLatencySamples())
-                             : 0;
+    // Poweramp latency follows the selected MODE, not the power toggle. Tube mode reports the tube's
+    // latency (its oversampling) whether the SIMULATOR is powered on OR off — the router delays the
+    // dry/off path by the same amount — so toggling the SIMULATOR never changes PDC (no host re-sync
+    // gap, no crossfade misalignment). Capture mode is ~zero-latency, so it reports only when on.
+    const int pwrLat = tubeMode ? engine.tubePowerAmpLatencySamples()
+                                : (ampOn ? engine.ampLatencySamples() : 0);
     const int lat = pwrLat + (preampOn ? engine.preampLatencySamples() : 0);
     setLatencySamples (lat);
 }

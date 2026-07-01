@@ -6,7 +6,6 @@
 #include <juce_dsp/juce_dsp.h>          // AudioBuffer scratch + SmoothedValue fade
 #include "TubePowerAmp.h"
 #include "../core/Params.h"             // cab::PowerAmpMode
-#include "../core/AutoLeveler.h"        // tube loudness-normalization (setting-invariant, no enable kick)
 
 namespace cab { class AmpStage; }       // forward-decl — the NAM capture, owned by CabEngine
 
@@ -31,11 +30,15 @@ namespace cab { class AmpStage; }       // forward-decl — the NAM capture, own
 // twice in a block. A stage that goes idle (faded out) is no longer fed; on switching back it
 // resumes from stale state — acceptable for a 30 ms fade, revisited if it ever audibly matters.
 //
-// Latency note: the two stages can report different host-rate latencies (a rate-matched NAM
-// capture vs the tube). During the 30 ms blend they are NOT latency-aligned, so the crossfade is
-// mildly phase-smeared and the host PDC (reported on the mode switch) leads the audio swap by up
-// to the fade length. Negligible while the tube stage is zero-latency; revisit (delay-align the
-// endpoints during the fade) when oversampling gives the tube real latency — see PLAN.md.
+// Latency alignment (tube mode): the tube stage has real host-rate latency (its oversampling —
+// ~31 samples), whereas OFF (dry) and the NAM capture are ~zero-latency. If the reported PDC
+// changed when the SIMULATOR power toggled (0 ↔ tubeLatency), the host would re-sync — an audible
+// GAP — and the off↔tube crossfade would blend a 0-latency dry against a 31-sample-late tube
+// (comb / level jump). So in TUBE MODE this router reports a CONSTANT latency (= the tube's) for
+// BOTH power states and delays the OFF/dry path by that same amount (an always-warm delay line):
+// toggling the SIMULATOR never changes PDC (no gap) and the crossfade blends time-aligned signals
+// (no jump). Capture mode stays ~zero-latency on both sides, so it needs no alignment; a capture↔
+// tube MODE switch still changes PDC (deliberate, rare — a plugin-like re-sync there is expected).
 //
 // 🔴 RT: process() never allocates/locks/throws — the scratch is allocated in prepare().
 //==============================================================================
@@ -63,25 +66,33 @@ private:
                        : (mode == PowerAmpMode::tube ? Active::tube : Active::capture);
     }
 
-    // Render one stage in place on `io` (off = no-op → dry passes through).
-    void render (Active a, float* const* io, int numChannels, int numSamples, AmpStage& nam) noexcept;
+    // Render one stage into `dst` (off in tube mode → the latency-aligned dry from `dryScratch`;
+    // off in capture mode → no-op, raw dry passes through).
+    void render (Active a, float* const* dst, int numChannels, int numSamples,
+                 AmpStage& nam, bool tubeMode) noexcept;
+
+    // Advance the dry-alignment delay once per block (kept warm EVERY block, any mode) and leave
+    // `dryScratch` = the raw input delayed by the tube's latency — the dry the host expects at PDC
+    // = tubeLatency, used by the OFF path in tube mode. No-op copy when the tube reports 0 latency.
+    void advanceDryAlign (const float* const* io, int numChannels, int numSamples) noexcept;
 
     TubePowerAmp tube;
     juce::AudioBuffer<float>   scratch;             // preallocated: holds the fade-FROM render
+    juce::AudioBuffer<float>   dryScratch;          // preallocated: the raw input delayed by tubeLatency
+    juce::AudioBuffer<float>   dryRing;             // persistent alignLatency-sample delay history (per channel)
+    int  dryRingPos   = 0;                          // shared write/read cursor into dryRing
+    int  alignLatency = 0;                          // = tube.latencySamples(), captured in prepare()
     juce::SmoothedValue<float> xfade { 1.0f };      // 0→1 ramp during a capture<->tube switch
     Active current  = Active::off;
     Active fadeFrom = Active::off;
     bool   fading   = false;
     bool   seeded   = false;                        // first block after prepare jumps to target (no ramp)
 
-    // Tube loudness-normalization: hold the tube's OUTPUT loudness = its INPUT loudness (setting-
-    // invariant) so enabling it — at ANY drive — doesn't jump the post-poweramp level → no AutoLeveler
-    // kick, honest A/B vs the loudness-normalized capture. Drive then changes CHARACTER, not loudness.
-    // The Tube Output knob is stripped from the core and re-applied here (tubeOutGain), on top of the match.
-    cab::AutoLeveler tubeLevel;
-    float tubeOutGain      = 1.0f;
-    bool  tubeSeed         = true;                  // snap the leveler to the converged gain on (re)activation
-    bool  tubeRenderedLast = false;                 // detect tube (re)activation → trigger the seed
+    // Deterministic per-voicing/drive LEVEL-MATCH make-up: the drive-comp (autoComp) ducks the driven
+    // level below dry by a measured amount = 0.95·(Drive − thr[voicing]); this make-up gain undoes it so
+    // the tube sits at ~the dry/capture level → no level jump on enable/disable (the "kick"). Purely a
+    // function of the params (no follower) → deterministic, no chase/swell. Recomputed per block.
+    float  tubeMakeup = 1.0f;
 };
 
 } // namespace cab::poweramp
