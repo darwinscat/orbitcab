@@ -80,6 +80,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeLoad",     kParamVersion }, "Tube Load",
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // reactive-speaker virtual load; OFF by default (preserves the base tone)
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeIron",     kParamVersion }, "Tube Iron",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // output-transformer (LF grind + HF rolloff); OFF by default
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeBias",     kParamVersion }, "Tube Bias",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // dynamic bias-shift / bloom under sag; OFF by default (needs Sag > 0)
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

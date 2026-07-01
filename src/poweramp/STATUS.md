@@ -190,5 +190,25 @@ Between block 3 and block 4 (no new DSP block), the stage was made shippable + t
   - B3 → presence delivers the voicing's spec'd boost (≈dbToGain(presenceMaxDb)).
   Golden **43/43** again.
 
-### Next: Block 4 — virtual load + output transformer (+ the deferred per-sample bias, plate/screen sag).
-Revisit the 8× / ADAA anti-alias decision (and the capture↔tube crossfade latency-align) when the tube stage gains real HF-hard-clip use.
+## Block 4 — virtual load + output transformer + dynamic bias (all knob-scaled, default OFF)
+
+Three "amp realism" stages, each a knob (default 0 ⇒ block-3-identical, golden-clean), consilium-designed
+(codex + deepseek). The user approved stage 1 by ear ("ОХРЕНЕТЬ как хорошо") + asked for UI knobs on all.
+- **Stage 1 — VIRTUAL LOAD** (`Load` knob): reactive-speaker impedance pre-EQ BEFORE the nonlinearity —
+  per-voicing LF cone-resonance Bell + HF inductive-rise HighShelf (felitronics Svf). Golden B7 (spec-exact).
+- **Stage 2 — OUTPUT TRANSFORMER** (`Iron` knob): OS-domain LF core saturation (low-note grind/compression,
+  split-band tanh) + HF leakage rolloff. Golden B8.
+- **Stage 3 — DYNAMIC BIAS** (`Bloom` knob): per-sample PP-bias drift toward class-B under sag (crossover
+  bloom) via a `TubeStage::at(u, vbDelta)` overload — per-sample (ZOH from the host-rate droop) so it stays
+  block-size-safe, not a per-block reconfigure. Needs Sag > 0. Golden B9.
+- UI: SIMULATOR row is now Drive · Sag · Presence · Depth · **Load · Iron · Bloom** · Output (8 knobs).
+- Golden **50/50**. Values are consilium/by-ear starting points; tune per voicing.
+
+### KNOWN LIMITATION (found by B9, pre-existing block 3): feel-layer block-size determinism
+At feel=0 the stage is BIT-EXACT across block schedules (S3 = 0.0). But with the FEEL layer engaged there is
+a small (~1e-2, steady-state) block-size discrepancy — it is present in block 3's sag/presence/depth (which
+shipped and sound right) and is NOT a block-4 regression (the full block-4 path measures 8.3e-3 vs block-3
+feel's 1.64e-2). Suspected: the per-block coefficient smoother interacting with long-memory feel state
+(sag envelope τ up to 500 ms + the Svf shelves). Inaudible; B9 guards against block 4 making it worse.
+TODO: root-cause (candidates: Svf setParams-per-block, or seed/settle the feel smoothers) and restore
+bit-exact feel-on determinism. Revisit the 8× / ADAA anti-alias decision when the tube gains HF-hard-clip use.

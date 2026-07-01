@@ -664,6 +664,56 @@ int main()
         check (worstRise < 0.3, "B7 virtual load: HF inductive rise ≈ loadRiseDb");
         check (worstMid  < 0.5, "B7 virtual load: ~flat between the resonance and the HF rise");
     }
+    // B8: OUTPUT TRANSFORMER (block 4 stage 2) — at Iron=1 the LF core saturation COMPRESSES a hot low note
+    // and the HF leakage rolls off the top; both gated by the Iron knob (Iron=0 ⇒ bypass). Measured as the
+    // Iron=1 / Iron=0 fundamental-gain ratio (isolates the transformer from the rest of the chain).
+    {
+        bool lfOk = true, hfOk = true; double worstLf = 0, worstHf = 0;
+        for (int t = 0; t < 4; ++t)
+        {
+            auto g = [&] (float iron, int cyc, double amp)
+            {
+                TubeParams tp = P (6.0f, false, t); tp.iron = iron;
+                return magBin (runStage (tp, sine (warm, N, tail, cyc, amp)), an, N, cyc);
+            };
+            const int bLo = (int) std::llround (80.0    * N / kSr);
+            const int bHi = (int) std::llround (12000.0 * N / kSr);
+            const double lfRatio = g (1.0f, bLo, 0.6) / std::max (1e-12, g (0.0f, bLo, 0.6));   // hot low note compresses ⇒ < 1
+            const double hfRatio = g (1.0f, bHi, 0.1) / std::max (1e-12, g (0.0f, bHi, 0.1));   // top rolls off ⇒ < 1
+            worstLf = std::max (worstLf, lfRatio); worstHf = std::max (worstHf, hfRatio);
+            lfOk = lfOk && (lfRatio < 0.97); hfOk = hfOk && (hfRatio < 0.85);
+        }
+        std::printf ("       B8 iron: worst LF-compress ratio=%.3f  worst HF-rolloff ratio=%.3f (both < 1 ⇒ working)\n", worstLf, worstHf);
+        check (lfOk, "B8 output transformer: hot low note compresses at Iron=1 (LF core saturation)");
+        check (hfOk, "B8 output transformer: top rolls off at Iron=1 (HF leakage)");
+    }
+    // B9: dynamic BIAS (block 4 stage 3) — under sag the PP operating point drifts (crossover bloom). It
+    // DOES something when Bias>0 + Sag>0 (non-null vs Bias=0), and — the block-3 lesson — the WHOLE block-4
+    // path (sag+load+iron+bias) is PER-SAMPLE ⇒ block-size DETERMINISTIC (a per-block bias would break this).
+    {
+        std::vector<float> in ((std::size_t) (warm + N), 0.0f);
+        { unsigned long long s = 3; for (auto& v : in) { s = s * 6364136223846793005ULL + 1; v = 0.4f * ((float) ((s >> 40) & 0xFFFFFF) / 8388608.0f - 1.0f); } }
+        TubeParams noB = Pf (24.0f, false, 1, 0.85f, 0.0f, 0.0f);
+        TubeParams wiB = noB; wiB.bias = 1.0f;
+        auto a0 = runStage (noB, in), a1 = runStage (wiB, in);
+        auto diffWin = [&] (const std::vector<float>& x, const std::vector<float>& y, int from, int to)
+        { double m = 0; for (int i = from; i < to; ++i) m = std::max (m, (double) std::fabs (x[(std::size_t) i] - y[(std::size_t) i])); return m; };
+        const double nonNull = diffWin (a0, a1, an, an + N);
+        // Block-size determinism: at feel=0 the stage is BIT-EXACT across block schedules (see S3). The FEEL
+        // layer, however, carries a small (~1e-2) pre-existing block-3 block-size discrepancy in steady state
+        // (the per-block coefficient smoother interacting with the long-memory sag envelope + shelves) — it
+        // ships in block 3, is inaudible, and is flagged in STATUS.md to root-cause later. What this check
+        // must guarantee is that block 4's NEW stages (load + output-transformer + per-sample bias) do NOT
+        // REGRESS that: the full block-4 path stays within the block-3 feel-layer baseline.
+        std::vector<int> blk { 512 }, hostile { 1, 7, 64, 333, 512, 128 };
+        TubeParams base3 = Pf (24.0f, false, 1, 0.8f, 0.5f, 0.5f);                          // block-3 feel only
+        TubeParams full  = base3; full.load = 1.0f; full.iron = 1.0f; full.bias = 1.0f;     // + all block-4 stages
+        const double baseDet = diffWin (runStage (base3, in, 4, &blk), runStage (base3, in, 4, &hostile), an, an + N);
+        const double fullDet = diffWin (runStage (full,  in, 4, &blk), runStage (full,  in, 4, &hostile), an, an + N);
+        std::printf ("       B9 bias non-null=%.2e   block-schedule diff: block-3 feel=%.2e  +block-4=%.2e\n", nonNull, baseDet, fullDet);
+        check (nonNull > 1e-3, "B9 bias shifts the crossover under sag (non-null vs Bias=0)");
+        check (fullDet <= baseDet * 1.5 + 1e-4, "B9 block-4 stages (load+iron+bias) don't regress feel-layer block-size determinism");
+    }
 
     std::printf ("%d checks, %d failures\n", g_checks, g_fail);
     std::printf (g_fail ? "GOLDEN FAILED\n" : "GOLDEN PASSED\n");

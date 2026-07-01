@@ -79,13 +79,14 @@ struct TubePowerAmp::Impl
     // Targets from the latest setParams(); smoothed per block in process().
     float gTarget = 1.0f, outTarget = 1.0f, topoTarget = 0.0f;   // topo: 0 = PP, 1 = SE
     float kTarget = 2.0f, vbTarget = 0.30f, bSeTarget = 0.18f, leakTarget = 0.0f;
-    float sagTarget = 0.0f, presTarget = 0.0f, depthTarget = 0.0f, loadTarget = 0.0f;
+    float sagTarget = 0.0f, presTarget = 0.0f, depthTarget = 0.0f, loadTarget = 0.0f, ironTarget = 0.0f, biasTarget = 0.0f;
     float autoComp = 1.0f;
 
     // Smoothed running coefficients.
     float gCur = 1.0f, outCur = 1.0f, topoCur = 0.0f;
     float kCur = 2.0f, vbCur = 0.30f, bSeCur = 0.18f, leakCur = 0.0f;
-    float sagCur = 0.0f, presCur = 0.0f, depthCur = 0.0f, loadCur = 0.0f;
+    float sagCur = 0.0f, presCur = 0.0f, depthCur = 0.0f, loadCur = 0.0f, ironCur = 0.0f, biasCur = 0.0f;
+    float otLp[kMaxCh] = {}, otHf[kMaxCh] = {};   // block-4 output-transformer OS-domain 1-pole states (LF split + HF rolloff)
     float comp = 1.0f;
     float gApplied = 1.0f, postApplied = 1.0f;       // per-sample ramp anchors
     bool  primed = false;
@@ -124,6 +125,7 @@ struct TubePowerAmp::Impl
         svfMid.reset();
         svfLoadRes.reset();
         svfLoadRise.reset();
+        for (int c = 0; c < kMaxCh; ++c) { otLp[c] = 0.0f; otHf[c] = 0.0f; }
     }
 
     void setParams (const cab::TubeParams& p)
@@ -145,6 +147,8 @@ struct TubePowerAmp::Impl
         presTarget  = std::isfinite (p.presence) ? std::clamp (p.presence, 0.0f, 1.0f) : 0.0f;
         depthTarget = std::isfinite (p.depth)    ? std::clamp (p.depth,    0.0f, 1.0f) : 0.0f;
         loadTarget  = std::isfinite (p.load)     ? std::clamp (p.load,     0.0f, 1.0f) : 0.0f;
+        ironTarget  = std::isfinite (p.iron)     ? std::clamp (p.iron,     0.0f, 1.0f) : 0.0f;
+        biasTarget  = std::isfinite (p.bias)     ? std::clamp (p.bias,     0.0f, 1.0f) : 0.0f;
     }
 
     void process (float* const* io, int numChannels, int numSamples)
@@ -180,6 +184,8 @@ struct TubePowerAmp::Impl
         leakCur += a * (leakTarget - leakCur);
         sagCur   += a * (sagTarget   - sagCur);
         loadCur  += a * (loadTarget  - loadCur);
+        ironCur  += a * (ironTarget  - ironCur);
+        biasCur  += a * (biasTarget  - biasCur);
         presCur  += a * (presTarget  - presCur);
         depthCur += a * (depthTarget - depthCur);
 
@@ -270,23 +276,54 @@ struct TubePowerAmp::Impl
             gApplied = g1;
         }
 
-        // --- upsample → PP/SE waveshape + DC-block (OS domain) → downsample ---
+        // --- OUTPUT TRANSFORMER (block 4 stage 2) + dynamic BIAS (stage 3) — both act in the OS domain ---
+        const double fsOs   = sampleRate * (double) os;
+        const bool   ironOn = ironCur > 1.0e-4f && v.otHfHz > 0.0f;
+        const float  gLf    = ironOn ? (float) (1.0 - std::exp (-kTwoPi * (double) v.otLfHz / fsOs)) : 0.0f;   // LF split 1-pole
+        const float  gHf    = ironOn ? (float) (1.0 - std::exp (-kTwoPi * (double) v.otHfHz / fsOs)) : 0.0f;   // HF leakage 1-pole
+        const float  kSat   = std::max (0.1f, v.otSatK);
+        const float  otWet  = ironCur;                          // Iron knob scales the LF-sat blend + the HF-rolloff blend
+        // dynamic bias: the PP operating point drifts toward class-B under sag (crossover bloom); needs Sag + Bias.
+        const bool   biasOn = biasCur > 1.0e-4f && sagOn && v.sagBiasDepth > 0.0f;
+        const float  invMaxDroopB = v.sagMaxDroop > 0.0f ? 1.0f / v.sagMaxDroop : 0.0f;
+        const float  biasScale    = biasCur * v.sagBiasDepth * vbCur;   // vbEff = vbCur − biasScale·droopN
+
+        // --- upsample → PP/SE waveshape (+ per-sample bias) + DC-block + output transformer (OS domain) → downsample ---
         ovs.upsample (io, nCh, n, osPtr);
         for (int ch = 0; ch < nCh; ++ch)
         {
             float* b = osPtr[ch];
             double x1 = dcx1[ch], y1 = dcy1[ch];
+            float  lp = otLp[ch], hf = otHf[ch];
             const int m = n * os;
             for (int j = 0; j < m; ++j)
             {
-                const float  w  = stage.at (b[j]);
-                const double dc = (double) w - x1 + dcR * y1;
+                float w;
+                if (biasOn)   // per-sample class-B drift, ZOH from the host-rate droop (block-size-deterministic)
+                {
+                    const float droopN = std::clamp ((1.0f - sScratch[(std::size_t) (j / os)]) * invMaxDroopB, 0.0f, 1.0f);
+                    w = stage.at (b[j], -biasScale * droopN);
+                }
+                else
+                    w = stage.at (b[j]);
+                const double dc = (double) w - x1 + dcR * y1;       // OS-domain DC-block
                 x1 = (double) w; y1 = dc;
-                b[j] = (float) dc;
+                float s = (float) dc;
+                if (ironOn)                                          // OUTPUT TRANSFORMER
+                {
+                    lp += gLf * (s - lp);                            //   low band (transformer flux)
+                    const float sat = std::tanh (kSat * lp) / kSat;  //   soft-clip the lows (unity small-signal)
+                    s += otWet * (sat - lp);                         //   grind / compress the low notes
+                    hf += gHf * (s - hf);                            //   HF leakage low-pass
+                    s += otWet * (hf - s);                           //   roll off the fizzy top
+                }
+                b[j] = s;
             }
             // flush non-finite / denormal state so a transient can't poison or CPU-spike the stream
             dcx1[ch] = (std::isfinite (x1) && std::fabs (x1) > 1e-30) ? x1 : 0.0;
             dcy1[ch] = (std::isfinite (y1) && std::fabs (y1) > 1e-30) ? y1 : 0.0;
+            otLp[ch] = (std::isfinite (lp) && std::fabs (lp) > 1e-30f) ? lp : 0.0f;
+            otHf[ch] = (std::isfinite (hf) && std::fabs (hf) > 1e-30f) ? hf : 0.0f;
         }
         ovs.downsample (osPtr, nCh, n, io);
 

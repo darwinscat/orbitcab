@@ -67,6 +67,10 @@ struct TubeParams
     float load        = 0.0f;    // reactive-speaker VIRTUAL LOAD amount [0,1]: scales the per-voicing impedance
                                  // pre-EQ (LF cone-resonance peak + HF inductive rise) before the nonlinearity.
                                  // 0 = flat/off ⇒ exact block-3 behaviour; 1 = full per-voicing load.
+    float iron        = 0.0f;    // OUTPUT-TRANSFORMER amount [0,1]: scales LF core saturation (low-note grind/
+                                 // compression) + HF leakage rolloff, in the OS domain. 0 = bypass.
+    float bias        = 0.0f;    // dynamic BIAS-SHIFT / bloom [0,1]: under sag the PP operating point drifts toward
+                                 // class-B (crossover bloom / touch). Scales the per-voicing depth; needs Sag > 0.
 };
 
 struct Params
