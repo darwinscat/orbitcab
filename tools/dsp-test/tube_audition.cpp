@@ -52,7 +52,14 @@ int main (int argc, char** argv)
     }
     juce::ScopedJuceInitialiser_GUI gui;   // MessageManager for the async IR loader
 
-    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();                                    // WAV + AIFF
+   #if JUCE_USE_FLAC
+    fm.registerFormat (new juce::FlacAudioFormat(), false);       // DIs are often FLAC (Cubase/exports)
+   #endif
+   #if JUCE_USE_OGGVORBIS
+    fm.registerFormat (new juce::OggVorbisAudioFormat(), false);
+   #endif
     juce::File diFile (juce::File::getCurrentWorkingDirectory().getChildFile (argv[1]));
     if (! diFile.existsAsFile()) diFile = juce::File (juce::String (argv[1]));
     std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (diFile));
