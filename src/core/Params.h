@@ -56,7 +56,9 @@ struct TubeParams
     float outputDb    = 0.0f;    // post-stage make-up / trim
     int   tubeType    = 0;       // 0=6L6, 1=EL34, 2=EL84, 3=KT88 (voicing coefficient preset)
     bool  singleEnded = false;   // false = push-pull class AB, true = single-ended class A
-    float autoComp    = 1.0f;    // drive-compensation amount (1 = small-signal unity → clean stays clean)
+    float autoComp    = 0.35f;   // drive-compensation amount (0 = raw gain; 1 = full small-signal unity). Partial by
+                                 // default: cranking Drive adds grit WITHOUT the loud parts dropping in level ("more
+                                 // drive = quieter" was full auto-comp holding small-signal unity → saturated peaks fell).
     // block 3 "feel" layer (all [0,1] amounts; 0 = off ⇒ exact block-2 behaviour):
     float sag         = 0.0f;    // dynamic power-supply sag (bloom / touch / compression under load)
     float presence    = 0.0f;    // NFB-style HF voicing that opens up when pushed

@@ -58,10 +58,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // TUBE poweramp controls — the white-box "Tube" mode only (inert in Capture/off). First DSP block:
     // an oversampled push-pull / single-ended tube waveshaper with per-tube voicings. None affect PDC.
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDrive",  kParamVersion }, "Tube Drive",
-                                                        NormalisableRange<float> (0.0f, 36.0f, 0.1f), 0.0f,
+                                                        NormalisableRange<float> (0.0f, 36.0f, 0.1f), 18.0f,   // 12 o'clock = a calibrated crunch out of the box
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeOutput", kParamVersion }, "Tube Output",
-                                                        NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f,
+                                                        NormalisableRange<float> (-12.0f, 12.0f, 0.1f), 0.0f,  // symmetric ⇒ 12 o'clock = 0 dB unity
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "tubeType", kParamVersion }, "Tube Type",
                                                         StringArray { "6L6", "EL34", "EL84", "KT88" }, 0));
@@ -69,13 +69,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         StringArray { "Push-Pull", "Single-Ended" }, 0));
     // TUBE feel (block 3) — dynamic sag + NFB-style presence/depth. 0 % = off (⇒ exact block-2 sound).
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeSag",      kParamVersion }, "Tube Sag",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubePresence", kParamVersion }, "Tube Presence",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDepth",    kParamVersion }, "Tube Depth",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
