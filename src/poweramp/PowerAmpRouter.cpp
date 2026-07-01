@@ -10,6 +10,21 @@ namespace cab::poweramp
 namespace
 {
     constexpr double kRampSeconds = 0.03;   // matches CabEngine's other live glides
+
+    inline float dbToGain (float db) noexcept { return std::pow (10.0f, db * 0.05f); }
+
+    // block mean-square over all channels — the in/out energy probe for the tube loudness-normalizer.
+    inline double meanSquare (float* const* io, int nCh, int n) noexcept
+    {
+        if (nCh <= 0 || n <= 0) return 0.0;
+        double s = 0.0;
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            const float* p = io[ch];
+            for (int i = 0; i < n; ++i) s += (double) p[i] * (double) p[i];
+        }
+        return s / ((double) nCh * (double) n);
+    }
 }
 
 void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
@@ -21,6 +36,10 @@ void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
     current = fadeFrom = Active::off;
     fading  = false;
     seeded  = false;
+    tubeLevel.prepare (sampleRate, kRampSeconds);
+    tubeOutGain = 1.0f;
+    tubeSeed = true;
+    tubeRenderedLast = false;
 }
 
 void PowerAmpRouter::reset()
@@ -31,6 +50,9 @@ void PowerAmpRouter::reset()
     current = fadeFrom = Active::off;
     fading  = false;
     seeded  = false;
+    tubeLevel.reset();
+    tubeSeed = true;
+    tubeRenderedLast = false;
 }
 
 void PowerAmpRouter::render (Active a, float* const* io, int numChannels, int numSamples,
@@ -39,7 +61,25 @@ void PowerAmpRouter::render (Active a, float* const* io, int numChannels, int nu
     switch (a)
     {
         case Active::capture: nam.process  (io, numChannels, numSamples, /*normalize*/ true); break;
-        case Active::tube:    tube.process (io, numChannels, numSamples); break;
+        case Active::tube:
+        {
+            // Loudness-normalize the tube to its INPUT level (setting-invariant): output loudness ≈
+            // input loudness at ANY drive, so enabling it never jumps the post-poweramp level (→ no
+            // AutoLeveler kick; honest A/B vs the loudness-normalized capture). Seed the leveler on
+            // (re)activation so it SNAPS to the converged gain instead of chasing over ~150 ms. The
+            // Tube Output knob (stripped from the core in process()) re-applies here as tubeOutGain.
+            const double inMS = meanSquare (io, numChannels, numSamples);
+            tube.process (io, numChannels, numSamples);
+            const double outMS = meanSquare (io, numChannels, numSamples);
+            if (tubeSeed) { tubeLevel.seed ((float) std::sqrt ((inMS + 1.0e-12) / (outMS + 1.0e-12))); tubeSeed = false; }
+            else            tubeLevel.processBlock (inMS, outMS, /*enabled*/ true, numSamples);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const float g = tubeLevel.getNextGain() * tubeOutGain;
+                for (int ch = 0; ch < numChannels; ++ch) io[ch][i] *= g;
+            }
+            break;
+        }
         case Active::off:     break;   // no-op: the dry signal passes through unchanged
     }
 }
@@ -48,7 +88,12 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
                               bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams,
                               AmpStage& nam) noexcept
 {
-    tube.setParams (tubeParams);   // cheap: stores targets; the tube smooths its coeffs internally
+    // Strip the Tube Output knob out of the core and re-apply it AFTER the loudness match in render()
+    // (else the normalizer would cancel it). The core then renders drive/character at its natural level.
+    TubeParams tp = tubeParams;
+    tubeOutGain = dbToGain (std::isfinite (tp.outputDb) ? tp.outputDb : 0.0f);
+    tp.outputDb = 0.0f;
+    tube.setParams (tp);   // cheap: stores targets; the tube smooths its coeffs internally
     const Active target = resolve (ampOn, mode);
 
     if (! seeded)
@@ -82,6 +127,11 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
             fading = true;
         }
     }
+
+    // (Re)activation of the tube → seed the loudness-normalizer on the next tube render (snap, no chase).
+    const bool tubeNow = (current == Active::tube) || (fading && fadeFrom == Active::tube);
+    if (tubeNow && ! tubeRenderedLast) tubeSeed = true;
+    tubeRenderedLast = tubeNow;
 
     if (! fading)
     {

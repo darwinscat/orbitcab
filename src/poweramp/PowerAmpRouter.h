@@ -6,6 +6,7 @@
 #include <juce_dsp/juce_dsp.h>          // AudioBuffer scratch + SmoothedValue fade
 #include "TubePowerAmp.h"
 #include "../core/Params.h"             // cab::PowerAmpMode
+#include "../core/AutoLeveler.h"        // tube loudness-normalization (setting-invariant, no enable kick)
 
 namespace cab { class AmpStage; }       // forward-decl — the NAM capture, owned by CabEngine
 
@@ -72,6 +73,15 @@ private:
     Active fadeFrom = Active::off;
     bool   fading   = false;
     bool   seeded   = false;                        // first block after prepare jumps to target (no ramp)
+
+    // Tube loudness-normalization: hold the tube's OUTPUT loudness = its INPUT loudness (setting-
+    // invariant) so enabling it — at ANY drive — doesn't jump the post-poweramp level → no AutoLeveler
+    // kick, honest A/B vs the loudness-normalized capture. Drive then changes CHARACTER, not loudness.
+    // The Tube Output knob is stripped from the core and re-applied here (tubeOutGain), on top of the match.
+    cab::AutoLeveler tubeLevel;
+    float tubeOutGain      = 1.0f;
+    bool  tubeSeed         = true;                  // snap the leveler to the converged gain on (re)activation
+    bool  tubeRenderedLast = false;                 // detect tube (re)activation → trigger the seed
 };
 
 } // namespace cab::poweramp
