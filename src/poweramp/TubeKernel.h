@@ -27,15 +27,29 @@ struct TubeVoicing
     // block 3 "feel" — per-tube-fixed sag + NFB-voicing character:
     float sagFastMs, sagRecoveryMs, sagMaxDroop, sagBiasDepth;       // sag: attack, recovery, max rail collapse; sagBiasDepth reserved (future per-sample bias)
     float presenceHz, presenceMaxDb, depthHz, depthMaxDb, nfbOpen;   // shelves + how much they "open" under sag/drive
+    float midHz, midDb, midQ;                                        // static MID bell — the amp fingerprint (scoop vs push)
+    float levelTrimDb;                                               // static per-voicing output trim (dB) that centres this voicing on
+                                                                     // ~the dry level at the default Drive, and equalises the four voicings
+                                                                     // to each other (measured on a real guitar DI; see PowerAmpRouter).
+    float levelTrimSEDb;                                             // + this extra trim in single-ended (x1) mode — SE's asymmetry shifts
+                                                                     // the level per voicing differently than push-pull (measured).
 };
 
-// Brand-neutral voicing presets {0=6L6, 1=EL34, 2=EL84, 3=KT88}. evenLeak = 0 (exact PP cancellation).
-// Sag/NFB: 6L6/KT88 stiff (usually SS-rectified); EL84/EL34 spongy (chime/vintage). Tune by ear.
+// Brand-neutral voicing presets {0=6L6, 1=EL34, 2=EL84, 3=KT88}. Archetype-voiced (crew-designed, tune by
+// ear): the MID bell is the fingerprint — 6L6 American scoop, EL34 British mid-push, EL84 Vox upper-mid
+// chime, KT88 near-flat hi-fi. 6L6/KT88 stiff sag (SS-rectified), EL84/EL34 spongier. evenLeak = 0 for now
+// (exact PP cancellation held; per-tube even-harmonic leak is a later liveliness pass — see DESIGN-block3.md).
 inline constexpr TubeVoicing kTubeVoicings[4] = {
-    /* 6L6  */ { 0.85f, 2.0f, 0.18f, 0.30f, 0.0f,   8.0f, 120.0f, 0.22f, 0.04f,   3000.0f, 6.0f, 100.0f, 6.0f, 0.5f },
-    /* EL34 */ { 1.10f, 2.6f, 0.28f, 0.22f, 0.0f,   8.0f, 170.0f, 0.30f, 0.05f,   2800.0f, 6.0f, 110.0f, 6.0f, 0.6f },
-    /* EL84 */ { 1.40f, 3.2f, 0.33f, 0.18f, 0.0f,  10.0f, 240.0f, 0.42f, 0.06f,   3200.0f, 6.5f, 120.0f, 6.5f, 0.7f },
-    /* KT88 */ { 0.70f, 1.7f, 0.12f, 0.34f, 0.0f,   6.0f, 100.0f, 0.18f, 0.03f,   2600.0f, 5.5f,  90.0f, 5.5f, 0.4f },
+    /* 6L6  American: scooped mids, deep tight lows, smooth (not sharp) top */
+    { 0.82f, 2.3f, 0.25f, 0.30f, 0.0f,   8.0f, 130.0f, 0.20f, 0.03f,   5000.0f, 3.0f,  95.0f, 7.5f, 0.45f,    500.0f, -5.0f, 0.70f,   3.9f,  0.7f },
+    /* EL34 British: forward mids, aggressive upper-mid crunch */
+    { 1.12f, 3.2f, 0.15f, 0.20f, 0.0f,   6.0f,  90.0f, 0.22f, 0.05f,   3400.0f, 5.0f, 118.0f, 4.0f, 0.60f,    680.0f,  4.5f, 0.70f,    5.7f,  1.1f },
+    /* EL84 Vox chime: bright upper-mid, early soft breakup, heavy spongy sag */
+    { 1.45f, 1.7f, 0.45f, 0.18f, 0.0f,  14.0f, 240.0f, 0.42f, 0.06f,   5500.0f, 4.0f, 130.0f, 3.0f, 0.75f,   1600.0f,  4.0f, 0.70f,    7.2f, -3.6f },
+    /* KT88 hi-fi: huge tight lows + a low resonance "thump", near-flat mids, clean late breakup, stiff supply.
+       The "mid" bell is repurposed LOW (100 Hz, resonant Q) — KT88's mids are near-flat, so it buys the
+       Hiwatt/Ampeg low-end resonance the ear wants; the depth low-shelf below it adds broad extension. */
+    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.02f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,  -4.5f,  9.0f },
 };
 
 // Stateless composite tube transfer. configure() once per block from (smoothed) coeffs; at()

@@ -71,7 +71,7 @@ struct TubePowerAmp::Impl
 
     // --- block 3 "feel" state (all allocated/prepared in prepare()) ---
     SagEnvelope        sag;                          // pure dual-TC sag model (SagEnvelope.h)
-    Svf                svfPresence, svfDepth;        // min-phase HF/LF shelves (one instance = all channels)
+    Svf                svfPresence, svfDepth, svfMid; // min-phase HF/LF shelves + a static per-voicing MID bell (one instance = all channels)
     std::vector<float> sScratch;                     // per-sample rail s = 1−droop (maxBlock)
     int                tubeIdx = 0;                  // voicing index for the per-tube sag/NFB constants
 
@@ -105,6 +105,7 @@ struct TubePowerAmp::Impl
         sag.prepare (sr);
         svfPresence.prepare (sr, kMaxCh);
         svfDepth.prepare (sr, kMaxCh);
+        svfMid.prepare (sr, kMaxCh);
         sScratch.assign ((std::size_t) maxBlock, 1.0f);
         reset();
         primed = false;
@@ -117,6 +118,7 @@ struct TubePowerAmp::Impl
         sag.reset();
         svfPresence.reset();
         svfDepth.reset();
+        svfMid.reset();
     }
 
     void setParams (const cab::TubeParams& p)
@@ -196,6 +198,10 @@ struct TubePowerAmp::Impl
         if (presOn)  svfPresence.setParams (felitronics::eq::FilterType::HighShelf, (double) v.presenceHz, 0.70710678, (double) presMaxDb);
         if (depthOn) svfDepth.setParams   (felitronics::eq::FilterType::LowShelf,  (double) v.depthHz,    0.70710678, (double) depthMaxDb);
 
+        // static per-voicing MID bell — the amp fingerprint (always on when the tube runs; not knob-gated)
+        const bool midOn = std::fabs (v.midDb) > 1.0e-3f;
+        if (midOn) svfMid.setParams (felitronics::eq::FilterType::Bell, (double) v.midHz, (double) v.midQ, (double) v.midDb);
+
         stage.configure (kCur, bSeCur, vbCur, leakCur, topoCur);
 
         // drive-compensation: numeric small-signal slope of the FULL composite (incl. pre-gain gCur)
@@ -261,6 +267,12 @@ struct TubePowerAmp::Impl
         }
         ovs.downsample (osPtr, nCh, n, io);
 
+        // static per-voicing MID band (voicing tone — always on when the tube runs; not sag/knob-gated)
+        if (midOn)
+            for (int i = 0; i < n; ++i)
+                for (int ch = 0; ch < nCh; ++ch)
+                    io[ch][i] = svfMid.processSample (ch, io[ch][i]);
+
         // --- block 3: SAG rail output (·s) + PRESENCE/DEPTH shelves (the NFB "output node") ---
         // Skipped entirely when the feel layer is off → the output equals the block-2 result exactly.
         if (sagOn || presOn || depthOn)
@@ -298,6 +310,7 @@ struct TubePowerAmp::Impl
         sag.flushDenormals();
         svfPresence.flushDenormals();
         svfDepth.flushDenormals();
+        svfMid.flushDenormals();
     }
 
     int latencySamples() const noexcept { return ovs.latencySamples(); }

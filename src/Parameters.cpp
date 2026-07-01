@@ -69,7 +69,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         StringArray { "Push-Pull", "Single-Ended" }, 0));
     // TUBE feel (block 3) — dynamic sag + NFB-style presence/depth. 0 % = off (⇒ exact block-2 sound).
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeSag",      kParamVersion }, "Tube Sag",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 75.0f,   // default ~3 o'clock — more bloom out of the box
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubePresence", kParamVersion }, "Tube Presence",
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
