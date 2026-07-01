@@ -14,6 +14,7 @@
 #include "AmpEq.h"
 #include "AutoLeveler.h"
 #include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
+#include <felitronics/core/Smoother.h>          // JUCE-free LinearSmoother — bit-exact juce::SmoothedValue<float,Linear> drop-in
 
 //==============================================================================
 // cab::CabEngine — the headless DSP core. Owns the whole real-time signal path:
@@ -121,11 +122,11 @@ private:
 
     // Smoothed so live tweaks / automation don't zipper. Phase is a sign (+1/-1) ramped
     // through 0 — a brief dip rather than a hard polarity click.
-    juce::SmoothedValue<float> mixSm[2]   { { 1.0f }, { 1.0f } };
-    juce::SmoothedValue<float> phaseSm[2] { { 1.0f }, { 1.0f } };
-    juce::SmoothedValue<float> mixABSmoothed { 0.0f };
-    juce::SmoothedValue<float> gainSmoothed  { 1.0f };
-    juce::SmoothedValue<float> muteGateSmoothed { 1.0f };
+    felitronics::core::LinearSmoother mixSm[2]   { { 1.0f }, { 1.0f } };
+    felitronics::core::LinearSmoother phaseSm[2] { { 1.0f }, { 1.0f } };
+    felitronics::core::LinearSmoother mixABSmoothed { 0.0f };
+    felitronics::core::LinearSmoother gainSmoothed  { 1.0f };
+    felitronics::core::LinearSmoother muteGateSmoothed { 1.0f };
 
     double currentSampleRate = 44100.0;
 

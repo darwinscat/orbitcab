@@ -10,6 +10,10 @@
 namespace cab
 {
 
+// Butterworth Q for the HPF/LPF — matches the old juce setResonance(0.707f) so felitronics::eq::Svf nulls
+// against the juce::dsp::StateVariableTPTFilter it replaces (both are the same Zavalishin TPT SVF).
+static constexpr double kFilterQ = 0.707;
+
 //==============================================================================
 // Bundled-IR fallback: decode encoded bytes here (adapter-level, JUCE) into planar samples, then hand
 // them to the JUCE-free convolver with the Normalise::yes energy norm (mirrors the old
@@ -31,17 +35,13 @@ void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
 {
     conv.prepare (sampleRate, maxBlock, numChannels);
 
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate       = sampleRate;
-    spec.maximumBlockSize = (juce::uint32) maxBlock;
-    spec.numChannels      = (juce::uint32) numChannels;
-
-    hpf.prepare (spec);
-    hpf.setType (juce::dsp::StateVariableTPTFilterType::highpass);
-    hpf.setResonance (0.707f);             // Butterworth, matches the web tool
-    lpf.prepare (spec);
-    lpf.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-    lpf.setResonance (0.707f);
+    // JUCE-free HPF/LPF (felitronics::eq::Svf — same Zavalishin TPT as juce::dsp::StateVariableTPTFilter).
+    // Type + Butterworth Q are fixed; the cutoff is set per block in processWet. The Svf is per-sample, so it
+    // needs no maxBlock; the initial cutoff just keeps the filter valid before the first processWet.
+    hpf.prepare (sampleRate, numChannels);
+    lpf.prepare (sampleRate, numChannels);
+    hpf.setParams (felitronics::eq::FilterType::HighPass, 20.0,    kFilterQ, 0.0);
+    lpf.setParams (felitronics::eq::FilterType::LowPass,  20000.0, kFilterQ, 0.0);
 
     lastTrimSamples = -1;                   // force a reload after (re)prepare
     lastHeadStart   = -1;
@@ -124,8 +124,8 @@ void IRSlot::processWet (juce::AudioBuffer<float>& wetDst, const juce::AudioBuff
     for (int ch = 0; ch < numChannels; ++ch)
         wetDst.copyFrom (ch, 0, src, ch, 0, numSamples);
 
-    hpf.setCutoffFrequency (hpfHz);
-    lpf.setCutoffFrequency (lpfHz);
+    hpf.setParams (felitronics::eq::FilterType::HighPass, hpfHz, kFilterQ, 0.0);   // cutoff per block (coeffs only; integrator state kept)
+    lpf.setParams (felitronics::eq::FilterType::LowPass,  lpfHz, kFilterQ, 0.0);
 
     // Re-enabling a filter after it was bypassed: clear its stale internal state so it
     // doesn't emit a transient built from the old samples.
@@ -134,10 +134,20 @@ void IRSlot::processWet (juce::AudioBuffer<float>& wetDst, const juce::AudioBuff
     prevHpfOn = hpfOn;
     prevLpfOn = lpfOn;
 
-    juce::dsp::AudioBlock<float> blk (wetDst.getArrayOfWritePointers(), (size_t) numChannels, (size_t) numSamples);
-    juce::dsp::ProcessContextReplacing<float> ctx (blk);
-    if (hpfOn) hpf.process (ctx);
-    if (lpfOn) lpf.process (ctx);
+    // Per-sample TPT (replaces juce's block process). flushDenormals() once per block == JUCE's internal FTZ.
+    float* const* w = wetDst.getArrayOfWritePointers();
+    if (hpfOn)
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+            for (int i = 0; i < numSamples; ++i) w[ch][i] = hpf.processSample (ch, w[ch][i]);
+        hpf.flushDenormals();
+    }
+    if (lpfOn)
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+            for (int i = 0; i < numSamples; ++i) w[ch][i] = lpf.processSample (ch, w[ch][i]);
+        lpf.flushDenormals();
+    }
     conv.process (wetDst.getArrayOfWritePointers(), numChannels, numSamples);
 }
 
