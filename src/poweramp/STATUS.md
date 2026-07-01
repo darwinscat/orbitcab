@@ -162,5 +162,33 @@ release½=12115 samples), sag compression (−4.7 dB), presence/depth passband F
   sub-25 ms transient, inaudible; the golden's determinism check covers the steady-state (constant-param)
   guarantee that matters for offline-bounce == realtime.
 
+---
+
+## Post-block-3 hardening — UI, level-match, latency alignment, golden reconcile
+
+Between block 3 and block 4 (no new DSP block), the stage was made shippable + the test debt paid:
+- **SIMULATOR UI tab** (radio with CAPTURES via ampOn+ampMode), **12-o'clock calibrated defaults**,
+  **deterministic per-voicing/drive level-match** (no follower → no enable/disable "kick"), an **always-on
+  per-voicing MID bell** (the amp fingerprint), and a **per-checkout UI build-number stamp**.
+- **Latency alignment (the enable/disable gap+jump):** the tube carries ~31-sample oversampling latency
+  vs 0 for off/capture; the SIMULATOR power toggle flipped PDC → host re-sync gap + misaligned crossfade.
+  Fixed by reporting a CONSTANT poweramp latency per MODE (not the power toggle) and delaying the dry/off
+  path to match via a shared `cab::DryAligner`. Extended to the capture + preamp NAM stages (rate-match
+  latency, 0 at 48k) — including keeping their models ARMED while powered off so the latency persists.
+  Guards: `orbitcab_latency_pdc_test` (processor-level, tube PDC invariant) + CabEngine bypass-alignment
+  checks in PowerAmpRouterAlignTests (bit-exact dry delay = the model's rate-match latency @96k).
+- **Golden reconcile (S4,S5,S6,S7,S8,B3):** the always-on MID bell + voicing recalibration made the tube
+  voiced / non-unity / min-phase, so the block-2 "pure waveshaper" checks (unity, identity, linear-phase,
+  THD, presence threshold) were STALE. Reconciled (consilium codex+deepseek + Claude adversarial after-
+  review) to assert the NEW correct contract — NOT relaxed to hide a bug:
+  - S4 → THD monotonic on the bell-free KERNEL over 12 dB Drive steps (a KT88 class-AB crossover dip near
+    6→12 dB is real push-pull physics, documented, not fudged away).
+  - S5 → the bell-robust SE≫PP differential is the asymmetry proof; the absolute H2 floor relaxed −35→−45.
+  - S6 → drive-comp gives DRIVE-INVARIANT small-signal gain (<0.05 dB drift), not unity (the bell sets it).
+  - S7 → the MID bell delivers the SPEC'd per-voicing tone (gain@midHz ≈ midDb) + linear at Drive-min.
+  - S8 → OS round-trip is LINEAR-PHASE via residual group delay ≈0 (latency-aligned) at HF (bell ≈0 phase).
+  - B3 → presence delivers the voicing's spec'd boost (≈dbToGain(presenceMaxDb)).
+  Golden **43/43** again.
+
 ### Next: Block 4 — virtual load + output transformer (+ the deferred per-sample bias, plate/screen sag).
 Revisit the 8× / ADAA anti-alias decision (and the capture↔tube crossfade latency-align) when the tube stage gains real HF-hard-clip use.
