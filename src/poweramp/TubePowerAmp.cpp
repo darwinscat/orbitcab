@@ -88,9 +88,14 @@ struct TubePowerAmp::Impl
     void setParams (const cab::TubeParams& p)
     {
         const TubeVoicing& v = kTubeVoicings[(std::size_t) std::clamp (p.tubeType, 0, 3)];
-        autoComp   = std::clamp (p.autoComp, 0.0f, 1.0f);
-        gTarget    = dbToGain (p.driveDb) * v.driveScale;
-        outTarget  = dbToGain (p.outputDb);
+        // Sanitize the dB params at the single entry point: a non-finite driveDb/outputDb (a bad preset,
+        // or any non-APVTS caller — TubeParams is a public POD) would make gCur/postTarget NaN, and
+        // std::clamp(NaN) passes NaN straight through into the OS/DC state → permanent poison.
+        const float driveDb  = std::isfinite (p.driveDb)  ? p.driveDb  : 0.0f;
+        const float outputDb = std::isfinite (p.outputDb) ? p.outputDb : 0.0f;
+        autoComp   = std::isfinite (p.autoComp) ? std::clamp (p.autoComp, 0.0f, 1.0f) : 1.0f;
+        gTarget    = dbToGain (driveDb) * v.driveScale;
+        outTarget  = dbToGain (outputDb);
         topoTarget = p.singleEnded ? 1.0f : 0.0f;
         kTarget    = v.k; vbTarget = v.vbPP; bSeTarget = v.bSE; leakTarget = v.evenLeak;
     }
@@ -180,7 +185,7 @@ struct TubePowerAmp::Impl
             for (int i = 0; i < n; ++i)
             {
                 const float g = p0 + (p1 - p0) * ((float) (i + 1) * inv);
-                for (int ch = 0; ch < nCh; ++ch) io[ch][i] *= g;
+                for (int ch = 0; ch < nCh; ++ch) io[ch][i] = std::clamp (io[ch][i] * g, -1.0e6f, 1.0e6f);
             }
             postApplied = p1;
         }

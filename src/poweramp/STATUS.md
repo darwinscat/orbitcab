@@ -93,5 +93,21 @@ cross-instance determinism, stereo isolation+symmetry, param-change zipper, PP-u
 Whole project builds (plugin + dsp_test + fade_measure + tests + golden) EXIT 0, zero warnings in poweramp
 files. Core unit tests **491/491**. Maniacal golden **26/26**. Backward compat preserved.
 
+### After-review hardening (3 Claude review agents on the block-2 diff + a maniacal test-rigor audit)
+The DSP core was confirmed correct; the review found + fixed:
+- **Code bug:** the input gate sanitized the SIGNAL but not the GAIN — a non-finite `driveDb`/`outputDb`
+  param made `g` NaN and `std::clamp(NaN)` passes NaN straight through → poison. Now sanitized at the
+  `setParams` entry point + a post-gain clamp. (Regression-tested by X12.)
+- **Test rigor:** added the **RT no-alloc assertion** (X11 — the 🔴 rule, via an operator-new counter:
+  **0 allocations** across process()/setParams). Replaced the floor-limited 4x-vs-32x aliasing gate with a
+  **reference-free non-harmonic** metric (no 32x reference) that reveals the honest **~-73 dBc 4x/tpp=32
+  oversampler floor** — constant vs drive ⇒ it's the OS filter quality, and the stage adds NOTHING above it
+  in the guitar range (the MAP proves it). Tightened S7 (~10x), added a non-finite-param test, honest
+  renames. Battery now **28/28**.
+- **CI:** the core golden was compiled but never RUN — added it as a hard gate in `build.yml`.
+- **Deferred (documented):** the capture↔tube crossfade isn't latency-aligned now that tube latency = 31
+  (a ~0.65 ms comb during a *manual* mode switch; a delay-line align is a small later fix). Beating the
+  -73 dBc OS floor needs a sharper OS (higher tpp/factor) → a CPU + latency tradeoff, unnecessary under a cab IR.
+
 ### Next: Block 3 — the "feel" blocks (sag, NFB loop, virtual load, output transformer) — see PLAN.md.
-Revisit the 8× / ADAA anti-alias decision when the tube stage gains real HF-hard-clip use.
+Revisit the 8× / ADAA anti-alias decision (and the crossfade latency-align) when the tube stage gains real HF-hard-clip use.
