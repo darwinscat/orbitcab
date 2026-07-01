@@ -10,6 +10,7 @@
 // block sizes, or the wrong tap being chosen for tube vs capture mode. CI gate.
 #include "poweramp/PowerAmpRouter.h"
 #include "core/AmpStage.h"
+#include "core/CabEngine.h"
 #include "core/DryAligner.h"
 #include "core/Params.h"
 #include <juce_core/juce_core.h>
@@ -76,6 +77,45 @@ namespace
             for (int i = 0; i < n; ++i) out[off + (size_t) i] = a.delayed (0)[i];
         }
         return out;
+    }
+
+    // Best-fit integer delay of `out` vs `in` over [0, maxD] (min mean-squared error). Robust to the
+    // tiny (~1e-6) non-idempotence of the full engine chain — pins the delay without bit-exactness.
+    int bestFitDelay (const std::vector<float>& out, const std::vector<float>& in, int maxD)
+    {
+        int best = 0; double bestErr = 1.0e300;
+        for (int d = 0; d <= maxD; ++d)
+        {
+            double e = 0.0; int c = 0;
+            for (size_t n = (size_t) maxD; n < in.size(); ++n) { const double df = (double) out[n] - (double) in[n - (size_t) d]; e += df * df; ++c; }
+            if (c > 0 && e / (double) c < bestErr) { bestErr = e / (double) c; best = d; }
+        }
+        return best;
+    }
+
+    // Run `in` through a CabEngine in `block`-sized chunks with params `p`; return channel-0 output.
+    std::vector<float> runEngine (cab::CabEngine& e, const cab::Params& p, const std::vector<float>& in, int block)
+    {
+        std::vector<float> out (in.size(), 0.0f), L ((size_t) block), R ((size_t) block);
+        for (size_t off = 0; off < in.size(); off += (size_t) block)
+        {
+            const int n = (int) juce::jmin ((size_t) block, in.size() - off);
+            for (int i = 0; i < n; ++i) { L[(size_t) i] = in[off + (size_t) i]; R[(size_t) i] = L[(size_t) i]; }
+            float* io[2] = { L.data(), R.data() };
+            e.process (io, 2, n, p, false);
+            for (int i = 0; i < n; ++i) out[off + (size_t) i] = L[(size_t) i];
+        }
+        return out;
+    }
+
+    // The factory 48k preamp used by the router test, as an embedded resource file (any 48k .nam works).
+    juce::MemoryBlock loadTestModelBytes()
+    {
+        juce::MemoryBlock mb;
+       #ifdef ORBITCAB_RES_DIR
+        juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KR-red-12h.nam").loadFileAsData (mb);
+       #endif
+        return mb;
     }
 }
 
@@ -166,6 +206,50 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                     const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64);
                     expect (isDelayedBy (out, in, Ln), "capture off = dry delayed by EXACTLY the reported latency");
                 }
+            }
+           #endif
+        }
+
+        // Full-engine guards: with a rate-matching model ARMED, a bypassed/off NAM stage must still emit
+        // the dry delayed to that stage's PDC (so the reported latency and the signal agree, and toggling
+        // the power never shifts either). Reverting to a hard bypass (no delay) makes bestFitDelay == 0.
+        beginTest ("CabEngine PREAMP bypass is latency-aligned to the armed model at 96 kHz");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const auto bytes = loadTestModelBytes();
+            expect (bytes.getSize() > 0, "embedded test .nam present");
+            if (bytes.getSize() > 0)
+            {
+                cab::Params p; p.autoLevel = false; p.slot[0].dryWet01 = 0.0f;   // pure post-amp dry
+                p.preampOn = false; p.ampOn = false;                            // preamp bypassed, poweramp off
+                cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
+                expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "preamp model loads");
+                const int L = e.preampLatencySamples();
+                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);      // 9 @ 96k
+                const auto in  = distinctSignal (12000);
+                const auto out = runEngine (e, p, in, 128);
+                expectEquals (bestFitDelay (out, in, 24), L,
+                              "preamp-OFF dry must be delayed by the armed model's rate-match latency");
+            }
+           #endif
+        }
+
+        beginTest ("CabEngine CAPTURE (poweramp) bypass is latency-aligned to the armed model at 96 kHz");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const auto bytes = loadTestModelBytes();
+            if (bytes.getSize() > 0)
+            {
+                cab::Params p; p.autoLevel = false; p.slot[0].dryWet01 = 0.0f;
+                p.preampOn = false; p.ampOn = false; p.powerAmpMode = cab::PowerAmpMode::capture;
+                cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
+                expect (e.loadAmpModelBytes (bytes.getData(), bytes.getSize()), "capture model loads");
+                const int L = e.ampLatencySamples();
+                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);
+                const auto in  = distinctSignal (12000);
+                const auto out = runEngine (e, p, in, 128);
+                expectEquals (bestFitDelay (out, in, 24), L,
+                              "poweramp-OFF dry must be delayed by the armed capture's rate-match latency");
             }
            #endif
         }

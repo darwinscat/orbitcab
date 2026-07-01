@@ -608,13 +608,13 @@ bool OrbitCabAudioProcessor::exportEmbedsAmp() const
 void OrbitCabAudioProcessor::applyPoweramp()
 {
     // Message thread (poll timer). Resolve "ampSel" against the merged library and load that
-    // model into the amp stage. Off / no selection / unresolved (model gone) all clear the model
-    // so the stage is a clean passthrough — never a phantom wrong amp.
+    // model into the amp stage. No selection / unresolved (model gone) clears the model so the
+    // stage is a clean passthrough — never a phantom wrong amp.
     if (ampOnParam == nullptr || ampOnParam->load() <= 0.5f)
-    {
-        engine.clearAmpModel();
-        return;
-    }
+        return;   // Powered OFF: keep the loaded capture ARMED (do NOT clear). Its rate-match latency
+                  // must persist so toggling the poweramp never changes PDC (no host re-sync gap). The
+                  // router already routes OFF (latency-aligned dry) and never processes the model while
+                  // off, so an armed-but-off model is inaudible — only its latency stays reported.
 
     const auto sel = selectedPowerampId();
     if (sel.isNotEmpty())
@@ -758,13 +758,12 @@ bool OrbitCabAudioProcessor::exportEmbedsPreamp() const
 void OrbitCabAudioProcessor::applyPreamp()
 {
     // Message thread (poll timer). Resolve "preampSel" against the merged library and load that
-    // model into the preamp stage. Off / no selection / unresolved all clear the model so the stage
-    // is a clean passthrough — never a phantom wrong amp. Mirrors applyPoweramp exactly.
+    // model into the preamp stage. No selection / unresolved clears the model so the stage is a
+    // clean passthrough — never a phantom wrong amp. Mirrors applyPoweramp exactly.
     if (preampOnParam == nullptr || preampOnParam->load() <= 0.5f)
-    {
-        engine.clearPreampModel();
-        return;
-    }
+        return;   // Powered OFF: keep the loaded preamp ARMED (do NOT clear). Its rate-match latency must
+                  // persist so toggling the preamp never changes PDC (no host re-sync gap). CabEngine
+                  // routes the bypass (latency-aligned dry) and never processes the model while off.
 
     const auto sel = selectedPreampId();
     if (sel.isNotEmpty() && sel != "bypass")   // "bypass" = preamp stage ON but no model → clean passthrough (standalone EQ)

@@ -484,6 +484,53 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
 )
 
 # ----------------------------------------------------------------------------
+# Processor-level PDC regression GATE: at 96 kHz (NAM stages rate-match), toggling a stage's power must
+# NOT change the reported latency — the invariant that, when broken, gave the enable/disable gap. Loads
+# a real factory preamp so the model's rate-match latency is exercised (and must persist while powered
+# off). Returns non-zero on failure. Same processor-linking recipe as the toggle probe above.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_latency_pdc_test PRODUCT_NAME "OrbitCabLatencyPdcTest")
+if(MSVC)
+    target_link_options(orbitcab_latency_pdc_test PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_latency_pdc_test PRIVATE
+    tests/LatencyPdcTest.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_latency_pdc_test PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_latency_pdc_test PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
 # Headless unit tests for the cab:: DSP core (JUCE UnitTest). Links core/ ONLY —
 # no GUI, no juce_audio_processors, no host — which is the whole point of the
 # core/adapter split. Run it as a CI gate (returns non-zero on any failure).
