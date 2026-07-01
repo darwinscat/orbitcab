@@ -498,6 +498,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/IRSlotTests.cpp
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
+    tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
     tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
@@ -514,6 +515,7 @@ target_sources(OrbitCab_Tests PRIVATE
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # PowerAmpRouterAlignTests loads a real 48k .nam
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration

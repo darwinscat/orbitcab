@@ -12,18 +12,18 @@ namespace cab::poweramp
 namespace
 {
     constexpr double kRampSeconds = 0.03;   // matches CabEngine's other live glides
+    // Dry-alignment ring capacity: covers ANY stage latency (tube oversampling ~31; NAM rate-match
+    // ≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin. Fixed so the delay tap
+    // can vary per block (tube ↔ capture) without ever reallocating on the audio thread.
+    constexpr int kAlignRingSamples = 256;
 }
 
 void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
 {
     tube.prepare (sampleRate, maxBlock);
-    alignLatency = juce::jmax (0, tube.latencySamples());   // the amount the dry/off path is delayed by in tube mode
     const int ch = juce::jmax (1, numChannels);
-    scratch.setSize    (ch, juce::jmax (1, maxBlock), false, false, true);
-    dryScratch.setSize (ch, juce::jmax (1, maxBlock), false, false, true);
-    dryRing.setSize    (ch, juce::jmax (1, alignLatency), false, false, true);
-    dryRing.clear();
-    dryRingPos = 0;
+    scratch.setSize (ch, juce::jmax (1, maxBlock), false, false, true);
+    dryAligner.prepare (ch, maxBlock, kAlignRingSamples);
     xfade.reset (sampleRate, kRampSeconds);
     xfade.setCurrentAndTargetValue (1.0f);
     current = fadeFrom = Active::off;
@@ -35,44 +35,15 @@ void PowerAmpRouter::reset()
 {
     tube.reset();
     scratch.clear();
-    dryScratch.clear();
-    dryRing.clear();
-    dryRingPos = 0;
+    dryAligner.reset();
     xfade.setCurrentAndTargetValue (1.0f);
     current = fadeFrom = Active::off;
     fading  = false;
     seeded  = false;
 }
 
-void PowerAmpRouter::advanceDryAlign (const float* const* io, int numChannels, int numSamples) noexcept
-{
-    // dryScratch = io delayed by alignLatency; the ring advances once per block (fed EVERY block so
-    // it is warm the instant the OFF path needs it). alignLatency == 0 → the tube reports no latency,
-    // so alignment is a plain copy (dry passes untouched).
-    const int L = alignLatency;
-    if (L <= 0)
-    {
-        for (int ch = 0; ch < numChannels; ++ch)
-            dryScratch.copyFrom (ch, 0, io[ch], numSamples);
-        return;
-    }
-    for (int ch = 0; ch < numChannels; ++ch)
-    {
-        float* ring = dryRing.getWritePointer (ch);
-        float* dst  = dryScratch.getWritePointer (ch);
-        int pos = dryRingPos;
-        for (int i = 0; i < numSamples; ++i)
-        {
-            dst[i]    = ring[pos];      // sample from exactly L samples ago
-            ring[pos] = io[ch][i];      // overwrite with the freshest input
-            if (++pos >= L) pos = 0;
-        }
-    }
-    dryRingPos = (dryRingPos + numSamples) % L;   // all channels advanced identically → one commit
-}
-
 void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int numSamples,
-                             AmpStage& nam, bool tubeMode) noexcept
+                             AmpStage& nam) noexcept
 {
     switch (a)
     {
@@ -84,11 +55,11 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
                     for (int ch = 0; ch < numChannels; ++ch) dst[ch][i] *= tubeMakeup;
             break;
         case Active::off:
-            // In tube mode the dry must match the tube's PDC → emit the latency-aligned dry; in
-            // capture mode (0-latency) the raw dry already sitting in `dst` passes through untouched.
-            if (tubeMode)
-                for (int ch = 0; ch < numChannels; ++ch)
-                    juce::FloatVectorOperations::copy (dst[ch], dryScratch.getReadPointer (ch), numSamples);
+            // Emit the latency-aligned dry so an off↔active crossfade stays time-aligned to the
+            // active stage's PDC. When that stage reports 0 latency, the aligned dry == the raw dry,
+            // so this is a straight pass-through (identical to the legacy dry path).
+            for (int ch = 0; ch < numChannels; ++ch)
+                juce::FloatVectorOperations::copy (dst[ch], dryAligner.delayed (ch), numSamples);
             break;
     }
 }
@@ -116,8 +87,11 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
     const bool   tubeMode = (mode == PowerAmpMode::tube);
 
     // Keep the dry-alignment delay warm every block and stage the latency-aligned dry (used by the
-    // OFF path in tube mode). Runs BEFORE any render — `io` still holds the raw block input here.
-    advanceDryAlign (io, numChannels, numSamples);
+    // OFF path). Runs BEFORE any render — `io` still holds the raw block input here. The delay tracks
+    // the ACTIVE mode's PDC: the tube's fixed oversampling latency, or the NAM capture's rate-match
+    // (0 at 48 kHz). This must match what PluginProcessor::updateLatency reports for the same mode.
+    const int alignLatency = tubeMode ? tube.latencySamples() : nam.latencySamples();
+    dryAligner.advance (io, numChannels, numSamples, alignLatency);
 
     if (! seeded)
     {
@@ -141,7 +115,7 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
 
     if (! fading)
     {
-        render (current, io, numChannels, numSamples, nam, tubeMode);
+        render (current, io, numChannels, numSamples, nam);
         return;
     }
 
@@ -153,8 +127,8 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
     for (int ch = 0; ch < numChannels; ++ch)
         scratch.copyFrom (ch, 0, io[ch], numSamples);          // scratch = original input
 
-    render (current,  io,                                numChannels, numSamples, nam, tubeMode); // io = fade-TO
-    render (fadeFrom, scratch.getArrayOfWritePointers(), numChannels, numSamples, nam, tubeMode); // scratch = fade-FROM
+    render (current,  io,                                numChannels, numSamples, nam); // io = fade-TO
+    render (fadeFrom, scratch.getArrayOfWritePointers(), numChannels, numSamples, nam); // scratch = fade-FROM
 
     for (int n = 0; n < numSamples; ++n)
     {

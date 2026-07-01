@@ -827,16 +827,18 @@ void OrbitCabAudioProcessor::updateLatency()
     // Rate-match PDC; 0 at 48k / stage off. The two NAM stages each rate-match independently, so
     // their latencies SUM (possible future optimisation: keep the signal at the model rate between
     // them and rate-match only once — a single round-trip instead of two).
-    const bool ampOn    = ampOnParam    != nullptr && ampOnParam->load()    > 0.5f;
-    const bool preampOn = preampOnParam != nullptr && preampOnParam->load() > 0.5f;
-    const bool tubeMode = ampModeParam  != nullptr && ampModeParam->load()  > 0.5f;
-    // Poweramp latency follows the selected MODE, not the power toggle. Tube mode reports the tube's
-    // latency (its oversampling) whether the SIMULATOR is powered on OR off — the router delays the
-    // dry/off path by the same amount — so toggling the SIMULATOR never changes PDC (no host re-sync
-    // gap, no crossfade misalignment). Capture mode is ~zero-latency, so it reports only when on.
+    const bool tubeMode = ampModeParam != nullptr && ampModeParam->load() > 0.5f;
+    // Poweramp latency follows the selected MODE, not the power toggle — for BOTH modes. The router
+    // reports the active stage's latency (Tube = its oversampling; Capture = the NAM rate-match, 0 at
+    // 48 kHz) whether the poweramp is powered on OR off, and delays the dry/off path by that same
+    // amount, so toggling the power never changes PDC (no host re-sync gap, no crossfade misalignment).
+    // A capture↔tube MODE switch still re-reports (deliberate).
     const int pwrLat = tubeMode ? engine.tubePowerAmpLatencySamples()
-                                : (ampOn ? engine.ampLatencySamples() : 0);
-    const int lat = pwrLat + (preampOn ? engine.preampLatencySamples() : 0);
+                                : engine.ampLatencySamples();
+    // Preamp: its rate-match latency whenever a model is ARMED (loaded), NOT gated on the power toggle —
+    // CabEngine delays the bypass by the same amount, so the preamp's power toggle never changes PDC
+    // either. preampLatencySamples() is already 0 with no model / at 48 kHz. The two NAM stages sum.
+    const int lat = pwrLat + engine.preampLatencySamples();
     setLatencySamples (lat);
 }
 

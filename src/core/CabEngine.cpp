@@ -21,6 +21,9 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     currentSampleRate = sampleRate;
 
     preamp.prepare (sampleRate, maxBlock);
+    // Dry-alignment for the preamp bypass: 256-sample capacity covers any NAM rate-match latency
+    // (≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin — matches the router.
+    preampBypassAlign.prepare (numChannels, maxBlock, 256);
     ampEq.prepare (sampleRate, maxBlock, numChannels);
     amp.prepare (sampleRate, maxBlock);
     powerAmpRouter.prepare (sampleRate, maxBlock, numChannels);
@@ -58,6 +61,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 void CabEngine::reset()
 {
     preamp.reset();
+    preampBypassAlign.reset();
     ampEq.reset();
     amp.reset();
     powerAmpRouter.reset();
@@ -170,8 +174,18 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // off or no model is loaded; the EQ is a bit-exact passthrough when eq.on is false. The EQ
     // sits between the stages so its cuts shape what the poweramp distorts. ---
     { const auto a = PerfClock::now();
+      // Latency-aligned preamp gate. The preamp has host-rate latency when it rate-matches (0 at
+      // 48 kHz; a handful of samples when resampling). Keep the dry aligned to that PDC EVERY block
+      // (warm), so that whether the preamp is ON (its inherent latency) or OFF (dry delayed to the
+      // same amount) the plugin's reported latency never changes on the power toggle → no host
+      // re-sync gap. advance() reads the raw input first (before preamp.process overwrites it).
+      float* const* pio = buffer.getArrayOfWritePointers();
+      preampBypassAlign.advance (pio, numCh, numSamples, preamp.latencySamples());
       if (p.preampOn)
-          preamp.process (buffer.getArrayOfWritePointers(), numCh, numSamples, /*normalize*/ true);
+          preamp.process (pio, numCh, numSamples, /*normalize*/ true);
+      else
+          for (int ch = 0; ch < numCh; ++ch)
+              juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), numSamples);
       nsPre = elapsedNs (a); }
     { const auto a = PerfClock::now();
       ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);

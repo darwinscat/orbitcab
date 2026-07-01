@@ -11,6 +11,7 @@
 #include "Params.h"
 #include "IRSlot.h"
 #include "AmpStage.h"
+#include "DryAligner.h"                          // cab::DryAligner — dry latency alignment for the preamp bypass
 #include "AmpEq.h"
 #include "AutoLeveler.h"
 #include "../poweramp/PowerAmpRouter.h"          // the poweramp seam: NAM capture <-> white-box tube
@@ -114,6 +115,8 @@ public:
 
 private:
     AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
+    DryAligner  preampBypassAlign;         // delays the dry to the preamp's PDC while it's OFF → toggling
+                                           // the preamp never changes reported latency (no host re-sync gap)
     AmpEq       ampEq;                      // amp tone stack, between the preamp and poweramp NAM stages
     AmpStage    amp;                       // optional NAM poweramp (capture mode), front of the cab
     poweramp::PowerAmpRouter powerAmpRouter; // poweramp seam: ampOn/mode → capture(amp) | tube, click-free

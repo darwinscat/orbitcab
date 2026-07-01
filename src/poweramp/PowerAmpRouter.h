@@ -6,6 +6,7 @@
 #include <juce_dsp/juce_dsp.h>          // AudioBuffer scratch + SmoothedValue fade
 #include "TubePowerAmp.h"
 #include "../core/Params.h"             // cab::PowerAmpMode
+#include "../core/DryAligner.h"         // cab::DryAligner — latency-aligned dry for the OFF path
 
 namespace cab { class AmpStage; }       // forward-decl — the NAM capture, owned by CabEngine
 
@@ -30,15 +31,16 @@ namespace cab { class AmpStage; }       // forward-decl — the NAM capture, own
 // twice in a block. A stage that goes idle (faded out) is no longer fed; on switching back it
 // resumes from stale state — acceptable for a 30 ms fade, revisited if it ever audibly matters.
 //
-// Latency alignment (tube mode): the tube stage has real host-rate latency (its oversampling —
-// ~31 samples), whereas OFF (dry) and the NAM capture are ~zero-latency. If the reported PDC
-// changed when the SIMULATOR power toggled (0 ↔ tubeLatency), the host would re-sync — an audible
-// GAP — and the off↔tube crossfade would blend a 0-latency dry against a 31-sample-late tube
-// (comb / level jump). So in TUBE MODE this router reports a CONSTANT latency (= the tube's) for
-// BOTH power states and delays the OFF/dry path by that same amount (an always-warm delay line):
-// toggling the SIMULATOR never changes PDC (no gap) and the crossfade blends time-aligned signals
-// (no jump). Capture mode stays ~zero-latency on both sides, so it needs no alignment; a capture↔
-// tube MODE switch still changes PDC (deliberate, rare — a plugin-like re-sync there is expected).
+// Latency alignment (BOTH modes): the active stage has host-rate latency — the tube's oversampling
+// (~31 samples), or the NAM capture's rate-match (0 at 48 kHz, a handful of samples when resampling).
+// If the reported PDC changed when the power toggled (0 ↔ stageLatency), the host would re-sync — an
+// audible GAP — and the off↔active crossfade would blend a 0-latency dry against a late wet (comb /
+// level jump). So in a given mode this router reports a CONSTANT latency (= that mode's stage) for
+// BOTH power states and delays the OFF/dry path by the SAME amount (an always-warm delay line):
+// toggling power never changes PDC (no gap) and the crossfade blends time-aligned signals (no jump).
+// The delay amount is per-block dynamic (tube: fixed oversampling; capture: the loaded model's rate-
+// match). A capture↔tube MODE switch DOES change PDC (deliberate, rare — a plugin-like re-sync there
+// is expected); the frequent power toggle, within either mode, is fully aligned.
 //
 // 🔴 RT: process() never allocates/locks/throws — the scratch is allocated in prepare().
 //==============================================================================
@@ -66,22 +68,14 @@ private:
                        : (mode == PowerAmpMode::tube ? Active::tube : Active::capture);
     }
 
-    // Render one stage into `dst` (off in tube mode → the latency-aligned dry from `dryScratch`;
-    // off in capture mode → no-op, raw dry passes through).
-    void render (Active a, float* const* dst, int numChannels, int numSamples,
-                 AmpStage& nam, bool tubeMode) noexcept;
-
-    // Advance the dry-alignment delay once per block (kept warm EVERY block, any mode) and leave
-    // `dryScratch` = the raw input delayed by the tube's latency — the dry the host expects at PDC
-    // = tubeLatency, used by the OFF path in tube mode. No-op copy when the tube reports 0 latency.
-    void advanceDryAlign (const float* const* io, int numChannels, int numSamples) noexcept;
+    // Render one stage into `dst`. OFF emits the latency-aligned dry (the input delayed to the active
+    // stage's PDC via `dryAligner`) so an off↔active crossfade stays time-aligned; when the active
+    // stage reports 0 latency that dry already equals the raw input, so it's a plain pass-through.
+    void render (Active a, float* const* dst, int numChannels, int numSamples, AmpStage& nam) noexcept;
 
     TubePowerAmp tube;
     juce::AudioBuffer<float>   scratch;             // preallocated: holds the fade-FROM render
-    juce::AudioBuffer<float>   dryScratch;          // preallocated: the raw input delayed by tubeLatency
-    juce::AudioBuffer<float>   dryRing;             // persistent alignLatency-sample delay history (per channel)
-    int  dryRingPos   = 0;                          // shared write/read cursor into dryRing
-    int  alignLatency = 0;                          // = tube.latencySamples(), captured in prepare()
+    DryAligner                 dryAligner;          // latency-aligned dry for the OFF path (see DryAligner.h)
     juce::SmoothedValue<float> xfade { 1.0f };      // 0→1 ramp during a capture<->tube switch
     Active current  = Active::off;
     Active fadeFrom = Active::off;
