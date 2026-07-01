@@ -15,6 +15,24 @@ project(OrbitCab VERSION 1.6.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ----------------------------------------------------------------------------
+# Local incremental BUILD NUMBER — so you can tell which build the host actually loaded (the editor
+# shows it). A tiny counter is bumped on every build into generated/BuildInfo.h (number + HH:MM:SS).
+# Gitignored, dev-only; a tagged release build defines nothing special and simply won't show it.
+# ----------------------------------------------------------------------------
+set(ORBITCAB_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${ORBITCAB_GENERATED_DIR}")
+execute_process(COMMAND ${CMAKE_COMMAND}   # generate once now so the first compile has the header
+    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake)
+add_custom_target(orbitcab_bump_build ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake
+    BYPRODUCTS ${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+    COMMENT "OrbitCab: bump local build number")
+include_directories(${ORBITCAB_GENERATED_DIR})
+
 if(MSVC)
     # 8 MB stack (the Unix default). The dsp-test console apps put the whole OrbitCabAudioProcessor on the
     # stack; MSVC's 1 MB default overflows on construction → an instant, output-less crash. Match Unix.
@@ -180,6 +198,10 @@ target_sources(OrbitCab PRIVATE
     src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
     src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
+add_dependencies(OrbitCab orbitcab_bump_build)   # regenerate BuildInfo.h (local build number) before each build
+# ...and force the editor TU to recompile whenever the number changes (every build), so the shown build
+# number is always CURRENT — not frozen at PluginEditor.cpp's last source edit (which lagged it badly).
+set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${ORBITCAB_GENERATED_DIR}/BuildInfo.h")
 
 # ----------------------------------------------------------------------------
 # Bundled IRs — embedded into the binary as a C++ byte array (no disk reads).
@@ -401,6 +423,51 @@ target_compile_definitions(orbitcab_tube_audition PRIVATE
     JucePlugin_VersionString="1.0.0"
 )
 target_link_libraries(orbitcab_tube_audition PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Offline reproduction of the poweramp enable/disable KICK: toggles the tube on/off on a steady
+# sine through the real processor and prints the output RMS envelope. Dev diagnostic; not a CI gate.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_poweramp_toggle_probe PRODUCT_NAME "OrbitCabPowerampToggleProbe")
+if(MSVC)
+    target_link_options(orbitcab_poweramp_toggle_probe PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_poweramp_toggle_probe PRIVATE
+    tools/dsp-test/poweramp_toggle_probe.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_poweramp_toggle_probe PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     OrbitCabData
     OrbitCabPreampData
     nam_core

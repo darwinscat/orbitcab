@@ -5,6 +5,9 @@
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
+#if __has_include("BuildInfo.h")
+ #include "BuildInfo.h"   // generated local build number (dev builds; see cmake/bump_build.cmake)
+#endif
 
 #include <algorithm>
 
@@ -1710,6 +1713,18 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText ("0", juce::Rectangle<float> (cx - 6.0f, track.getY() - 14.0f, 12.0f, 9.0f),
                     juce::Justification::centred, false);
     }
+
+   #if defined(ORBITCAB_BUILD_NUMBER)
+    // Local build id (dev builds only), pinned right under the version badge (so it tracks the badge
+    // instead of floating) — tells you which build the host loaded without reloading two or three times.
+    {
+        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText ("build " + juce::String (ORBITCAB_BUILD_NUMBER),
+                    juce::Rectangle<int> (getWidth() - 214, getHeight() - 16, 208, 14),
+                    juce::Justification::centredRight, false);   // absolute bottom-right — always inside the window
+    }
+   #endif
 }
 
 void OrbitCabAudioProcessorEditor::resized()

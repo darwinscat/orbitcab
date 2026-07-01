@@ -1,5 +1,6 @@
 # Build output
 /build/
+/build-*/
 /cmake-build-*/
 /out/
 *.o
@@ -53,3 +54,6 @@ resources/preamps/*.nam
 
 # Stray build/tool logs
 *.log
+
+# local incremental build counter (per-checkout, dev-only — see cmake/bump_build.cmake)
+.orbitcab_build_number
