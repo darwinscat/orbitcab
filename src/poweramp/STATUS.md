@@ -112,5 +112,55 @@ The DSP core was confirmed correct; the review found + fixed:
   (a ~0.65 ms comb during a *manual* mode switch; a delay-line align is a small later fix). Beating the
   -73 dBc OS floor needs a sharper OS (higher tpp/factor) → a CPU + latency tradeoff, unnecessary under a cab IR.
 
-### Next: Block 3 — the "feel" blocks (sag, NFB loop, virtual load, output transformer) — see PLAN.md.
-Revisit the 8× / ADAA anti-alias decision (and the crossfade latency-align) when the tube stage gains real HF-hard-clip use.
+---
+
+## Block 3 — the "feel" layer: SAG + PRESENCE/DEPTH  (2026-07-01)
+
+Scope: dynamic power-supply **sag** + NFB-style **presence/depth** voicing (virtual-load / output-transformer
+deferred to a later block). All isolated in `src/poweramp/`; feature branch, no push.
+
+### What shipped
+- **SagEnvelope.h** — pure, header-only, unit-testable dual-TC sag model. Feedforward follower on rectified
+  DEMAND (|G·x|, mono-linked shared supply) → droop ∈ [0, maxDroop·amount]. Fast attack (rectifier), slow
+  recovery (B+ bloom). Applied as a shrinking rail s=1−droop: `1/s` folds into the Drive input ramp, `s` into a
+  post-downsample gain → **y = s·shaper(u/s)** (earlier breakup + lower ceiling = squish, not a VCA duck).
+- **Presence/Depth** — two `felitronics::eq::Svf` min-phase shelves held at fully-open gain; the dynamic
+  "NFB opens when pushed" is a **per-sample dry/wet blend** driven by the per-sample droop (per-sample, NOT
+  per-block — that's what keeps it block-size-deterministic). `blendForNominal` sets the quiet shelf to the
+  nominal knob gain; droop opens it toward Gmax.
+- Params: `TubeParams` += sag/presence/depth [0,1]; `TubeVoicing` += per-tube sag/NFB constants; 3 APVTS floats
+  (`tubeSag/tubePresence/tubeDepth`, 0–100 %) at kParamVersion 1; packParams wiring. `felitronics::eq` linked
+  into all 5 targets compiling TubePowerAmp.cpp.
+- **FEEL GATE:** sag=presence=depth=0 ⇒ every block-3 path is skipped ⇒ **byte-identical to block 2** (all 30
+  block-2 golden checks still pass unchanged = the superset invariant).
+- **orbitcab_tube_audition** — offline render tool (there is no tube-param UI yet): a DI wav → Tube mode → cab, a
+  curated 12-preset matrix → labelled −3 dBFS wavs to judge by ear. `<DI.wav> [cabIR.wav] [outDir]`.
+
+### Grounding (real felitronics API)
+`eq::Svf` gives runtime-gain min-phase High/LowShelf (TPT, 0 latency, JUCE-free) → no hand-rolled shelf; one
+instance covers both channels. Shelf Q is Butterworth-fixed → the Depth "resonance bump" dropped for v1 (plain
+shelf). Latency unchanged (**31**).
+
+### Validation
+Core **491/491**. Maniacal golden **42/42** (30 block-2 + B1–B6): SagEnvelope dual-TC unit (attack½=128,
+release½=12115 samples), sag compression (−4.7 dB), presence/depth passband FR (+6/+5 dB), feel-ON robustness
+(RT no-alloc, latency 31, block-size determinism, NaN/huge finite), NFB-opens (1.21→1.74), overflow recovery.
+
+### Consilium + after-review (codex gpt-5.5/xhigh + a Claude adversarial agent — both converged)
+- **Fixed — sag overflow poison:** a finite input whose |x|·g exceeds FLT_MAX made demand +Inf → the sag env
+  latched to NaN (flushDenormals didn't clear it) → rail stuck at the 0.2 floor forever. Now the demand is
+  capped + `SagEnvelope::flushDenormals` zaps NaN/Inf. **B4's 1e30 never overflowed** (false confidence) → added
+  **B6** which feeds 1e38 (genuinely overflows) and asserts the post-burst tail matches a clean run.
+- **Fixed — audition tool:** pre-roll → ~600 ms (the processor may not override reset(), and 128 ms was shorter
+  than EL84's 240 ms sag recovery → presets bled); header comment reconciled with the −3 dBFS normalisation.
+- **Deferred (documented):** the per-block **bias-shift** was cut — a per-block operating-point shift breaks
+  block-size determinism; a per-sample-bias `TubeStage` overload is needed (`TubeVoicing::sagBiasDepth` reserves
+  it). Sag research (codex GitHub pass): the plate/screen-split reservoir model (Amp Books) is the high-value
+  future upgrade; `s·shaper(u/s)` is more amp-like than the common OSS "duck gain from rectified audio."
+- **Known limit (shared with block 2, not a regression):** the per-block smoother `a=1−exp(−n/τ)` is block-size-
+  exact at a block's END, but the intra-block ramp trajectory differs by buffer size DURING a live knob move — a
+  sub-25 ms transient, inaudible; the golden's determinism check covers the steady-state (constant-param)
+  guarantee that matters for offline-bounce == realtime.
+
+### Next: Block 4 — virtual load + output transformer (+ the deferred per-sample bias, plate/screen sag).
+Revisit the 8× / ADAA anti-alias decision (and the capture↔tube crossfade latency-align) when the tube stage gains real HF-hard-clip use.

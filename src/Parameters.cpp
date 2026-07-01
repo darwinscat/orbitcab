@@ -67,6 +67,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         StringArray { "6L6", "EL34", "EL84", "KT88" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "tubeTopo", kParamVersion }, "Tube Topology",
                                                         StringArray { "Push-Pull", "Single-Ended" }, 0));
+    // TUBE feel (block 3) — dynamic sag + NFB-style presence/depth. 0 % = off (⇒ exact block-2 sound).
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeSag",      kParamVersion }, "Tube Sag",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubePresence", kParamVersion }, "Tube Presence",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDepth",    kParamVersion }, "Tube Depth",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

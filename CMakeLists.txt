@@ -272,6 +272,7 @@ target_link_libraries(OrbitCab PRIVATE
     felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
     felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
     felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
+    felitronics::eq             # min-phase presence/depth shelves (block 3)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -317,6 +318,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
+    felitronics::eq
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -361,6 +363,53 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Offline AUDITION renderer for the "Tube" power-amp: a DI wav -> Tube mode -> cab,
+# writing one labelled .wav per voicing/feel setting so the sound is judged by ear.
+# Dev tool; not a CI gate.  Run: orbitcab_tube_audition <DI.wav> [cabIR.wav] [outDir]
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_tube_audition PRODUCT_NAME "OrbitCabTubeAudition")
+if(MSVC)
+    target_link_options(orbitcab_tube_audition PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_tube_audition PRIVATE
+    tools/dsp-test/tube_audition.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_tube_audition PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_tube_audition PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -406,6 +455,7 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     felitronics::convolution      # cab::Convolver
     felitronics::saturation       # cab::poweramp::TubePowerAmp curves
     felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS
+    felitronics::eq               # block-3 presence/depth shelves
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
@@ -430,7 +480,7 @@ target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
 # ----------------------------------------------------------------------------
 add_executable(orbitcab_poweramp_core_golden tests/PowerAmpCoreGolden.cpp src/poweramp/TubePowerAmp.cpp)
 target_include_directories(orbitcab_poweramp_core_golden PRIVATE src)
-target_link_libraries(orbitcab_poweramp_core_golden PRIVATE felitronics::saturation felitronics::oversampling)
+target_link_libraries(orbitcab_poweramp_core_golden PRIVATE felitronics::saturation felitronics::oversampling felitronics::eq)
 target_compile_features(orbitcab_poweramp_core_golden PRIVATE cxx_std_20)
 
 # Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a

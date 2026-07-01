@@ -21,14 +21,21 @@
 namespace cab::poweramp
 {
 
-struct TubeVoicing { float driveScale, k, bSE, vbPP, evenLeak; };
+struct TubeVoicing
+{
+    float driveScale, k, bSE, vbPP, evenLeak;                        // block 2: waveshaper voicing
+    // block 3 "feel" — per-tube-fixed sag + NFB-voicing character:
+    float sagFastMs, sagRecoveryMs, sagMaxDroop, sagBiasDepth;       // sag: attack, recovery, max rail collapse; sagBiasDepth reserved (future per-sample bias)
+    float presenceHz, presenceMaxDb, depthHz, depthMaxDb, nfbOpen;   // shelves + how much they "open" under sag/drive
+};
 
-// Brand-neutral voicing presets {0=6L6, 1=EL34, 2=EL84, 3=KT88}. evenLeak = 0 in block 2.
+// Brand-neutral voicing presets {0=6L6, 1=EL34, 2=EL84, 3=KT88}. evenLeak = 0 (exact PP cancellation).
+// Sag/NFB: 6L6/KT88 stiff (usually SS-rectified); EL84/EL34 spongy (chime/vintage). Tune by ear.
 inline constexpr TubeVoicing kTubeVoicings[4] = {
-    /* 6L6  */ { 0.85f, 2.0f, 0.18f, 0.30f, 0.0f },
-    /* EL34 */ { 1.10f, 2.6f, 0.28f, 0.22f, 0.0f },
-    /* EL84 */ { 1.40f, 3.2f, 0.33f, 0.18f, 0.0f },
-    /* KT88 */ { 0.70f, 1.7f, 0.12f, 0.34f, 0.0f },
+    /* 6L6  */ { 0.85f, 2.0f, 0.18f, 0.30f, 0.0f,   8.0f, 120.0f, 0.22f, 0.04f,   3000.0f, 6.0f, 100.0f, 6.0f, 0.5f },
+    /* EL34 */ { 1.10f, 2.6f, 0.28f, 0.22f, 0.0f,   8.0f, 170.0f, 0.30f, 0.05f,   2800.0f, 6.0f, 110.0f, 6.0f, 0.6f },
+    /* EL84 */ { 1.40f, 3.2f, 0.33f, 0.18f, 0.0f,  10.0f, 240.0f, 0.42f, 0.06f,   3200.0f, 6.5f, 120.0f, 6.5f, 0.7f },
+    /* KT88 */ { 0.70f, 1.7f, 0.12f, 0.34f, 0.0f,   6.0f, 100.0f, 0.18f, 0.03f,   2600.0f, 5.5f,  90.0f, 5.5f, 0.4f },
 };
 
 // Stateless composite tube transfer. configure() once per block from (smoothed) coeffs; at()

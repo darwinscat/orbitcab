@@ -31,6 +31,7 @@
 
 #include "poweramp/TubePowerAmp.h"
 #include "poweramp/TubeKernel.h"
+#include "poweramp/SagEnvelope.h"
 #include "core/Params.h"
 
 #include <algorithm>
@@ -74,6 +75,10 @@ double dbc (double num, double den) { return 20.0 * std::log10 (std::max (1e-15,
 
 TubeParams P (float driveDb, bool se, int tube = 0, float outDb = 0.0f)
 { TubeParams t; t.driveDb = driveDb; t.outputDb = outDb; t.singleEnded = se; t.tubeType = tube; t.autoComp = 1.0f; return t; }
+
+// Block-3 feel params on top of P().
+TubeParams Pf (float driveDb, bool se, int tube, float sag, float pres, float depth, float outDb = 0.0f)
+{ TubeParams t = P (driveDb, se, tube, outDb); t.sag = sag; t.presence = pres; t.depth = depth; return t; }
 
 // Configure a pure TubeStage from a voicing preset (block-2: evenLeak=0), at a given Drive (dB) and topology.
 TubeStage makeStage (int tube, bool se, float driveDb)
@@ -465,6 +470,101 @@ int main()
         d.setParams (P (18.0f, false)); { float* io[1] { in2.data() }; d.process (io, 1, 4096); }   // recover with valid params
         check (allFinite (in) && allFinite (in2) && rms (in2, 512, 3000) > 1e-3,
                "X12 non-finite params (NaN driveDb / Inf outputDb / NaN autoComp) ⇒ finite output, no poison");
+    }
+
+    // ===================== BLOCK 3 — SAG + PRESENCE/DEPTH ("feel") =====================
+    using cab::poweramp::SagEnvelope;
+    // B1: pure SagEnvelope unit — dual-TC timing (fast attack, slow release) + amount=0 ⇒ zero droop.
+    {
+        SagEnvelope s; s.prepare (kSr);
+        s.setParams (0.0f, 8.0f, 150.0f, 0.4f);
+        double m0 = 0; for (int i = 0; i < 8000; ++i) m0 = std::max (m0, (double) s.process (1.0f));
+        check (m0 == 0.0, "B1 SagEnvelope: amount=0 ⇒ zero droop (off is exact)");
+        s.reset(); s.setParams (1.0f, 8.0f, 200.0f, 0.4f);
+        for (int i = 0; i < 10000; ++i) s.process (1.0f); const double finalD = s.droop();
+        s.reset(); int atkHalf = 10000; for (int i = 0; i < 10000; ++i) { if (s.process (1.0f) >= 0.5 * finalD) { atkHalf = i; break; } }
+        for (int i = 0; i < 10000; ++i) s.process (1.0f); const double d0 = s.droop();
+        int relHalf = 300000; for (int i = 0; i < 300000; ++i) { if (s.process (0.0f) <= 0.5 * d0) { relHalf = i; break; } }
+        std::printf ("       B1 sag droop=%.3f  attack-half=%d  release-half=%d samples\n", finalD, atkHalf, relHalf);
+        check (finalD > 0.2, "B1 SagEnvelope compresses under sustained load (droop > 0.2)");
+        check (atkHalf < relHalf && atkHalf < (int) (0.03 * kSr) && relHalf > (int) (0.05 * kSr), "B1 dual-TC: attack fast, release slow");
+    }
+    // B2: sag COMPRESSES a sustained hot signal (integration) — steady RMS drops with sag on.
+    {
+        auto in = sine (0, 8192, 0, 171, 0.9);
+        const double r0 = rms (runStage (Pf (18.0f, true, 2, 0.0f, 0, 0), in), 3000, 4000);
+        const double r1 = rms (runStage (Pf (18.0f, true, 2, 1.0f, 0, 0), in), 3000, 4000);
+        std::printf ("       B2 steady RMS: sag off=%.3f  sag on=%.3f (%.1f dB)\n", r0, r1, dbc (r1, r0));
+        check (r1 < r0 * 0.98, "B2 sag compresses sustained load (steady RMS drops with sag on)");
+    }
+    // B3: PRESENCE boosts the HF shelf band; DEPTH boosts the LF shelf band (small-signal).
+    {
+        const int aW = 2048, aNN = 8192;
+        // Probe INSIDE each shelf's passband (not at the corner, where a shelf is only ~half open):
+        // presence is a HF shelf at ~3 kHz → probe ~9 kHz; depth is a LF shelf at ~100 Hz → probe ~47 Hz.
+        auto band = [&] (float pres, float dep, int cyc) { auto y = runStage (Pf (0.0f, false, 0, 0, pres, dep), sine (aW, aNN, 256, cyc, 0.02)); return magBin (y, aW + kLat, aNN, cyc); };
+        const double hf0 = band (0, 0, 1536), hf1 = band (1, 0, 1536);   // ~9 kHz (HF passband)
+        const double lf0 = band (0, 0, 8),    lf1 = band (0, 1, 8);      // ~47 Hz (LF passband)
+        std::printf ("       B3 presence HF %.3f→%.3f   depth LF %.3f→%.3f\n", hf0, hf1, lf0, lf1);
+        check (hf1 > hf0 * 1.5, "B3 presence boosts the HF shelf band");
+        check (lf1 > lf0 * 1.5, "B3 depth boosts the LF shelf band");
+    }
+    // B4: feel FULLY ON is robust — RT no-alloc, latency 31, block-size determinism, finite/bounded.
+    {
+        TubePowerAmp d; d.prepare (kSr, kMaxBlk, 4);
+        std::vector<float> buf (kMaxBlk, 0.5f); float* io[1] { buf.data() };
+        for (int w = 0; w < 16; ++w) { d.setParams (Pf (24.0f, false, 2, 1.0f, 1.0f, 1.0f)); d.process (io, 1, kMaxBlk); }
+        const long before = g_allocs.load (std::memory_order_relaxed);
+        for (int k = 0; k < 64; ++k) { d.setParams (Pf (24.0f, (k & 1) != 0, k & 3, 1.0f, 0.7f, 0.7f)); d.process (io, 1, kMaxBlk); }
+        check (g_allocs.load (std::memory_order_relaxed) - before == 0, "B4 feel ON: process()/setParams ZERO allocations (RT rule)");
+        check (d.latencySamples() == kLat, "B4 feel ON: latency still 31");
+        std::vector<float> src ((std::size_t) 4096, 0.0f); { unsigned long long s = 3; for (auto& x : src) { s = s * 6364136223846793005ULL + 1ULL; x = 0.6f * ((float) ((s >> 40) & 0xFFFFFF) / 8388608.0f - 1.0f); } }
+        std::vector<int> b512 { 512 }, hostile { 1, 7, 64, 333, 512, 128 };
+        auto ya = runStage (Pf (24.0f, false, 2, 1.0f, 0.6f, 0.6f), src, 4, &b512);
+        auto yb = runStage (Pf (24.0f, false, 2, 1.0f, 0.6f, 0.6f), src, 4, &hostile);
+        double mx = 0; for (std::size_t i = 0; i < ya.size(); ++i) mx = std::max (mx, (double) std::fabs (ya[i] - yb[i]));
+        check (mx < 1e-6, "B4 feel ON: block-size determinism holds");
+        bool ok = true; for (float v : { 1.0f, std::numeric_limits<float>::quiet_NaN(), 1e30f }) { std::vector<float> h (1024, v); ok = ok && allFinite (runStage (Pf (36.0f, true, 2, 1.0f, 1.0f, 1.0f), h)); }
+        check (ok, "B4 feel ON: finite output for NaN/huge/full-scale (no poison)");
+    }
+    // B5: NFB "opens" — presence's effective HF boost GROWS when pushed (sag droops → shelf opens), i.e.
+    // the presence-on/off HF ratio at high drive+sag exceeds the quiet ratio: dynamic, not a static EQ.
+    {
+        const int aW = 2048, aNN = 8192;
+        auto ratio = [&] (float drive, float sag) {
+            auto y1 = runStage (Pf (drive, true, 2, sag, 1.0f, 0), sine (aW, aNN, 256, 512, 0.05));
+            auto y0 = runStage (Pf (drive, true, 2, sag, 0.0f, 0), sine (aW, aNN, 256, 512, 0.05));
+            return magBin (y1, aW + kLat, aNN, 512) / std::max (1e-9, magBin (y0, aW + kLat, aNN, 512));
+        };
+        const double rLo = ratio (0.0f, 0.0f), rHi = ratio (30.0f, 1.0f);
+        std::printf ("       B5 presence HF-open ratio: quiet=%.3f  pushed=%.3f\n", rLo, rHi);
+        check (rHi > rLo * 1.03, "B5 NFB opens: presence's HF boost grows when pushed (dynamic, not static EQ)");
+    }
+    // B6: the sag path RECOVERS from a FINITE-overflow burst — an input whose |x|·g exceeds FLT_MAX pushes
+    // the demand to +Inf; the sag envelope must NOT latch to NaN (→ rail stuck at the 0.2 floor forever).
+    // The post-burst settled tail must match a clean, never-overflowed run. (Real trigger — B4's 1e30 stays
+    // finite after ·g and never exercised this path; this feeds 1e38 which genuinely overflows.)
+    {
+        const double tp = 6.283185307179586;
+        auto tail = [&] (bool burst)
+        {
+            TubePowerAmp d; d.prepare (kSr, kMaxBlk, 4);
+            d.setParams (Pf (36.0f, true, 2, 1.0f, 0.0f, 0.0f));   // hot EL84, sag fully on
+            std::vector<float> buf ((std::size_t) kMaxBlk); float* io[1] { buf.data() };
+            if (burst) { std::fill (buf.begin(), buf.end(), 1.0e38f); d.process (io, 1, kMaxBlk); }   // overflow
+            double e = 0; const int NB = 60;
+            for (int b = 0; b < NB; ++b)
+            {
+                for (int i = 0; i < kMaxBlk; ++i) buf[(std::size_t) i] = 0.3f * (float) std::sin (tp * 220.0 * (b * kMaxBlk + i) / kSr);
+                d.process (io, 1, kMaxBlk);
+                if (b >= NB - 10) for (int i = 0; i < kMaxBlk; ++i) e += (double) buf[i] * buf[i];
+            }
+            return std::sqrt (e / (10.0 * kMaxBlk));
+        };
+        const double clean = tail (false), recovered = tail (true);
+        std::printf ("       B6 tail RMS: clean=%.4f  post-overflow=%.4f\n", clean, recovered);
+        check (clean > 1.0e-3 && std::fabs (recovered - clean) < 0.02 * clean,
+               "B6 sag recovers from finite-overflow burst (rail not stuck at a NaN floor)");
     }
 
     std::printf ("%d checks, %d failures\n", g_checks, g_fail);

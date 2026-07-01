@@ -57,6 +57,10 @@ struct TubeParams
     int   tubeType    = 0;       // 0=6L6, 1=EL34, 2=EL84, 3=KT88 (voicing coefficient preset)
     bool  singleEnded = false;   // false = push-pull class AB, true = single-ended class A
     float autoComp    = 1.0f;    // drive-compensation amount (1 = small-signal unity → clean stays clean)
+    // block 3 "feel" layer (all [0,1] amounts; 0 = off ⇒ exact block-2 behaviour):
+    float sag         = 0.0f;    // dynamic power-supply sag (bloom / touch / compression under load)
+    float presence    = 0.0f;    // NFB-style HF voicing that opens up when pushed
+    float depth       = 0.0f;    // NFB-style LF voicing that loosens when pushed
 };
 
 struct Params
