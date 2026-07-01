@@ -181,7 +181,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // vs the white-box tube stage. The router crossfades click-free on a live capture<->tube
       // switch and keeps the NAM path bit-identical to the legacy `if (p.ampOn) amp.process(...)`.
       powerAmpRouter.process (buffer.getArrayOfWritePointers(), numCh, numSamples,
-                              p.ampOn, p.powerAmpMode, amp);
+                              p.ampOn, p.powerAmpMode, p.tube, amp);
       nsPwr = elapsedNs (a); }
 
     // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---

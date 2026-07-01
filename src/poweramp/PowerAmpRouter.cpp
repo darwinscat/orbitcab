@@ -45,8 +45,10 @@ void PowerAmpRouter::render (Active a, float* const* io, int numChannels, int nu
 }
 
 void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
-                              bool ampOn, PowerAmpMode mode, AmpStage& nam) noexcept
+                              bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams,
+                              AmpStage& nam) noexcept
 {
+    tube.setParams (tubeParams);   // cheap: stores targets; the tube smooths its coeffs internally
     const Active target = resolve (ampOn, mode);
 
     if (! seeded)

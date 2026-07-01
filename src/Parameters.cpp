@@ -55,6 +55,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // (cab::poweramp::PowerAmpRouter). New ID at v1 — an old session with no "ampMode" restores to Capture.
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "ampMode", kParamVersion }, "Power-Amp Mode",
                                                         StringArray { "Capture", "Tube" }, 0));
+    // TUBE poweramp controls — the white-box "Tube" mode only (inert in Capture/off). First DSP block:
+    // an oversampled push-pull / single-ended tube waveshaper with per-tube voicings. None affect PDC.
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDrive",  kParamVersion }, "Tube Drive",
+                                                        NormalisableRange<float> (0.0f, 36.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeOutput", kParamVersion }, "Tube Output",
+                                                        NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "tubeType", kParamVersion }, "Tube Type",
+                                                        StringArray { "6L6", "EL34", "EL84", "KT88" }, 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "tubeTopo", kParamVersion }, "Tube Topology",
+                                                        StringArray { "Push-Pull", "Single-Ended" }, 0));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

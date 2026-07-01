@@ -270,6 +270,8 @@ target_link_libraries(OrbitCab PRIVATE
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
     felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
+    felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
+    felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -313,6 +315,8 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     teq::core
     felitronics::analysis
     felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -355,6 +359,8 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     teq::core
     felitronics::analysis
     felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -398,6 +404,8 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     teq::core                     # cab::AmpEq (AmpEqTests)
     felitronics::analysis         # cab::CabEngine SpectrumTap capture
     felitronics::convolution      # cab::Convolver
+    felitronics::saturation       # cab::poweramp::TubePowerAmp curves
+    felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
@@ -415,14 +423,15 @@ target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
 
 # ----------------------------------------------------------------------------
-# Headless golden test for the white-box tube poweramp scaffold (block 1): cab::poweramp::
-# TubePowerAmp is a STRICT pass-through (bit-exact identity, zero latency) before any DSP lands,
-# so later blocks measure their deltas against a known-clean baseline. JUCE-free — compiles only
-# the (header-light) stage, links nothing. CI gate (non-zero on failure).
+# Headless golden for the white-box tube poweramp CORE (block 2): cab::poweramp::TubePowerAmp —
+# an oversampled PP/SE tube waveshaper. Asserts THD-vs-drive, PP even-harmonic cancellation vs SE
+# even-rich, <-70 dBc aliasing @4x, near-identity at Drive=min, and the 31-sample invariant latency.
+# JUCE-free (links only the felitronics header-only DSP). CI gate (non-zero on failure).
 # ----------------------------------------------------------------------------
-add_executable(orbitcab_poweramp_scaffold_golden tests/PowerAmpScaffoldGolden.cpp src/poweramp/TubePowerAmp.cpp)
-target_include_directories(orbitcab_poweramp_scaffold_golden PRIVATE src)
-target_compile_features(orbitcab_poweramp_scaffold_golden PRIVATE cxx_std_20)
+add_executable(orbitcab_poweramp_core_golden tests/PowerAmpCoreGolden.cpp src/poweramp/TubePowerAmp.cpp)
+target_include_directories(orbitcab_poweramp_core_golden PRIVATE src)
+target_link_libraries(orbitcab_poweramp_core_golden PRIVATE felitronics::saturation felitronics::oversampling)
+target_compile_features(orbitcab_poweramp_core_golden PRIVATE cxx_std_20)
 
 # Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
 # real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).

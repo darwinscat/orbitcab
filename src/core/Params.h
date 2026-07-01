@@ -47,6 +47,18 @@ struct EqParams
 // `ampOn` stays the master gate (off => neither runs) — this only picks between the two.
 enum class PowerAmpMode { capture, tube };
 
+// White-box tube power-amp controls (cab::poweramp::TubePowerAmp). Only consumed in Tube mode.
+// A plain POD like EqParams — JUCE-free, embedded-safe. tubeType indexes a voicing preset
+// {0=6L6, 1=EL34, 2=EL84, 3=KT88}; singleEnded picks SE class-A vs (default) push-pull AB.
+struct TubeParams
+{
+    float driveDb     = 0.0f;    // input pre-gain into the tube nonlinearity
+    float outputDb    = 0.0f;    // post-stage make-up / trim
+    int   tubeType    = 0;       // 0=6L6, 1=EL34, 2=EL84, 3=KT88 (voicing coefficient preset)
+    bool  singleEnded = false;   // false = push-pull class AB, true = single-ended class A
+    float autoComp    = 1.0f;    // drive-compensation amount (1 = small-signal unity → clean stays clean)
+};
+
 struct Params
 {
     float inputGainDb  = 0.0f;
@@ -61,6 +73,7 @@ struct Params
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)
 
     EqParams   eq;               // amp tone EQ, between the preamp and poweramp NAM stages
+    TubeParams tube;             // white-box tube poweramp controls (Tube mode only)
     SlotParams slot[2];          // [0] = A, [1] = B
 };
 

@@ -101,6 +101,10 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     autoLevelParam = apvts.getRawParameterValue ("autoLevel");
     ampOnParam     = apvts.getRawParameterValue ("ampOn");
     ampModeParam   = apvts.getRawParameterValue ("ampMode");
+    tubeDriveParam  = apvts.getRawParameterValue ("tubeDrive");
+    tubeOutputParam = apvts.getRawParameterValue ("tubeOutput");
+    tubeTypeParam   = apvts.getRawParameterValue ("tubeType");
+    tubeTopoParam   = apvts.getRawParameterValue ("tubeTopo");
     preampOnParam  = apvts.getRawParameterValue ("preampOn");
     eqOnParam       = apvts.getRawParameterValue ("eqOn");
     eqBassParam     = apvts.getRawParameterValue ("eqBass");
@@ -1054,6 +1058,13 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.preampOn     = preampOnParam->load()  > 0.5f;
     p.ampOn        = ampOnParam->load()     > 0.5f;
     p.powerAmpMode = (ampModeParam->load() > 0.5f) ? cab::PowerAmpMode::tube : cab::PowerAmpMode::capture;
+    p.tube.driveDb     = tubeDriveParam->load();
+    p.tube.outputDb    = tubeOutputParam->load();
+    {
+        const float tt = tubeTypeParam->load();                                  // guard the (int) cast: a
+        p.tube.tubeType = std::isfinite (tt) ? juce::jlimit (0, 3, (int) (tt + 0.5f)) : 0;   // non-finite cast is UB
+    }
+    p.tube.singleEnded = tubeTopoParam->load() > 0.5f;
     p.autoLevel    = autoLevelParam->load() > 0.5f;
     p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
     p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);

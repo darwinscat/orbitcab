@@ -19,9 +19,12 @@
 // heap-allocated in prepare() behind the pImpl, NOT by-value members — so the by-value engine
 // member stays tiny and Windows' 1 MB audio-thread stack is never at risk (the MSVC rule).
 //
-// SCAFFOLD (block 1): process() is a strict no-op passthrough and latencySamples() == 0. The
-// DSP blocks land later WITHOUT changing this header — the contract is the stable seam.
+// BLOCK 2: an oversampled push-pull / single-ended tube waveshaper with per-tube voicings and
+// Drive/Output/Tube/Topology controls (set via setParams). Sag, NFB loop, virtual load and the
+// output transformer are LATER blocks. latencySamples() is now the oversampler round-trip (31).
 //==============================================================================
+namespace cab { struct TubeParams; }   // fwd-decl — the JUCE-free control POD (core/Params.h)
+
 namespace cab::poweramp
 {
 
@@ -31,15 +34,21 @@ public:
     TubePowerAmp();
     ~TubePowerAmp();
 
-    // Allocate state for this stream / block size. Message/host thread (prepareToPlay) —
-    // never the audio thread (later blocks build oversamplers / tables here).
-    void prepare (double sampleRate, int maxBlock);
+    // Allocate state for this stream / block size. Message/host thread (prepareToPlay) — never
+    // the audio thread. `oversampleFactor` defaults to 4 (the shipping value); a test may pass a
+    // higher factor (e.g. 32) to build an alias-free reference for null comparison. Latency is
+    // tpp-1 regardless of factor, so 4x and 32x stay sample-aligned.
+    void prepare (double sampleRate, int maxBlock, int oversampleFactor = 4);
     void reset();
 
-    // 🔴 RT-safe, in place on planar channels. Scaffold: clean passthrough (no-op).
+    // Set the tube controls (Drive/Output/Tube/Topology). RT-safe: stores targets only; the
+    // coefficients are smoothed inside process(). Called once per block before process().
+    void setParams (const cab::TubeParams& params) noexcept;
+
+    // 🔴 RT-safe, in place on planar channels: oversampled PP/SE tube waveshaper.
     void process (float* const* io, int numChannels, int numSamples) noexcept;
 
-    // Host-rate latency (0 until oversampling lands in a later block).
+    // Host-rate latency = the oversampler round-trip (tpp-1), constant across drive/tube/topology.
     int  latencySamples() const noexcept;
 
 private:

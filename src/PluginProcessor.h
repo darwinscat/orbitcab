@@ -268,6 +268,10 @@ private:
     std::atomic<float>* bypassParam    = nullptr;
     std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
     std::atomic<float>* ampModeParam   = nullptr;   // poweramp mode: 0 = Capture (NAM), 1 = Tube (white-box)
+    std::atomic<float>* tubeDriveParam  = nullptr;  // Tube-mode controls (white-box poweramp) — packed into cab::Params.tube
+    std::atomic<float>* tubeOutputParam = nullptr;
+    std::atomic<float>* tubeTypeParam   = nullptr;
+    std::atomic<float>* tubeTopoParam   = nullptr;
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
     // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.

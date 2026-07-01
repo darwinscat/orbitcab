@@ -50,7 +50,7 @@ public:
     // The one poweramp-seam call. In place on planar `io`. `nam` is CabEngine's NAM poweramp
     // (used in capture mode); the tube stage lives inside the router.
     void process (float* const* io, int numChannels, int numSamples,
-                  bool ampOn, PowerAmpMode mode, AmpStage& nam) noexcept;
+                  bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams, AmpStage& nam) noexcept;
 
     int  tubeLatencySamples() const noexcept { return tube.latencySamples(); }
 
