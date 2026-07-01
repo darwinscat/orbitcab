@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include <juce_audio_basics/juce_audio_basics.h>   // SmoothedValue, jlimit
+#include <juce_audio_basics/juce_audio_basics.h>   // jlimit (SmoothedValue is now felitronics::core::LinearSmoother)
+#include <felitronics/core/Smoother.h>
 #include <cmath>
 
 //==============================================================================
@@ -77,7 +78,7 @@ private:
     double currentSampleRate = 44100.0;
     double dryMeanSq = 0.0;
     double mixMeanSq = 0.0;
-    juce::SmoothedValue<float> matchSmoothed { 1.0f };
+    felitronics::core::LinearSmoother matchSmoothed { 1.0f };
 };
 
 } // namespace cab
