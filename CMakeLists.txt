@@ -144,6 +144,17 @@ juce_add_plugin(OrbitCab
     BUNDLE_ID                   "com.darwinscat.orbitcab"
     PLUGIN_MANUFACTURER_CODE    Dcat
     PLUGIN_CODE                 Orbt
+    # Bundle / executable icon — the orbit mark (resources/icon/OrbitCab.svg → …-1024.png).
+    # JUCE feeds this square PNG to juceaide, which builds the macOS AppIcon.icns (into every
+    # .app / .vst3 / .component bundle, wired via Info.plist) and the Windows icon.ico (embedded
+    # in the .exe / .vst3 through a generated .rc). One 1024² source is enough — juceaide
+    # downscales it for all icon sizes (16→1024). No ICON_SMALL on purpose: JUCEUtils appends
+    # BIG-then-SMALL but juceaide reads them small-then-big, so passing both can swap the slots.
+    # NOTE: JUCE has no Linux icon step (launcher icons there are a .desktop + hicolor-theme
+    # concern, handled at packaging). The CLAP wrapper gets its own clap.icns from JUCE — we
+    # overwrite it with the orbit mark in a POST_BUILD below (see OrbitCab_CLAP). Net: all four
+    # formats are branded on macOS; VST3 + Standalone also carry the .ico on Windows.
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/OrbitCab-1024.png"
     FORMATS                     VST3 AU Standalone
     VST3_CATEGORIES             "Fx" "Distortion"
     AU_MAIN_TYPE                "kAudioUnitType_Effect"
@@ -165,6 +176,19 @@ juce_add_plugin(OrbitCab
 clap_juce_extensions_plugin(TARGET OrbitCab
     CLAP_ID       "com.darwinscat.orbitcab"
     CLAP_FEATURES audio-effect "guitar" "cabinet")
+
+# The CLAP wrapper ships its own default clap.icns (the generic CLAP logo) and JUCE's ICON_BIG
+# does not reach it. Overwrite it in place with the orbit-mark AppIcon.icns that juceaide already
+# generated for the JUCE formats (configure-time execute_process, so JUCE_ICON_FILE exists on disk
+# before any build step), keeping the wrapper's existing Info.plist CFBundleIconFile=clap.icns
+# reference valid. macOS only — the CLAP on Windows/Linux is a plain shared library, no icon resource.
+if(APPLE)
+    add_custom_command(TARGET OrbitCab_CLAP POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy
+                "$<TARGET_PROPERTY:OrbitCab,JUCE_ICON_FILE>"
+                "$<TARGET_BUNDLE_DIR:OrbitCab_CLAP>/Contents/Resources/clap.icns"
+        VERBATIM)
+endif()
 
 target_sources(OrbitCab PRIVATE
     src/PluginProcessor.cpp

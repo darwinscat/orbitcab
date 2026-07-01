@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="orbitcab-icon" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    OrbitCab app / bundle icon — the "orbit mark": three concentric rings
+    (violet outer, lilac middle, orange core) that also form the "O" of the OrbitCab
+    wordmark in the plugin header. Palette + proportions mirror HeaderBrand::drawOrbit
+    (violet #9778ff, lilac #b9a6ff, orange #ff8a3d). Thick strokes + a soft contact
+    shadow. The mark fills ~89% of the canvas — near edge-to-edge; the only margin left
+    is the few px the shadow needs so it isn't clipped (a transparent floating mark needs
+    no Apple tile-margin). Transparent, borderless: the ring gaps read through and the mark
+    floats — macOS does NOT tile/mask app icons (unlike iOS), so this is intentional.
+    Reserved OrbitCab / Darwin's Cat trademark — see docs/ASSET-LICENSES.md.
+    Source of truth for OrbitCab-1024.png — regenerate from resources/icon/ with:
+    rsvg-convert -w 1024 -h 1024 OrbitCab.svg -o OrbitCab-1024.png
+  -->
+  <defs>
+    <filter id="orbit-shadow" x="-60%" y="-60%" width="220%" height="220%">
+      <!-- soft halo -->
+      <feGaussianBlur in="SourceAlpha" stdDeviation="11" result="b1"/>
+      <feOffset in="b1" dx="0" dy="6" result="o1"/>
+      <feFlood flood-color="#000000" flood-opacity="0.55" result="f1"/>
+      <feComposite in="f1" in2="o1" operator="in" result="s1"/>
+      <!-- tight contact shadow -->
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="b2"/>
+      <feOffset in="b2" dx="0" dy="4" result="o2"/>
+      <feFlood flood-color="#000000" flood-opacity="0.9" result="f2"/>
+      <feComposite in="f2" in2="o2" operator="in" result="s2"/>
+      <feMerge>
+        <feMergeNode in="s1"/>
+        <feMergeNode in="s2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" filter="url(#orbit-shadow)">
+    <circle cx="512" cy="512" r="430" stroke="#9778ff" stroke-width="54"/>
+    <circle cx="512" cy="512" r="280" stroke="#b9a6ff" stroke-width="54"/>
+    <circle cx="512" cy="512" r="129" stroke="#ff8a3d" stroke-width="68"/>
+  </g>
+</svg>
