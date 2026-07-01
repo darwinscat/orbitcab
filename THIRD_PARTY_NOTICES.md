@@ -89,5 +89,6 @@ The bundled content (IRs, font) is ledgered in
 
 The **Darwin's Cat** logo (`resources/brand/logo-darwinscat.svg`) and the OrbitCab
 name/marks are © Darwin's Cat / Oleh Tsymaienko & Alisa. The orbit "O" header mark is drawn
-programmatically (no bundled asset). These are **not** covered by the AGPLv3 grant on
+programmatically; the same mark also ships as the app/bundle icon (`resources/icon/`, fed to
+JUCE's `ICON_BIG`). These are **not** covered by the AGPLv3 grant on
 the source code — trademarks and brand assets are reserved.
