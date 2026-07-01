@@ -77,6 +77,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDepth",    kParamVersion }, "Tube Depth",
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeLoad",     kParamVersion }, "Tube Load",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // reactive-speaker virtual load; OFF by default (preserves the base tone)
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

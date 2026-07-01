@@ -72,19 +72,20 @@ struct TubePowerAmp::Impl
     // --- block 3 "feel" state (all allocated/prepared in prepare()) ---
     SagEnvelope        sag;                          // pure dual-TC sag model (SagEnvelope.h)
     Svf                svfPresence, svfDepth, svfMid; // min-phase HF/LF shelves + a static per-voicing MID bell (one instance = all channels)
+    Svf                svfLoadRes, svfLoadRise;       // block 4 virtual load: LF impedance-resonance Bell + HF inductive-rise shelf (input pre-EQ)
     std::vector<float> sScratch;                     // per-sample rail s = 1−droop (maxBlock)
     int                tubeIdx = 0;                  // voicing index for the per-tube sag/NFB constants
 
     // Targets from the latest setParams(); smoothed per block in process().
     float gTarget = 1.0f, outTarget = 1.0f, topoTarget = 0.0f;   // topo: 0 = PP, 1 = SE
     float kTarget = 2.0f, vbTarget = 0.30f, bSeTarget = 0.18f, leakTarget = 0.0f;
-    float sagTarget = 0.0f, presTarget = 0.0f, depthTarget = 0.0f;
+    float sagTarget = 0.0f, presTarget = 0.0f, depthTarget = 0.0f, loadTarget = 0.0f;
     float autoComp = 1.0f;
 
     // Smoothed running coefficients.
     float gCur = 1.0f, outCur = 1.0f, topoCur = 0.0f;
     float kCur = 2.0f, vbCur = 0.30f, bSeCur = 0.18f, leakCur = 0.0f;
-    float sagCur = 0.0f, presCur = 0.0f, depthCur = 0.0f;
+    float sagCur = 0.0f, presCur = 0.0f, depthCur = 0.0f, loadCur = 0.0f;
     float comp = 1.0f;
     float gApplied = 1.0f, postApplied = 1.0f;       // per-sample ramp anchors
     bool  primed = false;
@@ -106,6 +107,8 @@ struct TubePowerAmp::Impl
         svfPresence.prepare (sr, kMaxCh);
         svfDepth.prepare (sr, kMaxCh);
         svfMid.prepare (sr, kMaxCh);
+        svfLoadRes.prepare (sr, kMaxCh);
+        svfLoadRise.prepare (sr, kMaxCh);
         sScratch.assign ((std::size_t) maxBlock, 1.0f);
         reset();
         primed = false;
@@ -119,6 +122,8 @@ struct TubePowerAmp::Impl
         svfPresence.reset();
         svfDepth.reset();
         svfMid.reset();
+        svfLoadRes.reset();
+        svfLoadRise.reset();
     }
 
     void setParams (const cab::TubeParams& p)
@@ -139,6 +144,7 @@ struct TubePowerAmp::Impl
         sagTarget   = std::isfinite (p.sag)      ? std::clamp (p.sag,      0.0f, 1.0f) : 0.0f;
         presTarget  = std::isfinite (p.presence) ? std::clamp (p.presence, 0.0f, 1.0f) : 0.0f;
         depthTarget = std::isfinite (p.depth)    ? std::clamp (p.depth,    0.0f, 1.0f) : 0.0f;
+        loadTarget  = std::isfinite (p.load)     ? std::clamp (p.load,     0.0f, 1.0f) : 0.0f;
     }
 
     void process (float* const* io, int numChannels, int numSamples)
@@ -173,6 +179,7 @@ struct TubePowerAmp::Impl
         bSeCur  += a * (bSeTarget  - bSeCur);
         leakCur += a * (leakTarget - leakCur);
         sagCur   += a * (sagTarget   - sagCur);
+        loadCur  += a * (loadTarget  - loadCur);
         presCur  += a * (presTarget  - presCur);
         depthCur += a * (depthTarget - depthCur);
 
@@ -210,6 +217,22 @@ struct TubePowerAmp::Impl
 
         const float postTarget = comp * outCur;
         if (! primed) { gApplied = gCur; postApplied = postTarget; primed = true; }
+
+        // --- VIRTUAL LOAD (block 4): reactive-speaker impedance pre-EQ on the RAW input, so the Drive
+        // pre-gain + sag DETECTOR below both see the load-coloured signal (frequency-dependent break-up,
+        // and sag pulled correctly by the resonance-boosted lows). Min-phase (felitronics Svf), 0 latency;
+        // both gains 0 dB ⇒ skipped ⇒ byte-identical to block 3. Static per-voicing (the amp's own load). ---
+        const float loadResDb  = loadCur * v.loadResDb;    // the Load knob scales the per-voicing impedance shape
+        const float loadRiseDb = loadCur * v.loadRiseDb;
+        const bool  loadOn = loadCur > 1.0e-4f && (std::fabs (v.loadResDb) > 1.0e-3f || std::fabs (v.loadRiseDb) > 1.0e-3f);
+        if (loadOn)
+        {
+            svfLoadRes .setParams (felitronics::eq::FilterType::Bell,      (double) v.loadResHz,  (double) v.loadResQ, (double) loadResDb);
+            svfLoadRise.setParams (felitronics::eq::FilterType::HighShelf, (double) v.loadRiseHz, 0.70710678,          (double) loadRiseDb);
+            for (int i = 0; i < n; ++i)
+                for (int ch = 0; ch < nCh; ++ch)
+                    io[ch][i] = svfLoadRise.processSample (ch, svfLoadRes.processSample (ch, io[ch][i]));
+        }
 
         // --- input Drive pre-gain ramp (+ SAG rail-shrink 1/s when active) ---
         {
@@ -311,6 +334,8 @@ struct TubePowerAmp::Impl
         svfPresence.flushDenormals();
         svfDepth.flushDenormals();
         svfMid.flushDenormals();
+        svfLoadRes.flushDenormals();
+        svfLoadRise.flushDenormals();
     }
 
     int latencySamples() const noexcept { return ovs.latencySamples(); }

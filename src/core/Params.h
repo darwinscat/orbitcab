@@ -63,6 +63,10 @@ struct TubeParams
     float sag         = 0.0f;    // dynamic power-supply sag (bloom / touch / compression under load)
     float presence    = 0.0f;    // NFB-style HF voicing that opens up when pushed
     float depth       = 0.0f;    // NFB-style LF voicing that loosens when pushed
+    // block 4:
+    float load        = 0.0f;    // reactive-speaker VIRTUAL LOAD amount [0,1]: scales the per-voicing impedance
+                                 // pre-EQ (LF cone-resonance peak + HF inductive rise) before the nonlinearity.
+                                 // 0 = flat/off ⇒ exact block-3 behaviour; 1 = full per-voicing load.
 };
 
 struct Params

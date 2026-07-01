@@ -33,6 +33,11 @@ struct TubeVoicing
                                                                      // to each other (measured on a real guitar DI; see PowerAmpRouter).
     float levelTrimSEDb;                                             // + this extra trim in single-ended (x1) mode — SE's asymmetry shifts
                                                                      // the level per voicing differently than push-pull (measured).
+    // block 4 — VIRTUAL LOAD (reactive-speaker impedance pre-EQ, BEFORE the nonlinearity + the sag detector):
+    float loadResHz, loadResQ, loadResDb;                            // LF cone-resonance impedance peak (Bell) — peaks the DRIVE ~80-110 Hz.
+    float loadRiseHz, loadRiseDb;                                    // HF inductive impedance rise (HighShelf, Q 0.707) — lifts the drive
+                                                                     // above ~1.3-1.8 kHz. Together = "amp into a real speaker": frequency-
+                                                                     // dependent break-up (0 dB gains ⇒ stage is byte-identical to block 3).
 };
 
 // Brand-neutral voicing presets {0=6L6, 1=EL34, 2=EL84, 3=KT88}. Archetype-voiced (crew-designed, tune by
@@ -41,15 +46,15 @@ struct TubeVoicing
 // (exact PP cancellation held; per-tube even-harmonic leak is a later liveliness pass — see DESIGN-block3.md).
 inline constexpr TubeVoicing kTubeVoicings[4] = {
     /* 6L6  American: scooped mids, deep tight lows, smooth (not sharp) top */
-    { 0.82f, 2.3f, 0.25f, 0.30f, 0.0f,   8.0f, 130.0f, 0.20f, 0.03f,   5000.0f, 3.0f,  95.0f, 7.5f, 0.45f,    500.0f, -5.0f, 0.70f,   3.9f,  0.7f },
+    { 0.82f, 2.3f, 0.25f, 0.30f, 0.0f,   8.0f, 130.0f, 0.20f, 0.03f,   5000.0f, 3.0f,  95.0f, 7.5f, 0.45f,    500.0f, -5.0f, 0.70f,   3.9f,  0.7f,    90.0f, 1.6f, 4.0f,  1600.0f, 3.0f },
     /* EL34 British: forward mids, aggressive upper-mid crunch */
-    { 1.12f, 3.2f, 0.15f, 0.20f, 0.0f,   6.0f,  90.0f, 0.22f, 0.05f,   3400.0f, 5.0f, 118.0f, 4.0f, 0.60f,    680.0f,  4.5f, 0.70f,    5.7f,  1.1f },
+    { 1.12f, 3.2f, 0.15f, 0.20f, 0.0f,   6.0f,  90.0f, 0.22f, 0.05f,   3400.0f, 5.0f, 118.0f, 4.0f, 0.60f,    680.0f,  4.5f, 0.70f,    5.7f,  1.1f,   100.0f, 1.8f, 3.5f,  1500.0f, 4.0f },
     /* EL84 Vox chime: bright upper-mid, early soft breakup, heavy spongy sag */
-    { 1.45f, 1.7f, 0.45f, 0.18f, 0.0f,  14.0f, 240.0f, 0.42f, 0.06f,   5500.0f, 4.0f, 130.0f, 3.0f, 0.75f,   1600.0f,  4.0f, 0.70f,    7.2f, -3.6f },
+    { 1.45f, 1.7f, 0.45f, 0.18f, 0.0f,  14.0f, 240.0f, 0.42f, 0.06f,   5500.0f, 4.0f, 130.0f, 3.0f, 0.75f,   1600.0f,  4.0f, 0.70f,    7.2f, -3.6f,   110.0f, 2.0f, 4.0f,  1800.0f, 4.5f },
     /* KT88 hi-fi: huge tight lows + a low resonance "thump", near-flat mids, clean late breakup, stiff supply.
        The "mid" bell is repurposed LOW (100 Hz, resonant Q) — KT88's mids are near-flat, so it buys the
        Hiwatt/Ampeg low-end resonance the ear wants; the depth low-shelf below it adds broad extension. */
-    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.02f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,  -4.5f,  9.0f },
+    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.02f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,  -4.5f,  9.0f,    80.0f, 1.4f, 4.0f,  1300.0f, 2.5f },
 };
 
 // Stateless composite tube transfer. configure() once per block from (smoothed) coeffs; at()

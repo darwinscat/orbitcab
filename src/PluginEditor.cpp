@@ -470,21 +470,22 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         tubeTopoBtn[m].onClick = [this, m] { selectTubeTopo (m == 1); };   // [1] = x1 = single-ended
         addChildComponent (tubeTopoBtn[m]);
     }
-    // Feel knobs — Drive / Sag / Presence / Depth / Output, warm amber to match the tube glow.
+    // Feel knobs — Drive / Sag / Presence / Depth / Load / Output, warm amber to match the tube glow.
     setupKnob (tubeDriveKnob, "tubeDrive",    tubeDriveAtt, juce::String::fromUTF8 ("Drive into the tube \xe2\x80\x94 how hard it's pushed"),             false, "dB");
     setupKnob (tubeSagKnob,   "tubeSag",      tubeSagAtt,   juce::String::fromUTF8 ("Sag \xe2\x80\x94 power-supply bloom / touch / compression under load"), false, "%");
     setupKnob (tubePresKnob,  "tubePresence", tubePresAtt,  juce::String::fromUTF8 ("Presence \xe2\x80\x94 NFB-style HF that opens up when pushed"),         false, "%");
     setupKnob (tubeDepthKnob, "tubeDepth",    tubeDepthAtt, juce::String::fromUTF8 ("Depth \xe2\x80\x94 NFB-style LF that loosens when pushed"),            false, "%");
+    setupKnob (tubeLoadKnob,  "tubeLoad",     tubeLoadAtt,  juce::String::fromUTF8 ("Load \xe2\x80\x94 reactive-speaker impedance: bass punch, pick attack, 'amp in a room'"), false, "%");
     setupKnob (tubeOutKnob,   "tubeOutput",   tubeOutAtt,   juce::String::fromUTF8 ("Output trim after the tube stage"),                                    false, "dB");
-    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeOutKnob })
+    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeOutKnob })
     {
         k->setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));   // warm amber
         k->setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
         k->setVisible (false);   // shown only when SIMULATOR is the active poweramp tab
     }
     styleLabel (tubeDriveLbl, "DRIVE");  styleLabel (tubeSagLbl, "SAG");  styleLabel (tubePresLbl, "PRESENCE");
-    styleLabel (tubeDepthLbl, "DEPTH");  styleLabel (tubeOutLbl, "OUTPUT");
-    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeOutLbl }) l->setVisible (false);
+    styleLabel (tubeDepthLbl, "DEPTH");  styleLabel (tubeLoadLbl, "LOAD");  styleLabel (tubeOutLbl, "OUTPUT");
+    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeOutLbl }) l->setVisible (false);
 
     // ---- IR library + restore display ----
     slots[0].rebuildList();
@@ -1017,8 +1018,8 @@ void OrbitCabAudioProcessorEditor::updateTubeSimRow()
     tubeSimDisplay.setVisible (on);
     for (auto& b : tubeTypeBtn) b.setVisible (on);
     for (auto& b : tubeTopoBtn) b.setVisible (on);
-    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeOutKnob }) k->setVisible (on);
-    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeOutLbl })      l->setVisible (on);
+    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeOutKnob }) k->setVisible (on);
+    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeOutLbl })       l->setVisible (on);
     resizeForAmpRows();   // size the poweramp band (sim row height when on; triggers resized on change)
     resized();            // re-flow whichever poweramp tab is active into the shared band
 }
@@ -1838,13 +1839,13 @@ void OrbitCabAudioProcessorEditor::resized()
         }
         row.removeFromLeft (14);
 
-        // 5 feel knobs — a caption over a dial, sharing the remaining width
-        CentreUnitSlider* knobs[5] = { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeOutKnob };
-        juce::Label*      labs [5] = { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeOutLbl };
-        const int kw = juce::jmax (60, row.getWidth() / 5);
-        for (int i = 0; i < 5; ++i)
+        // 6 feel knobs — a caption over a dial, sharing the remaining width
+        CentreUnitSlider* knobs[6] = { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeOutKnob };
+        juce::Label*      labs [6] = { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeOutLbl };
+        const int kw = juce::jmax (52, row.getWidth() / 6);
+        for (int i = 0; i < 6; ++i)
         {
-            auto cell = (i < 4) ? row.removeFromLeft (kw) : row;
+            auto cell = (i < 5) ? row.removeFromLeft (kw) : row;
             labs[i]->setBounds  (cell.removeFromTop (13));
             knobs[i]->setBounds (cell.reduced (2, 0));
         }

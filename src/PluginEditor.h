@@ -177,9 +177,9 @@ private:
     TubeDisplay           tubeSimDisplay;                 // the selected tube ×(PP 2 / SE 1), warm glow
     juce::TextButton      tubeTypeBtn[4];                 // 6L6 / EL34 / EL84 / KT88 → tubeType (radio highlight)
     juce::TextButton      tubeTopoBtn[2];                 // x1 (push-pull) / x2 (single-ended) → tubeTopo
-    CentreUnitSlider      tubeDriveKnob, tubeSagKnob, tubePresKnob, tubeDepthKnob, tubeOutKnob;
-    juce::Label           tubeDriveLbl, tubeSagLbl, tubePresLbl, tubeDepthLbl, tubeOutLbl;
-    std::unique_ptr<SAtt> tubeDriveAtt, tubeSagAtt, tubePresAtt, tubeDepthAtt, tubeOutAtt;
+    CentreUnitSlider      tubeDriveKnob, tubeSagKnob, tubePresKnob, tubeDepthKnob, tubeLoadKnob, tubeOutKnob;
+    juce::Label           tubeDriveLbl, tubeSagLbl, tubePresLbl, tubeDepthLbl, tubeLoadLbl, tubeOutLbl;
+    std::unique_ptr<SAtt> tubeDriveAtt, tubeSagAtt, tubePresAtt, tubeDepthAtt, tubeLoadAtt, tubeOutAtt;
     juce::Rectangle<int>  tubeSimRowBounds;
     int  ampModeCache = 0;                                // detect ampMode change on the timer (host automation)
     void syncPowerAmpTabs();                              // (ampOn, ampMode) → CAPTURES/SIMULATOR toggles + reveal the right row

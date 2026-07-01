@@ -637,6 +637,33 @@ int main()
         check (clean > 1.0e-3 && std::fabs (recovered - clean) < 0.02 * clean,
                "B6 sag recovers from finite-overflow burst (rail not stuck at a NaN floor)");
     }
+    // B7: VIRTUAL LOAD (block 4) — at Load=100% the reactive-impedance pre-EQ delivers the voicing's spec'd
+    // shape: a LF cone-resonance PEAK ≈ loadResDb at loadResHz + a HF inductive rise ≈ loadRiseDb, ~flat in
+    // between. Measured as the Load=1 / Load=0 gain RATIO so the always-on MID bell + shaper CANCEL (both in
+    // numerator and denominator) → a clean read of the load's own contribution. Load=0 ⇒ the block is
+    // skipped (byte-identical block-3, already covered by the superset invariant of S4-S8/B*).
+    {
+        double worstRes = 0, worstRise = 0, worstMid = 0;
+        for (int t = 0; t < 4; ++t)
+        {
+            const auto& v = kTubeVoicings[t];
+            auto gain = [&] (float load, int bin)
+            {
+                TubeParams tp = P (0.0f, false, t); tp.load = load;
+                return magBin (runStage (tp, sine (warm, N, tail, bin, 0.001)), an, N, bin);
+            };
+            const int bRes = (int) std::llround ((double) v.loadResHz * N / kSr);
+            const int bMid = (int) std::llround (700.0  * N / kSr);
+            const int bHi  = (int) std::llround (9000.0 * N / kSr);
+            worstRes  = std::max (worstRes,  std::fabs (dbc (gain (1.0f, bRes), gain (0.0f, bRes)) - (double) v.loadResDb));
+            worstRise = std::max (worstRise, std::fabs (dbc (gain (1.0f, bHi),  gain (0.0f, bHi))  - (double) v.loadRiseDb));
+            worstMid  = std::max (worstMid,  std::fabs (dbc (gain (1.0f, bMid), gain (0.0f, bMid))));
+        }
+        std::printf ("       B7 load: worst |res−spec|=%.2f dB  |rise−spec|=%.2f dB  |mid−0|=%.2f dB\n", worstRes, worstRise, worstMid);
+        check (worstRes  < 0.3, "B7 virtual load: LF resonance peak ≈ loadResDb at loadResHz");
+        check (worstRise < 0.3, "B7 virtual load: HF inductive rise ≈ loadRiseDb");
+        check (worstMid  < 0.5, "B7 virtual load: ~flat between the resonance and the HF rise");
+    }
 
     std::printf ("%d checks, %d failures\n", g_checks, g_fail);
     std::printf (g_fail ? "GOLDEN FAILED\n" : "GOLDEN PASSED\n");
