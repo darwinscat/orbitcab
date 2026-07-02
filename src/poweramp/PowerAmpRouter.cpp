@@ -20,7 +20,11 @@ namespace
 
 void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
 {
-    tube.prepare (sampleRate, maxBlock);
+    // One tube per OS-quality option, ALL prepared here → the live OS switch is just picking `osSel` (a
+    // per-block branch), never a reallocation on the audio thread. Latency is tpp-based (31), invariant
+    // across OS factor, so switching costs 0 PDC. Higher OS = softer top (less folded aliasing).
+    for (int i = 0; i < kNumOs; ++i)
+        tube[i].prepare (sampleRate, maxBlock, kOsFactor[i]);
     const int ch = juce::jmax (1, numChannels);
     scratch.setSize (ch, juce::jmax (1, maxBlock), false, false, true);
     dryAligner.prepare (ch, maxBlock, kAlignRingSamples);
@@ -33,7 +37,7 @@ void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
 
 void PowerAmpRouter::reset()
 {
-    tube.reset();
+    for (int i = 0; i < kNumOs; ++i) tube[i].reset();
     scratch.clear();
     dryAligner.reset();
     xfade.setCurrentAndTargetValue (1.0f);
@@ -49,7 +53,7 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
     {
         case Active::capture: nam.process  (dst, numChannels, numSamples, /*normalize*/ true); break;
         case Active::tube:
-            tube.process (dst, numChannels, numSamples);
+            tube[osSel].process (dst, numChannels, numSamples);
             if (tubeMakeup != 1.0f)   // static per-voicing level trim (params-derived; no follower → no kick)
                 for (int i = 0; i < numSamples; ++i)
                     for (int ch = 0; ch < numChannels; ++ch) dst[ch][i] *= tubeMakeup;
@@ -68,7 +72,9 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
                               bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams,
                               AmpStage& nam) noexcept
 {
-    tube.setParams (tubeParams);   // cheap: stores targets; the tube smooths its coeffs internally
+    osSel = juce::jlimit (0, kNumOs - 1, tubeParams.osIndex);   // live OS-quality pick (all tubes pre-prepared)
+    for (int i = 0; i < kNumOs; ++i) tube[i].setParams (tubeParams);   // cheap (stores targets); keeps the idle
+                                                                       // tube's params current so a live switch has no param jump, only a brief state settle
     {   // Deterministic level-match (no follower → no chase/swell/kick), calibrated on a real guitar DI:
         //   • per-voicing trim centres each voicing on ~dry at the default Drive (18 dB) + equalises the four;
         //   • a gentle drive slope (~0.52 dB/dB about 18 dB) flattens the level across Drive, so the stage
@@ -90,7 +96,7 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
     // OFF path). Runs BEFORE any render — `io` still holds the raw block input here. The delay tracks
     // the ACTIVE mode's PDC: the tube's fixed oversampling latency, or the NAM capture's rate-match
     // (0 at 48 kHz). This must match what PluginProcessor::updateLatency reports for the same mode.
-    const int alignLatency = tubeMode ? tube.latencySamples() : nam.latencySamples();
+    const int alignLatency = tubeMode ? tube[0].latencySamples() : nam.latencySamples();   // tube latency invariant across OS
     dryAligner.advance (io, numChannels, numSamples, alignLatency);
 
     if (! seeded)

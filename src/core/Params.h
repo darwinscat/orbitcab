@@ -71,6 +71,8 @@ struct TubeParams
                                  // compression) + HF leakage rolloff, in the OS domain. 0 = bypass.
     float bias        = 0.0f;    // dynamic BIAS-SHIFT / bloom [0,1]: under sag the PP operating point drifts toward
                                  // class-B (crossover bloom / touch). Scales the per-voicing depth; needs Sag > 0.
+    int   osIndex     = 1;       // OS-quality selector into the router's factor list {2,4,8,16,32}: 1 = 4× (default).
+                                 // The router keeps one tube per factor prepared, so this switches live with no realloc.
 };
 
 struct Params

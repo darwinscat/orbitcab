@@ -23,28 +23,25 @@ namespace
     // A render preset. All values are HOST-NORMALISED [0,1] (what setValueNotifyingHost wants):
     //   tubeType: 6L6=0, EL34=1/3, EL84=2/3, KT88=1   •   tubeTopo: PP=0, SE=1
     //   drive over 0..36 dB (0.25≈9 dB clean, 0.55≈20 dB crunch, 0.85≈31 dB hot)   •   sag/pres/depth = %
-    struct Preset { const char* label; float amp, mode, tube, topo, drive, sag, pres, depth, load; };
+    struct Preset { const char* label; float amp, mode, tube, topo, drive, sag, pres, depth, load, iron, bias; };
 
+    // FOCUSED Iron/Bloom A/B: each OFF↔ON pair changes exactly ONE knob (everything else matched); the tool
+    // peak-normalises every render to −3 dBFS, so any level change is removed — you hear only the TONE/feel.
     const std::vector<Preset> kMatrix = {
-        //  label                          amp  mode  tube    topo drive  sag   pres  depth load
-        { "00-ref-cab-only-no-poweramp",   0.f, 1.f,  0.f,    0.f, 0.50f, 0.f,  0.f,  0.f,  0.f }, // A/B baseline: DI→cab, tube off
-        { "01-6L6-crunch",                 1.f, 1.f,  0.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f },
-        { "02-EL34-crunch",                1.f, 1.f,  0.333f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f },
-        { "03-EL84-crunch",                1.f, 1.f,  0.667f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f },
-        { "04-KT88-crunch",                1.f, 1.f,  1.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f },
-        { "05-EL34-clean",                 1.f, 1.f,  0.333f, 0.f, 0.25f, 0.2f, 0.3f, 0.3f, 0.f },
-        { "06-EL34-hot",                   1.f, 1.f,  0.333f, 0.f, 0.85f, 0.7f, 0.6f, 0.6f, 0.f },
-        { "07-EL34-hot-DRY-no-feel",       1.f, 1.f,  0.333f, 0.f, 0.85f, 0.0f, 0.0f, 0.0f, 0.f }, // isolate the block-2 core
-        { "08-EL34-hot-SAG-only",          1.f, 1.f,  0.333f, 0.f, 0.85f, 0.9f, 0.0f, 0.0f, 0.f }, // isolate sag
-        { "09-EL34-hot-SE-classA",         1.f, 1.f,  0.333f, 1.f, 0.85f, 0.7f, 0.6f, 0.6f, 0.f }, // even-harmonic single-ended
-        { "10-EL84-hot-SE",                1.f, 1.f,  0.667f, 1.f, 0.80f, 0.8f, 0.7f, 0.7f, 0.f },
-        { "11-KT88-hifi-clean",            1.f, 1.f,  1.000f, 0.f, 0.30f, 0.2f, 0.2f, 0.4f, 0.f },
-        // ---- block 4 VIRTUAL LOAD A/B: identical to 01-04/06 but LOAD=100% (reactive-speaker impedance) ----
-        { "01L-6L6-crunch-LOAD",           1.f, 1.f,  0.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 1.f },
-        { "02L-EL34-crunch-LOAD",          1.f, 1.f,  0.333f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 1.f },
-        { "03L-EL84-crunch-LOAD",          1.f, 1.f,  0.667f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 1.f },
-        { "04L-KT88-crunch-LOAD",          1.f, 1.f,  1.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 1.f },
-        { "06L-EL34-hot-LOAD",             1.f, 1.f,  0.333f, 0.f, 0.85f, 0.7f, 0.6f, 0.6f, 1.f },
+        //  label                        amp  mode  tube    topo drive  sag   pres  depth load  iron  bias
+        // ---- IRON (output transformer): low-note grind/compression + softer top ----
+        { "IRON-EL34-crunch-OFF",        1.f, 1.f,  0.333f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f,  0.f,  0.f },
+        { "IRON-EL34-crunch-ON",         1.f, 1.f,  0.333f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f,  1.f,  0.f },
+        { "IRON-6L6-crunch-OFF",         1.f, 1.f,  0.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f,  0.f,  0.f },
+        { "IRON-6L6-crunch-ON",          1.f, 1.f,  0.000f, 0.f, 0.55f, 0.4f, 0.4f, 0.4f, 0.f,  1.f,  0.f },
+        // ---- BLOOM (dynamic bias under sag): crossover 'chew' on the note tail / pick dynamics ----
+        { "BLOOM-EL34-hot-OFF",          1.f, 1.f,  0.333f, 0.f, 0.85f, 0.9f, 0.3f, 0.3f, 0.f,  0.f,  0.f },
+        { "BLOOM-EL34-hot-ON",           1.f, 1.f,  0.333f, 0.f, 0.85f, 0.9f, 0.3f, 0.3f, 0.f,  0.f,  1.f },
+        { "BLOOM-EL84-hot-OFF",          1.f, 1.f,  0.667f, 0.f, 0.85f, 0.9f, 0.3f, 0.3f, 0.f,  0.f,  0.f },
+        { "BLOOM-EL84-hot-ON",           1.f, 1.f,  0.667f, 0.f, 0.85f, 0.9f, 0.3f, 0.3f, 0.f,  0.f,  1.f },
+        // ---- FULL block 4 vs OFF (load + iron + bloom together) ----
+        { "FULL-EL34-block4-OFF",        1.f, 1.f,  0.333f, 0.f, 0.85f, 0.8f, 0.4f, 0.4f, 0.f,  0.f,  0.f },
+        { "FULL-EL34-block4-ON",         1.f, 1.f,  0.333f, 0.f, 0.85f, 0.8f, 0.4f, 0.4f, 1.f,  0.8f, 0.8f },
     };
 }
 
@@ -102,6 +99,7 @@ int main (int argc, char** argv)
         setP ("ampOn", ps.amp);   setP ("ampMode", ps.mode);
         setP ("tubeType", ps.tube); setP ("tubeTopo", ps.topo); setP ("tubeDrive", ps.drive);
         setP ("tubeSag", ps.sag); setP ("tubePresence", ps.pres); setP ("tubeDepth", ps.depth); setP ("tubeLoad", ps.load);
+        setP ("tubeIron", ps.iron); setP ("tubeBias", ps.bias);
         pump (60);
         proc.reset();   // note: OrbitCabAudioProcessor may not override reset(), so the silent pre-roll below
         const int preRoll = (int) (sr * 0.6 / block) + 1;   // ~600 ms — is what actually flushes the previous

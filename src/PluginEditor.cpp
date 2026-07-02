@@ -458,16 +458,17 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         tubeTypeBtn[t].onClick = [this, t] { selectTubeType (t); };
         addChildComponent (tubeTypeBtn[t]);
     }
-    // Tube TOPOLOGY — x2 = push-pull (class AB, 2 tubes), x1 = single-ended (class A, 1 tube).
-    static const char* const kTopoNames[2] = { "x2", "x1" };   // [0] = x2 push-pull, [1] = x1 single-ended
+    // Tube TOPOLOGY — PP = push-pull (class AB, 2 tubes), SE = single-ended (class A, 1 tube). Labelled
+    // PP/SE (not x2/x1) so it doesn't read as an oversampling "×N" series next to the Quality combo.
+    static const char* const kTopoNames[2] = { "PP", "SE" };   // [0] = PP push-pull, [1] = SE single-ended
     for (int m = 0; m < 2; ++m)
     {
         tubeTopoBtn[m].setButtonText (kTopoNames[m]);
         tubeTopoBtn[m].setClickingTogglesState (false);
         tubeTopoBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        tubeTopoBtn[m].setTooltip (m == 0 ? juce::String::fromUTF8 ("x2 \xe2\x80\x94 push-pull (class AB): two tubes, tighter, even harmonics cancel")
-                                          : juce::String::fromUTF8 ("x1 \xe2\x80\x94 single-ended (class A): one tube, sweeter, even-harmonic rich"));
-        tubeTopoBtn[m].onClick = [this, m] { selectTubeTopo (m == 1); };   // [1] = x1 = single-ended
+        tubeTopoBtn[m].setTooltip (m == 0 ? juce::String::fromUTF8 ("PP \xe2\x80\x94 push-pull (class AB): two tubes, tighter, even harmonics cancel")
+                                          : juce::String::fromUTF8 ("SE \xe2\x80\x94 single-ended (class A): one tube, sweeter, even-harmonic rich"));
+        tubeTopoBtn[m].onClick = [this, m] { selectTubeTopo (m == 1); };   // [1] = SE = single-ended
         addChildComponent (tubeTopoBtn[m]);
     }
     // Feel knobs — Drive / Sag / Presence / Depth / Load / Output, warm amber to match the tube glow.
@@ -489,6 +490,16 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     styleLabel (tubeDepthLbl, "DEPTH");  styleLabel (tubeLoadLbl, "LOAD");  styleLabel (tubeIronLbl, "IRON");
     styleLabel (tubeBloomLbl, "BLOOM");  styleLabel (tubeOutLbl, "OUTPUT");
     for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeIronLbl, &tubeBloomLbl, &tubeOutLbl }) l->setVisible (false);
+    // OS-quality picker (live) — items MUST match the "tubeOS" choice-param order (1-based ids).
+    tubeOsBox.addItem ("2x",  1);
+    tubeOsBox.addItem ("4x",  2);
+    tubeOsBox.addItem ("8x",  3);
+    tubeOsBox.addItem ("16x", 4);
+    tubeOsBox.addItem ("32x", 5);
+    tubeOsBox.setTooltip (juce::String::fromUTF8 ("Oversampling \xe2\x80\x94 higher = softer top (less aliasing), more CPU (16x/32x heavy). Switches live."));
+    tubeOsBox.setColour (juce::ComboBox::textColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    addChildComponent (tubeOsBox);   // shown only when SIMULATOR is the active poweramp tab
+    tubeOsAtt = std::make_unique<CAtt> (processorRef.apvts, "tubeOS", tubeOsBox);
 
     // ---- IR library + restore display ----
     slots[0].rebuildList();
@@ -1005,8 +1016,8 @@ void OrbitCabAudioProcessorEditor::syncPowerAmpTabs()
     const int  type = juce::jlimit (0, 3, (int) std::lround (a.getRawParameterValue ("tubeType")->load()));
     const bool se   = a.getRawParameterValue ("tubeTopo")->load() > 0.5f;
     for (int t = 0; t < 4; ++t) tubeTypeBtn[t].setToggleState (t == type, juce::dontSendNotification);
-    tubeTopoBtn[0].setToggleState (! se, juce::dontSendNotification);   // x2 push-pull
-    tubeTopoBtn[1].setToggleState (  se, juce::dontSendNotification);   // x1 single-ended
+    tubeTopoBtn[0].setToggleState (! se, juce::dontSendNotification);   // PP push-pull
+    tubeTopoBtn[1].setToggleState (  se, juce::dontSendNotification);   // SE single-ended
     tubeSimDisplay.setShowTubes (showTubesPref);
     tubeSimDisplay.setSelection (type, se ? 1 : 2, tubeSimBtn.getToggleState());   // silhouette + count (PP 2 / SE 1) + glow
 
@@ -1023,6 +1034,7 @@ void OrbitCabAudioProcessorEditor::updateTubeSimRow()
     for (auto& b : tubeTopoBtn) b.setVisible (on);
     for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeIronKnob, &tubeBloomKnob, &tubeOutKnob }) k->setVisible (on);
     for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeIronLbl, &tubeBloomLbl, &tubeOutLbl })         l->setVisible (on);
+    tubeOsBox.setVisible (on);
     resizeForAmpRows();   // size the poweramp band (sim row height when on; triggers resized on change)
     resized();            // re-flow whichever poweramp tab is active into the shared band
 }
@@ -1836,9 +1848,11 @@ void OrbitCabAudioProcessorEditor::resized()
             auto typeR = blk.removeFromTop (blk.getHeight() / 2).withSizeKeepingCentre (206, 26);
             constexpr int tw = 48, tg = 3;
             for (auto& b : tubeTypeBtn) { b.setBounds (typeR.removeFromLeft (tw)); typeR.removeFromLeft (tg); }
-            auto topoR = blk.withSizeKeepingCentre (99, 24);
+            auto topoR = blk.withSizeKeepingCentre (206, 24);   // bottom row: TOPOLOGY (2) on the left, OS-quality combo on the right
             constexpr int pw = 46, pg = 3;
             for (auto& b : tubeTopoBtn) { b.setBounds (topoR.removeFromLeft (pw)); topoR.removeFromLeft (pg); }
+            topoR.removeFromLeft (8);
+            tubeOsBox.setBounds (topoR.removeFromLeft (72));
         }
         row.removeFromLeft (14);
 

@@ -111,6 +111,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     tubeLoadParam     = apvts.getRawParameterValue ("tubeLoad");
     tubeIronParam     = apvts.getRawParameterValue ("tubeIron");
     tubeBiasParam     = apvts.getRawParameterValue ("tubeBias");
+    tubeOsParam       = apvts.getRawParameterValue ("tubeOS");
     preampOnParam  = apvts.getRawParameterValue ("preampOn");
     eqOnParam       = apvts.getRawParameterValue ("eqOn");
     eqBassParam     = apvts.getRawParameterValue ("eqBass");
@@ -1079,6 +1080,7 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.tube.load     = tubeLoadParam->load()     * 0.01f;
     p.tube.iron     = tubeIronParam->load()     * 0.01f;
     p.tube.bias     = tubeBiasParam->load()     * 0.01f;
+    { const float os = tubeOsParam->load(); p.tube.osIndex = std::isfinite (os) ? juce::jlimit (0, 4, (int) (os + 0.5f)) : 1; }
     p.autoLevel    = autoLevelParam->load() > 0.5f;
     p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
     p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);

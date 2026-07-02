@@ -58,7 +58,10 @@ public:
     void process (float* const* io, int numChannels, int numSamples,
                   bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams, AmpStage& nam) noexcept;
 
-    int  tubeLatencySamples() const noexcept { return tube.latencySamples(); }
+    int  tubeLatencySamples() const noexcept { return tube[0].latencySamples(); }   // tpp-based, invariant across OS factor
+
+    static constexpr int kNumOs = 5;                // OS-quality options, prepared upfront (RT-safe live switch)
+    static constexpr int kOsFactor[kNumOs] = { 2, 4, 8, 16, 32 };   // all report latency 31 (tpp-based, factor-invariant)
 
 private:
     enum class Active { off, capture, tube };
@@ -73,7 +76,8 @@ private:
     // stage reports 0 latency that dry already equals the raw input, so it's a plain pass-through.
     void render (Active a, float* const* dst, int numChannels, int numSamples, AmpStage& nam) noexcept;
 
-    TubePowerAmp tube;
+    TubePowerAmp tube[kNumOs];                      // one instance per OS factor, all prepared; osSel picks which runs
+    int          osSel = 1;                         // live-switchable (per-block) selector — no realloc on change (1 = 4×)
     juce::AudioBuffer<float>   scratch;             // preallocated: holds the fade-FROM render
     DryAligner                 dryAligner;          // latency-aligned dry for the OFF path (see DryAligner.h)
     juce::SmoothedValue<float> xfade { 1.0f };      // 0→1 ramp during a capture<->tube switch

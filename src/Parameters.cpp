@@ -78,14 +78,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeLoad",     kParamVersion }, "Tube Load",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // reactive-speaker virtual load; OFF by default (preserves the base tone)
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 30.0f,   // reactive-speaker virtual load — subtle "in the room" by default
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeIron",     kParamVersion }, "Tube Iron",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // output-transformer (LF grind + HF rolloff); OFF by default
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // output-transformer (LF grind + HF rolloff) — half by default
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeBias",     kParamVersion }, "Tube Bias",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // dynamic bias-shift / bloom under sag; OFF by default (needs Sag > 0)
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 70.0f,   // dynamic bias / bloom under sag — up by default (it's subtle; needs Sag > 0)
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "tubeOS",       kParamVersion }, "Tube Quality",
+                                                        StringArray { "2x", "4x", "8x", "16x", "32x" }, 1));   // oversampling; higher = softer top, more CPU. Live switch.
     // PREAMP (NAM) — `preampOn` gates the SECOND neural stage, run BEFORE the poweramp (input →
     // PREAMP → POWERAMP → cab). Same shape as `ampOn`: off by default; WHICH model is loaded is the
     // "preampSel" library selection (not a host param), resolved off the audio thread in

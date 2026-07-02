@@ -59,6 +59,7 @@ private:
     using APVTS = juce::AudioProcessorValueTreeState;
     using SAtt  = APVTS::SliderAttachment;
     using BAtt  = APVTS::ButtonAttachment;
+    using CAtt  = APVTS::ComboBoxAttachment;
 
     void timerCallback() override;
     bool keyPressed (const juce::KeyPress& key) override;   // 1/2/3/4 → A/B/C/D snapshot switch
@@ -180,6 +181,8 @@ private:
     CentreUnitSlider      tubeDriveKnob, tubeSagKnob, tubePresKnob, tubeDepthKnob, tubeLoadKnob, tubeIronKnob, tubeBloomKnob, tubeOutKnob;
     juce::Label           tubeDriveLbl, tubeSagLbl, tubePresLbl, tubeDepthLbl, tubeLoadLbl, tubeIronLbl, tubeBloomLbl, tubeOutLbl;
     std::unique_ptr<SAtt> tubeDriveAtt, tubeSagAtt, tubePresAtt, tubeDepthAtt, tubeLoadAtt, tubeIronAtt, tubeBloomAtt, tubeOutAtt;
+    juce::ComboBox        tubeOsBox;              // OS quality: 4x / 8x HQ (live switch)
+    std::unique_ptr<CAtt> tubeOsAtt;
     juce::Rectangle<int>  tubeSimRowBounds;
     int  ampModeCache = 0;                                // detect ampMode change on the timer (host automation)
     void syncPowerAmpTabs();                              // (ampOn, ampMode) → CAPTURES/SIMULATOR toggles + reveal the right row

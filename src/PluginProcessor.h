@@ -278,6 +278,7 @@ private:
     std::atomic<float>* tubeLoadParam     = nullptr;   // block-4: reactive-speaker virtual load (0..100 %)
     std::atomic<float>* tubeIronParam     = nullptr;   // block-4: output-transformer amount (0..100 %)
     std::atomic<float>* tubeBiasParam     = nullptr;   // block-4: dynamic bias-shift / bloom (0..100 %)
+    std::atomic<float>* tubeOsParam       = nullptr;   // OS quality: 0 = 4x, 1 = 8x HQ (live switch)
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
     // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.
