@@ -32,7 +32,7 @@ struct TubeVoicing
                                                                      // ~the dry level at the calibration Drive (18 dB) and equalises the four
                                                                      // voicings to each other. Base values measured on a real guitar DI; then
                                                                      // corrected BY EAR (Oleh, 2026-07-02): PP 6L6 +0 / EL34 −5 / EL84 −7 /
-                                                                     // KT88 +6 folded in (see PowerAmpRouter).
+                                                                     // KT88 +3 folded in (see PowerAmpRouter).
     float levelTrimSEDb;                                             // + this extra trim in single-ended (x1) mode — SE's asymmetry shifts
                                                                      // the level per voicing differently than push-pull (measured; by-ear SE
                                                                      // corrections 6L6 −1 / EL34 −6 / EL84 −3 / KT88 −2 folded in as SE−PP).
@@ -60,7 +60,7 @@ inline constexpr TubeVoicing kTubeVoicings[4] = {
     /* KT88 hi-fi: huge tight lows + a low resonance "thump", near-flat mids, clean late breakup, stiff supply.
        The "mid" bell is repurposed LOW (100 Hz, resonant Q) — KT88's mids are near-flat, so it buys the
        Hiwatt/Ampeg low-end resonance the ear wants; the depth low-shelf below it adds broad extension. */
-    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.30f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,   1.5f,  1.0f,    80.0f, 1.4f, 4.0f,  1300.0f, 2.5f,   120.0f, 1.4f, 10000.0f },
+    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.30f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,  -1.5f,  4.0f,    80.0f, 1.4f, 4.0f,  1300.0f, 2.5f,   120.0f, 1.4f, 10000.0f },
 };
 
 // Stateless composite tube transfer. configure() once per block from (smoothed) coeffs; at()
