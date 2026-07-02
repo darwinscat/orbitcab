@@ -40,7 +40,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "gain",   kParamVersion }, "Output",
                                                         NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
-    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "autoLevel", kParamVersion }, "Auto Level", true));
+    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "autoLevel", kParamVersion }, "Auto Level", false));   // default OFF (Oleh, 2026-07-02): IRs are reference-unity at load and the tube voicings are hand-calibrated — the plugin is level-honest without the leveler; Auto Level is an opt-in corrector now
     // POWERAMP (NAM) — `ampOn` is the only host param here: the master gate / bypass for the
     // neural poweramp stage in front of the cab (off by default, shapers-off policy). WHICH model
     // is loaded is NOT a host param — it's a library selection persisted as the "ampSel" property
