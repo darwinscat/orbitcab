@@ -69,8 +69,10 @@ jobs:
       - name: Tube poweramp core golden
         shell: bash
         run: |
-          bin=$(find build -name 'orbitcab_poweramp_core_golden*' -type f | head -1)
-          echo "running $bin"; "$bin"
+          # MSVC puts plain add_executable() binaries under build/Release/. (A loose
+          # `find ...golden* | head -1` used to match a .tlog build-state file first and
+          # try to EXECUTE it — the step failed without ever running the golden.)
+          ./build/Release/orbitcab_poweramp_core_golden.exe
 
       - name: Validate (pluginval, VST3)
         shell: bash
