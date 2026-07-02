@@ -65,12 +65,23 @@ its onset so dry/wet and A/B blends stay phase-aligned.
 Dry/Wet sliders, default **off**) and `spectrumOn` (the faint analyser, default **on**).
 The gear panel captions these as *"this computer"* vs the session-scoped HEAD trim.
 
+## IR loudness — reference-unity normalization at load
+
+Vendor cab IRs are peak-normalized bandpasses, so their passband sits **+12…+24 dB
+above unity** (measured across 186 commercial IRs; 96 kHz packs run the hottest).
+Convolving them raw made the wet path that much hotter than the dry and pushed the
+output trim out of its ±24 dB range with auto-level off. So every IR is normalized
+**at load** (and re-normalized on every trim / host-rate resample — one choke point
+in `cab::Convolver`) to unity RMS gain for a guitar-band reference (white noise
+through a one-pole low-pass at 2 kHz): **a cab contributes tone, not gain.** One
+common gain per stereo pair (imaging untouched); near-silent IRs are left alone;
+clamped ±30 dB.
+
 ## Auto-level — wet→dry loudness match
 
-A cab IR drops a guitar a lot (measured ~−17 dB on a real DI, and worse: the cab
-removes the DI's dominant high-frequency energy). That can't be predicted from the
-IR alone — it depends on the signal spectrum (an IR-energy / √Σh² estimate measured
-*backwards* for guitar). So leveling is done **live**:
+What the static normalization can't know is the *program's* spectrum against the
+cab's curve (the residual is signal-dependent, typically ±1–2 dB after
+normalization). That part is levelled **live**:
 
 - Continuously measure the RMS of the **dry** input and the **wet** (convolved)
   signal with slow one-pole followers (TC ~150 ms), and apply a makeup gain of
@@ -78,8 +89,8 @@ IR alone — it depends on the signal spectrum (an IR-energy / √Σh² estimate
 - Silence-gated (won't chase the noise floor), clamped [−24, +36] dB, smoothed — no
   pumping, no zipper.
 - On by default; an **Auto Level** toggle (param `autoLevel`) turns it off to hear the
-  raw cab — followers keep running while off, so re-enabling snaps back instantly. The
-  IR is loaded **as-is** (`Normalise::no`); the match does all leveling.
+  raw cab — followers keep running while off, so re-enabling snaps back instantly.
+  With IRs normalized at load, off is a fully usable mode (the residual is small).
 - **This is what makes Mix usable:** wet and dry sit at the same loudness, so the
   blend is meaningful instead of a loud-dry / "mosquito-wet" imbalance.
 - Output Gain is the final manual trim after the match.

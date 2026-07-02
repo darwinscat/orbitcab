@@ -66,33 +66,13 @@ void CabEngine::reset()
 
 void CabEngine::seedAutoLevel()
 {
-    // Estimate the convolution's broadband (white-noise) RMS gain from the loaded IR and
-    // seed the leveler's makeup to ~1/gain, so the first audio starts at the converged level
-    // instead of kicking while the follower crawls in (#48). The convolver is Normalise::no,
-    // so that gain ≈ ‖ir‖₂ at the processing rate ≈ sqrt(SRhost / SRir) · ‖ir_native‖₂.
-    auto slotGain = [this] (int s) -> double
-    {
-        if (! slot[s].hasOriginal())
-            return 0.0;
-        const auto& ir = slot[s].originalBuffer();
-        const int n = ir.getNumSamples();
-        if (n <= 0)
-            return 0.0;
-        double e = 0.0;
-        for (int c = 0; c < ir.getNumChannels(); ++c)
-        {
-            const float* d = ir.getReadPointer (c);
-            for (int i = 0; i < n; ++i)
-                e += (double) d[i] * d[i];
-        }
-        e /= juce::jmax (1, ir.getNumChannels());            // per-channel energy
-        const double srRatio = currentSampleRate / juce::jmax (1.0, slot[s].originalSampleRate());
-        return std::sqrt (e * srRatio);
-    };
-
-    const double g = slotGain (0);                           // slot A — the ballpark
-    if (g > 1.0e-6)
-        autoLeveler.seed ((float) (1.0 / g));
+    // The convolver normalizes every IR to reference-unity at load (see Convolver.h), so the
+    // converged wet->dry makeup is ~0 dB plus a small signal-dependent residual (the program's
+    // spectrum vs the reference's). Seed at unity: the first audio starts ~level and the
+    // followers only trim the residual — no startup kick (#48), no IR-energy estimate needed
+    // (the old ‖ir‖₂ seed modelled the RAW-IR gain the normalization has since removed).
+    if (slot[0].hasOriginal())
+        autoLeveler.seed (1.0f);
 }
 
 //==============================================================================

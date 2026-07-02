@@ -16,8 +16,9 @@ static constexpr double kFilterQ = 0.707;
 
 //==============================================================================
 // Bundled-IR fallback: decode encoded bytes here (adapter-level, JUCE) into planar samples, then hand
-// them to the JUCE-free convolver with the Normalise::yes energy norm (mirrors the old
-// juce::dsp::Convolution byte path). Rare — hit only when the normal sample decode failed upstream.
+// them to the JUCE-free convolver. Rare — hit only when the normal sample decode failed upstream.
+// Same loadIR as the normal path: the convolver normalizes every IR to reference-unity at load,
+// so the old separate Normalise::yes energy-norm fallback (a DIFFERENT loudness) is gone.
 void IRSlot::loadBytesFallback (const void* data, size_t size)
 {
     juce::AudioFormatManager fm; fm.registerBasicFormats();
@@ -27,7 +28,7 @@ void IRSlot::loadBytesFallback (const void* data, size_t size)
     const int n = (int) rd->lengthInSamples;
     juce::AudioBuffer<float> ir ((int) rd->numChannels, n);
     rd->read (&ir, 0, n, 0, true, true);
-    conv.loadIRNormalised (ir.getArrayOfReadPointers(), ir.getNumChannels(), n, rd->sampleRate);
+    conv.loadIR (ir.getArrayOfReadPointers(), ir.getNumChannels(), n, rd->sampleRate);
 }
 
 //==============================================================================
