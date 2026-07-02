@@ -60,6 +60,13 @@ public:
 
     int  tubeLatencySamples() const noexcept { return tube[0].latencySamples(); }   // tpp-based, invariant across OS factor
 
+    // Crossfade telemetry for the engine's leveler snap: a route retarget is only real once the
+    // router ACCEPTS it (a change arriving mid-fade is deferred to the fade's end), so the leveler
+    // must key off these, not off the raw params (codex review point — automation faster than the
+    // 30 ms fade would otherwise desync the snap from the audio).
+    bool fadeJustStarted() const noexcept { return fadeStartedThisBlock; }   // valid after process()
+    bool isFading()        const noexcept { return fading; }
+
     static constexpr int kNumOs = 5;                // OS-quality options, prepared upfront (RT-safe live switch)
     static constexpr int kOsFactor[kNumOs] = { 2, 4, 8, 16, 32 };   // all report latency 31 (tpp-based, factor-invariant)
 
@@ -84,6 +91,7 @@ private:
     Active current  = Active::off;
     Active fadeFrom = Active::off;
     bool   fading   = false;
+    bool   fadeStartedThisBlock = false;            // set by process() on the block a fade begins
     bool   seeded   = false;                        // first block after prepare jumps to target (no ramp)
 
     // Deterministic per-voicing/drive LEVEL-MATCH make-up: the drive-comp (autoComp) ducks the driven
@@ -91,6 +99,11 @@ private:
     // the tube sits at ~the dry/capture level → no level jump on enable/disable (the "kick"). Purely a
     // function of the params (no follower) → deterministic, no chase/swell. Recomputed per block.
     float  tubeMakeup = 1.0f;
+    // The CAPTURE-referenced part of that trim glides at a bounded rate instead of stepping: the
+    // capture's measured ref gain flips asynchronously when a model finishes loading/clearing on
+    // the message thread, and an instant ±12 dB step on a LIVE tube signal would click.
+    float  capDbCur = 0.0f;
+    double sampleRateHz = 48000.0;
 };
 
 } // namespace cab::poweramp

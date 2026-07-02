@@ -484,6 +484,42 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
 )
 
 # ----------------------------------------------------------------------------
+# Offline DIAGNOSTIC for the capture<->tube switch cleanliness: decomposes the audible switch
+# transient (post-amp A/B step vs leveler vs frozen-stage state) into TSV sections. Dev tool;
+# not a CI gate.  Run: orbitcab_switch_probe <model.nam> <cab.wav>
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_switch_probe PRODUCT_NAME "OrbitCabSwitchProbe")
+if(MSVC)
+    target_link_options(orbitcab_switch_probe PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_switch_probe PRIVATE
+    tools/dsp-test/switch_probe.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_include_directories(orbitcab_switch_probe PRIVATE src)
+target_compile_definitions(orbitcab_switch_probe PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+)
+target_link_libraries(orbitcab_switch_probe PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
 # Processor-level PDC regression GATE: at 96 kHz (NAM stages rate-match), toggling a stage's power must
 # NOT change the reported latency — the invariant that, when broken, gave the enable/disable gap. Loads
 # a real factory preamp so the model's rate-match latency is exercised (and must persist while powered

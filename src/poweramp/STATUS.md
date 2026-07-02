@@ -204,6 +204,82 @@ Three "amp realism" stages, each a knob (default 0 ⇒ block-3-identical, golden
 - UI: SIMULATOR row is now Drive · Sag · Presence · Depth · **Load · Iron · Bloom** · Output (8 knobs).
 - Golden **50/50**. Values are consilium/by-ear starting points; tune per voicing.
 
+## Clean capture<->tube switch — root cause + fix (2026-07-02)
+
+User symptom: a live Capture<->Simulator switch had a GAP (accepted: PDC re-report) + a level
+jump and "~0.5 s volume drift". A previous pass tried fast-track (pumped, removed), a makeup
+slew (kept), keep-warm (no effect, removed), constant-PDC (rejected: permanent latency).
+
+### Diagnosis (this session — measured, not inherited)
+Built `orbitcab_switch_probe` (dev tool): gain maps vs level, null-vs-continuous-reference
+envelope traces, stale-wake A/B nulls, shared-stimulus reference gains.
+1. **The slew was broken**: clamping the target ±slew around the SMOOTHER'S CURRENT value while
+   `setTargetValue` re-arms the 30 ms ramp every block compounds into a block-size-dependent
+   crawl — measured **0.4 dB/s @ 64-sample blocks / 3.2 @ 512** instead of the designed 9. The
+   leveler was effectively FROZEN (settled −0.41 dB where −12.7 dB was correct).
+2. Because of (1), a mode switch played the FULL uncompensated step: post-amp A/B (capture
+   −17.5 vs tube −19.9 dBFS @ −18 in) + the cab's spectral weighting difference (this IR:
+   capture-spectrum +12.7 dB vs tube +8.6) ≈ **6.7–8.8 dB jump**. The ORIGINAL "0.5 s swell"
+   complaint was the healthy pre-slew leveler honestly chasing that 4.1 dB cab component
+   through its 150 ms followers.
+3. **Frozen-stage state is NOT audible**: switched-away-and-back vs never-switched nulls show
+   ±0.05 dB (sag/NAM state freeze is fine; keep-warm unnecessary — confirmed).
+4. The A/B step is LEVEL-dependent (capture = hard limiter: output pinned ≈ −17.3 dBFS for
+   −30…−6 in; tube passes more dynamics): 8.5 dB @ −30 → ~1.8 @ −12. No constant trim can
+   equalize everywhere; at playing levels it's stable ~1.8–2.5 dB.
+
+### Fix (consilium: codex gpt-5.5/xhigh + deepseek-v4-pro/max; both answers folded in)
+- **AutoLeveler reworked**: SmoothedValue dropped. Block-rate target dB-slew-limited against
+  the PREVIOUS TARGET (true 9 dB/s, block-size-invariant) + per-sample rate-limited applied
+  gain (dB-linear glide as a geometric progression, one multiply/sample; the LINEAR gain is
+  the single source of truth — a separate dB accumulator drifts and pops on landing, caught by
+  the sample-slope test). Deterministic retargets (route snap, on/off flip) jump the target and
+  glide at a bounded FAST 40 dB/s (still a hard rate limit — synced with the seam fade, not a
+  pump). Followers re-seeded at the CURRENT dry level on snap so the ratio sticks.
+- **Per-route makeup memory (CabEngine)**: each route's converged makeup is cached while it
+  dwells (≥0.4 s, non-silent, not fading) and SNAPPED to when the route returns. Keyed to a
+  level-context generation (EQ/filters/dry-wet/tube knobs/input trim POD compare + an atomic
+  bumped by IR/model mutators) — a stale cache never snaps (consilium: stale snap = pump).
+  Trigger = router-ACCEPTED fades (`fadeJustStarted()`), not raw params (automation faster
+  than the 30 ms fade would desync), + the preamp power flip.
+- **Deterministic capture level-match for the tube**: at model load AmpStage measures the
+  capture's reference gain on the shared `cab::levelprobe` stimulus (LP-shaped −18 dBFS noise;
+  message thread, pre-swap instances, re-Reset after → live path stays bit-identical). The
+  router lifts tubeMakeup by (capRefGainDb − kTubeRefGainDb = −1.96, probe-measured) — post-amp
+  A/B step at playing levels: **2.5 → 0.3 dB** (gain map: −30…−6 now 6.4/2.1/0.3/−0.3/−0.4/−0.5).
+- Result (probe, real IR + real capture): repeated A/B lands ±0.5 dB in ≤150 ms; output A/B
+  step (leveler on, noise) 6.7 → **0.18 dB**; leveler-off switch artifacts ±0.2 dB; stale-wake
+  nulls ±0.05 dB unchanged. FIRST visit to a route after an IR/EQ/knob change converges once,
+  honestly, bounded by 9 dB/s (~0.5 s for a 4 dB cab-weighting difference) — deterministic
+  pre-knowledge would need a second convolver; a spectral-estimate upgrade (IR FR × probed
+  model spectrum at load time) is the designed future step if it ever matters by ear.
+- Tests: AutoLeveler battery (anti-freeze regression, block-size/sample-rate invariance,
+  per-sample slope caps, snap semantics, silence edges, enable flips) + the switch-contract
+  battery (reference honesty, first-visit bounds, repeated-A/B snap, 10 Hz abuse, stale-context
+  no-snap). Full suite 581k checks green; goldens 50/50; PDC gate green.
+
+### After-review hardening (8-angle adversarial pass on the diff; all fixes re-validated green)
+- **capDb stepped instantly** when a capture model finished loading/clearing while the TUBE was
+  live (an async ±12 dB jump, no fade covers it — the route never changes) → the capture-match
+  trim now GLIDES at 40 dB/s (`kCapMatchSlewDbPerSec`), seeding directly on the first block.
+- **Cache poisoning windows**: route-makeup writes now also require `AutoLeveler::settled()`
+  (never remember a mid-glide gain) and the dwell restarts on an autoLevel flip — an off→on
+  toggle followed by a fast A/B could otherwise snap to a half-glided ~unity value.
+- **Mirror-ordering race**: refGainDb/refGainValid are published AFTER the live-model swap
+  (they feed the AUDIO thread; storing first paired the new model's gain with the old model).
+- **Preamp probe waste**: the reference-gain probe is skipped for the preamp stage
+  (`measureRefGain=false`) — nothing consumes its value; saves ~0.3 s-of-inference per load.
+- **Identical-bytes reload** (the ampOn power toggle re-arms the same .nam) no longer bumps the
+  level context — an FNV-1a content hash guards it, so power-cycling doesn't nuke route memory.
+- **Context compare quantized** (0.05 dB / 0.005 amount / 1 Hz grids) so CC jitter or a smoothed
+  automation ramp can't re-stale the caches every block and silently disable the snap.
+- **Preamp-flip snap** is gated on `!isFading()` (never retarget ahead of a deferred seam fade).
+- **kTubeRefGainDb anchor guard**: a unit test re-measures the tube's reference gain and fails
+  if the baked constant, the levelprobe stimulus, or the voicing calibration drift apart.
+  (Known limit: the anchor is 48 kHz; other host rates may add sub-dB drift — documented.)
+- Cleanups: one shared LCG (`levelprobe::white`) across probe/tool/tests; dead legacy
+  `rampSeconds` param dropped from `AutoLeveler::prepare`; dead includes removed.
+
 ### KNOWN LIMITATION (found by B9, pre-existing block 3): feel-layer block-size determinism
 At feel=0 the stage is BIT-EXACT across block schedules (S3 = 0.0). But with the FEEL layer engaged there is
 a small (~1e-2, steady-state) block-size discrepancy — it is present in block 3's sag/presence/depth (which

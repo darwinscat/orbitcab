@@ -23,6 +23,8 @@ struct SlotParams
     float hpfHz    = 80.0f;
     float lpfHz    = 7000.0f;
     float dryWet01 = 1.0f;    // 0 = dry, 1 = full wet (the "mix" param / 100)
+
+    bool operator== (const SlotParams&) const = default;   // context compare (leveler route memory)
 };
 
 // Amp tone EQ — a fixed-frequency tone stack (Bass/Mid/Treble) + a Presence shelf + an
@@ -40,6 +42,8 @@ struct EqParams
     float hpfHz      = 80.0f;
     bool  lpfOn      = false;
     float lpfHz      = 10000.0f;
+
+    bool operator== (const EqParams&) const = default;   // context compare (leveler route memory)
 };
 
 // Which power-amp runs at the poweramp seam when `ampOn` is true: the NAM capture
@@ -73,6 +77,8 @@ struct TubeParams
                                  // class-B (crossover bloom / touch). Scales the per-voicing depth; needs Sag > 0.
     int   osIndex     = 1;       // OS-quality selector into the router's factor list {2,4,8,16,32}: 1 = 4× (default).
                                  // The router keeps one tube per factor prepared, so this switches live with no realloc.
+
+    bool operator== (const TubeParams&) const = default;   // context compare (leveler route memory)
 };
 
 struct Params

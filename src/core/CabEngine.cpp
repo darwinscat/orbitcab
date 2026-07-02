@@ -55,8 +55,13 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     muteGateSmoothed.reset (sampleRate, kRampSeconds);
     muteGateSmoothed.setCurrentAndTargetValue (1.0f);
 
-    autoLeveler.prepare (sampleRate, kRampSeconds);
+    autoLeveler.prepare (sampleRate);
     prevRoute = routeCode (initial);   // seed so a session booting in any route isn't seen as a switch on block 1
+    prevContext = makeContext (initial);
+    lastModelGeneration = modelGeneration.load (std::memory_order_relaxed);
+    routeDwellSamples = 0;
+    prevAutoLevel = initial.autoLevel;
+    for (auto& r : routeLevel) r = RouteLevel {};   // route memory restarts with the stream
 
     inputGainPrev = juce::Decibels::decibelsToGain (initial.inputGainDb);
     inLevel.store (0.0f);
@@ -167,12 +172,30 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     gainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (p.outputGainDb));
 
     // Track the poweramp/preamp signal ROUTE (off<->capture<->tube, preamp on/off) so a switch can
-    // be handled deterministically downstream (the tube<->capture loudness match). A route change is
-    // a discrete step in the thing being levelled; the makeup slew-limit keeps the leveler gentle.
-    const int route = routeCode (p);
+    // be handled deterministically downstream (the per-route makeup snap). A route change is a
+    // discrete step in the thing being levelled; the makeup slew-limit keeps the leveler gentle.
+    const int  route = routeCode (p);
+    const int  oldRoute = prevRoute;
     const bool routeChanged = (route != prevRoute);
     prevRoute = route;
-    juce::ignoreUnused (routeChanged);   // consumed by the loudness match (added next)
+    if (routeChanged)
+        routeDwellSamples = 0;           // the new route must dwell before its makeup is trusted
+
+    // LEVEL-CONTEXT tracking: any change to what shapes the wet/dry spectral ratio (EQ, filters,
+    // dry/wet, tube knobs, input trim — or an IR/model load signalled via modelGeneration) makes
+    // every remembered route makeup stale. A stale snap would be a deterministic-looking jump to a
+    // WRONG level (the pump G2 forbids), so staleness must invalidate, not "snap then glide".
+    {
+        const juce::uint32 mg = modelGeneration.load (std::memory_order_relaxed);
+        const LevelContext ctx = makeContext (p);
+        if (mg != lastModelGeneration || ! (ctx == prevContext))
+        {
+            lastModelGeneration = mg;
+            prevContext = ctx;
+            ++contextGen;
+            routeDwellSamples = 0;
+        }
+    }
 
     // MUTE: muting a slot solos the other (overrides MIX); both muted => the dry
     // signal passes through (bypass), not silence (smoothed gate, click-free).
@@ -214,6 +237,15 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       powerAmpRouter.process (buffer.getArrayOfWritePointers(), numCh, numSamples,
                               p.ampOn, p.powerAmpMode, p.tube, amp);
       nsPwr = elapsedNs (a); }
+
+    // The leveler route-snap triggers on ROUTER-ACCEPTED transitions (a change arriving mid-fade
+    // is deferred to the fade end — keying off raw params would desync the snap from the audio),
+    // plus the preamp power flip, which is an instant latency-aligned gate with no router fade —
+    // but not while a seam fade is still running (the poweramp part of the new route may itself
+    // be deferred; snapping early would retarget ahead of the audio).
+    const bool routeSnapPending = powerAmpRouter.fadeJustStarted()
+                               || (routeChanged && route / 100 != oldRoute / 100
+                                   && ! powerAmpRouter.isFading());
 
     // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---
     for (int ch = 0; ch < numCh; ++ch)
@@ -265,7 +297,39 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             mMS += (double) mr * mr;
         }
         const int chs = juce::jmax (1, numCh);
-        autoLeveler.processBlock (dMS / chs, mMS / chs, p.autoLevel, numSamples);
+        const double dryMS = dMS / chs;
+
+        // Route snap: entering a route whose converged makeup is REMEMBERED for the current level
+        // context → retarget the leveler deterministically (bounded fast glide, synced with the
+        // seam's 30 ms crossfade) instead of letting the followers crawl there over ~0.5 s. An
+        // unvisited/stale route just converges normally (bounded by the 9 dB/s slew).
+        if (routeSnapPending && p.autoLevel)
+        {
+            const RouteLevel& rl = routeLevel[routeIndex (route)];
+            if (rl.valid && rl.gen == contextGen)
+                autoLeveler.snapRatioTo (juce::Decibels::decibelsToGain (rl.makeupDb));
+        }
+
+        autoLeveler.processBlock (dryMS, mMS / chs, p.autoLevel, numSamples);
+
+        // An autoLevel flip starts the leveler's own 0.35 s glide — the dwell must restart so a
+        // mid-glide gain can't be trusted (review finding: off→on then a fast A/B snapped to a
+        // half-glided ~unity value).
+        if (p.autoLevel != prevAutoLevel)
+        {
+            prevAutoLevel = p.autoLevel;
+            routeDwellSamples = 0;
+        }
+
+        // Route-makeup memory: while the current route DWELLS (leveler on, not fading, signal
+        // above the silence floor, gain LANDED — never a mid-glide value) past the trust
+        // threshold, keep its converged makeup fresh.
+        if (p.autoLevel && ! powerAmpRouter.isFading() && dryMS > 1.0e-6 && autoLeveler.settled())
+        {
+            routeDwellSamples = juce::jmin (routeDwellSamples + numSamples, 1 << 30);
+            if (routeDwellSamples >= (int) (kRouteDwellSeconds * currentSampleRate))
+                routeLevel[routeIndex (route)] = { autoLeveler.currentGainDb(), contextGen, true };
+        }
     }
 
     // --- auto-level makeup (wet only), then the MUTE gate (→ dry), then master gain ---
@@ -332,19 +396,23 @@ void CabEngine::setSlotOriginalIR (int s, const float* const* samples, int numCh
                                    int numSamples, double irSampleRate)
 {
     slot[s].setOriginalIR (samples, numChannels, numSamples, irSampleRate);
+    bumpLevelContext();
 }
 
 double CabEngine::slotApplyTrim (int s, bool trimOn, float trimFraction01, bool headOn)
 {
-    return slot[s].applyTrim (trimOn, trimFraction01, headOn);
+    const double r = slot[s].applyTrim (trimOn, trimFraction01, headOn);
+    bumpLevelContext();
+    return r;
 }
 
 void CabEngine::slotLoadBytesFallback (int s, const void* data, size_t size)
 {
     slot[s].loadBytesFallback (data, size);
+    bumpLevelContext();
 }
 
-void CabEngine::clearSlotOriginal (int s)           { slot[s].clearOriginal(); }
+void CabEngine::clearSlotOriginal (int s)           { slot[s].clearOriginal(); bumpLevelContext(); }
 bool CabEngine::slotHasOriginal   (int s) const     { return slot[s].hasOriginal(); }
 double CabEngine::slotTrimmedSeconds (int s) const  { return slot[s].trimmedLengthSeconds(); }
 
