@@ -87,7 +87,7 @@ public:
     // value, so nothing the caches depend on changed. Detected via a cheap content hash.
     bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f)
     {
-        const bool ok = amp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ true);
+        const bool ok = amp.loadModelFromMemory (data, size, trimDb);
         const juce::uint64 h = ok ? contentHash (data, size) : 0;
         if (ok && h != lastAmpBytesHash) { lastAmpBytesHash = h; bumpLevelContext(); }
         return ok;
@@ -101,11 +101,10 @@ public:
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
     int    tubePowerAmpLatencySamples() const           { return powerAmpRouter.tubeLatencySamples(); }
 
-    // The preamp skips the ref-gain probe (nothing consumes its ref gain — only the poweramp's
-    // feeds the tube level-match) and uses the same identical-bytes guard as the poweramp.
+    // Same identical-bytes guard as the poweramp.
     bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f)
     {
-        const bool ok = preamp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ false);
+        const bool ok = preamp.loadModelFromMemory (data, size, trimDb);
         const juce::uint64 h = ok ? contentHash (data, size) : 0;
         if (ok && h != lastPreampBytesHash) { lastPreampBytesHash = h; bumpLevelContext(); }
         return ok;

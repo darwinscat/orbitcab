@@ -51,12 +51,8 @@ public:
     // Returns false (and leaves the current model untouched) on a bad / unsupported /
     // non-mono model. The replaced model is reclaimed later via collectGarbage().
     // trimDb = per-model output offset (dB) folded into the loudness-normalisation makeup.
-    // measureRefGain: run the cab::levelprobe reference-gain probe on the new instances
-    // (≈0.3 s of inference on the message thread). Only the POWERAMP stage needs it (the
-    // tube's capture level-match); the preamp passes false and skips the cost entirely.
     // (Bytes only — file I/O stays in the adapter layer, never in pure-DSP core.)
-    bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f,
-                                bool measureRefGain = true);
+    bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);
     void   clearModel();
     void   collectGarbage();          // free models retired by a swap, once audio moved past them
 
@@ -64,9 +60,6 @@ public:
     double modelSampleRate() const;   // the model's expected sample rate (<= 0 if none / unknown)
     double modelLoudness()   const;   // the model's tagged loudness in dB (0 if none / no model)
     bool   modelHasLoudness() const;  // whether the loaded model carries a loudness tag
-    float  refGainDb()       const;   // measured reference gain (cab::levelprobe stimulus, incl. the
-                                      // normalization makeup) — the tube's capture level-match anchor
-    bool   refGainValid()    const;   // probe succeeded AND a model is live (audio-thread-safe reads)
     int    latencySamples()  const;   // host-rate latency from rate-matching (0 if none / not resampling)
 
 private:
