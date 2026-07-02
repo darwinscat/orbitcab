@@ -95,6 +95,10 @@ not brand claims.
 8. **Validation.** level-matched bypass; listening + null vs NAM; CPU budget (target a few % @4× OS).
 9. **Extract.** promote `cab::poweramp` → new `felitronics::poweramp` module; OrbitCab consumes it;
    delete `src/poweramp/`.
+   > **ON HOLD (Oleh, 2026-07-02):** not yet — the engine keeps living here for further debugging
+   > and by-ear iteration; he is not convinced it is release-grade. Revisit the gate when the
+   > open items shrink (evenLeak liveliness pass, feel-layer block-size determinism root-cause,
+   > the 8×/ADAA HF+hot-drive boundary, sag reservoir upgrade, a formal CPU-budget log).
 
 ## RT / pitfalls checklist (from research)
 - 4× OS default (8× for cold-bias crossover / hard settings); IR LPF does **not** undo folded aliasing.
