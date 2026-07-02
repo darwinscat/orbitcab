@@ -100,6 +100,18 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     gainParam      = apvts.getRawParameterValue ("gain");
     autoLevelParam = apvts.getRawParameterValue ("autoLevel");
     ampOnParam     = apvts.getRawParameterValue ("ampOn");
+    ampModeParam   = apvts.getRawParameterValue ("ampMode");
+    tubeDriveParam  = apvts.getRawParameterValue ("tubeDrive");
+    tubeOutputParam = apvts.getRawParameterValue ("tubeOutput");
+    tubeTypeParam   = apvts.getRawParameterValue ("tubeType");
+    tubeTopoParam   = apvts.getRawParameterValue ("tubeTopo");
+    tubeSagParam      = apvts.getRawParameterValue ("tubeSag");
+    tubePresenceParam = apvts.getRawParameterValue ("tubePresence");
+    tubeDepthParam    = apvts.getRawParameterValue ("tubeDepth");
+    tubeLoadParam     = apvts.getRawParameterValue ("tubeLoad");
+    tubeIronParam     = apvts.getRawParameterValue ("tubeIron");
+    tubeBiasParam     = apvts.getRawParameterValue ("tubeBias");
+    tubeOsParam       = apvts.getRawParameterValue ("tubeOS");
     preampOnParam  = apvts.getRawParameterValue ("preampOn");
     eqOnParam       = apvts.getRawParameterValue ("eqOn");
     eqBassParam     = apvts.getRawParameterValue ("eqBass");
@@ -134,6 +146,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     // selectPoweramp() flags the reload directly from the message thread.
     apvts.addParameterListener ("ampOn", this);
     apvts.addParameterListener ("preampOn", this);
+    apvts.addParameterListener ("ampMode", this);   // mode switch changes the reported PDC (capture vs tube latency)
 
     // Preset-centric first start: the live state IS a preset, and that preset is the bundled
     // default (Roche Limit) — not an ad-hoc bootstrap. Establishing it here (decode + store the
@@ -159,6 +172,7 @@ OrbitCabAudioProcessor::~OrbitCabAudioProcessor()
     apvts.removeParameterListener ("trimOnB", this);
     apvts.removeParameterListener ("ampOn", this);
     apvts.removeParameterListener ("preampOn", this);
+    apvts.removeParameterListener ("ampMode", this);
 }
 
 void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
@@ -170,6 +184,7 @@ void OrbitCabAudioProcessor::parameterChanged (const juce::String& id, float)
     else if (id == "trimOnB")  pendingTrimReloadB.store (true, std::memory_order_relaxed);
     else if (id == "ampOn")    pendingPowerampReload.store (true, std::memory_order_relaxed);
     else if (id == "preampOn") pendingPreampReload.store  (true, std::memory_order_relaxed);
+    else if (id == "ampMode")  pendingLatencyRefresh.store (true, std::memory_order_relaxed);
 }
 
 void OrbitCabAudioProcessor::timerCallback()
@@ -187,6 +202,7 @@ void OrbitCabAudioProcessor::timerCallback()
     if (pendingTrimReloadB.exchange (false)) applyTrimAndLoad (false);
     if (pendingPowerampReload.exchange (false)) { applyPoweramp(); updateLatency(); }
     if (pendingPreampReload.exchange  (false)) { applyPreamp();   updateLatency(); }
+    if (pendingLatencyRefresh.exchange (false)) updateLatency();   // poweramp mode (capture<->tube) changed: PDC only, no reload
 
     // Land any IR swap the convolver rejected while mid-crossfade (coalescing — see Convolver::flushPending).
     engine.pumpConvolverReloads();
@@ -596,13 +612,13 @@ bool OrbitCabAudioProcessor::exportEmbedsAmp() const
 void OrbitCabAudioProcessor::applyPoweramp()
 {
     // Message thread (poll timer). Resolve "ampSel" against the merged library and load that
-    // model into the amp stage. Off / no selection / unresolved (model gone) all clear the model
-    // so the stage is a clean passthrough — never a phantom wrong amp.
+    // model into the amp stage. No selection / unresolved (model gone) clears the model so the
+    // stage is a clean passthrough — never a phantom wrong amp.
     if (ampOnParam == nullptr || ampOnParam->load() <= 0.5f)
-    {
-        engine.clearAmpModel();
-        return;
-    }
+        return;   // Powered OFF: keep the loaded capture ARMED (do NOT clear). Its rate-match latency
+                  // must persist so toggling the poweramp never changes PDC (no host re-sync gap). The
+                  // router already routes OFF (latency-aligned dry) and never processes the model while
+                  // off, so an armed-but-off model is inaudible — only its latency stays reported.
 
     const auto sel = selectedPowerampId();
     if (sel.isNotEmpty())
@@ -746,13 +762,12 @@ bool OrbitCabAudioProcessor::exportEmbedsPreamp() const
 void OrbitCabAudioProcessor::applyPreamp()
 {
     // Message thread (poll timer). Resolve "preampSel" against the merged library and load that
-    // model into the preamp stage. Off / no selection / unresolved all clear the model so the stage
-    // is a clean passthrough — never a phantom wrong amp. Mirrors applyPoweramp exactly.
+    // model into the preamp stage. No selection / unresolved clears the model so the stage is a
+    // clean passthrough — never a phantom wrong amp. Mirrors applyPoweramp exactly.
     if (preampOnParam == nullptr || preampOnParam->load() <= 0.5f)
-    {
-        engine.clearPreampModel();
-        return;
-    }
+        return;   // Powered OFF: keep the loaded preamp ARMED (do NOT clear). Its rate-match latency must
+                  // persist so toggling the preamp never changes PDC (no host re-sync gap). CabEngine
+                  // routes the bypass (latency-aligned dry) and never processes the model while off.
 
     const auto sel = selectedPreampId();
     if (sel.isNotEmpty() && sel != "bypass")   // "bypass" = preamp stage ON but no model → clean passthrough (standalone EQ)
@@ -815,10 +830,18 @@ void OrbitCabAudioProcessor::updateLatency()
     // Rate-match PDC; 0 at 48k / stage off. The two NAM stages each rate-match independently, so
     // their latencies SUM (possible future optimisation: keep the signal at the model rate between
     // them and rate-match only once — a single round-trip instead of two).
-    const bool ampOn    = ampOnParam    != nullptr && ampOnParam->load()    > 0.5f;
-    const bool preampOn = preampOnParam != nullptr && preampOnParam->load() > 0.5f;
-    const int lat = (ampOn    ? engine.ampLatencySamples()    : 0)
-                  + (preampOn ? engine.preampLatencySamples() : 0);
+    const bool tubeMode = ampModeParam != nullptr && ampModeParam->load() > 0.5f;
+    // Poweramp latency follows the selected MODE, not the power toggle — for BOTH modes. The router
+    // reports the active stage's latency (Tube = its oversampling; Capture = the NAM rate-match, 0 at
+    // 48 kHz) whether the poweramp is powered on OR off, and delays the dry/off path by that same
+    // amount, so toggling the power never changes PDC (no host re-sync gap, no crossfade misalignment).
+    // A capture↔tube MODE switch still re-reports (deliberate).
+    const int pwrLat = tubeMode ? engine.tubePowerAmpLatencySamples()
+                                : engine.ampLatencySamples();
+    // Preamp: its rate-match latency whenever a model is ARMED (loaded), NOT gated on the power toggle —
+    // CabEngine delays the bypass by the same amount, so the preamp's power toggle never changes PDC
+    // either. preampLatencySamples() is already 0 with no model / at 48 kHz. The two NAM stages sum.
+    const int lat = pwrLat + engine.preampLatencySamples();
     setLatencySamples (lat);
 }
 
@@ -1043,6 +1066,21 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     p.bypass       = bypassParam->load()    > 0.5f;
     p.preampOn     = preampOnParam->load()  > 0.5f;
     p.ampOn        = ampOnParam->load()     > 0.5f;
+    p.powerAmpMode = (ampModeParam->load() > 0.5f) ? cab::PowerAmpMode::tube : cab::PowerAmpMode::capture;
+    p.tube.driveDb     = tubeDriveParam->load();
+    p.tube.outputDb    = tubeOutputParam->load();
+    {
+        const float tt = tubeTypeParam->load();                                  // guard the (int) cast: a
+        p.tube.tubeType = std::isfinite (tt) ? juce::jlimit (0, 3, (int) (tt + 0.5f)) : 0;   // non-finite cast is UB
+    }
+    p.tube.singleEnded = tubeTopoParam->load() > 0.5f;
+    p.tube.sag      = tubeSagParam->load()      * 0.01f;
+    p.tube.presence = tubePresenceParam->load() * 0.01f;
+    p.tube.depth    = tubeDepthParam->load()    * 0.01f;
+    p.tube.load     = tubeLoadParam->load()     * 0.01f;
+    p.tube.iron     = tubeIronParam->load()     * 0.01f;
+    p.tube.bias     = tubeBiasParam->load()     * 0.01f;
+    { const float os = tubeOsParam->load(); p.tube.osIndex = std::isfinite (os) ? juce::jlimit (0, 4, (int) (os + 0.5f)) : 1; }
     p.autoLevel    = autoLevelParam->load() > 0.5f;
     p.aLoaded      = slotAudioLoaded[0].load (std::memory_order_relaxed);
     p.bLoaded      = slotAudioLoaded[1].load (std::memory_order_relaxed);

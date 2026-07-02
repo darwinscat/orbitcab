@@ -11,8 +11,10 @@
 #include "Params.h"
 #include "IRSlot.h"
 #include "AmpStage.h"
+#include "DryAligner.h"                          // cab::DryAligner — dry latency alignment for the preamp bypass
 #include "AmpEq.h"
 #include "AutoLeveler.h"
+#include "../poweramp/PowerAmpRouter.h"          // the poweramp seam: NAM capture <-> white-box tube
 #include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
 #include <felitronics/core/Smoother.h>          // JUCE-free LinearSmoother — bit-exact juce::SmoothedValue<float,Linear> drop-in
 
@@ -80,17 +82,35 @@ public:
     // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
     // is pumped by the processor's 30 Hz timer to reclaim swapped-out models safely. `amp` is the
     // poweramp; `preamp` is the second instance that runs ahead of it (same class, same threading).
-    bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f) { return amp.loadModelFromMemory (data, size, trimDb); }
-    void   clearAmpModel()                              { amp.clearModel(); }
+    // A reload of the IDENTICAL bytes (the ampOn power toggle re-arms the same model) must NOT
+    // invalidate the route-makeup memory — the deterministic ref-gain probe reproduces the same
+    // value, so nothing the caches depend on changed. Detected via a cheap content hash.
+    bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f)
+    {
+        const bool ok = amp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ true);
+        const juce::uint64 h = ok ? contentHash (data, size) : 0;
+        if (ok && h != lastAmpBytesHash) { lastAmpBytesHash = h; bumpLevelContext(); }
+        return ok;
+    }
+    void   clearAmpModel()                              { amp.clearModel(); lastAmpBytesHash = 0; bumpLevelContext(); }
     void   collectAmpGarbage()                          { amp.collectGarbage(); preamp.collectGarbage(); }
     bool   ampHasModel()         const                  { return amp.hasModel(); }
     double ampModelSampleRate()  const                  { return amp.modelSampleRate(); }
     double ampModelLoudness()    const                  { return amp.modelLoudness(); }
     bool   ampModelHasLoudness() const                  { return amp.modelHasLoudness(); }
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
+    int    tubePowerAmpLatencySamples() const           { return powerAmpRouter.tubeLatencySamples(); }
 
-    bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f) { return preamp.loadModelFromMemory (data, size, trimDb); }
-    void   clearPreampModel()                           { preamp.clearModel(); }
+    // The preamp skips the ref-gain probe (nothing consumes its ref gain — only the poweramp's
+    // feeds the tube level-match) and uses the same identical-bytes guard as the poweramp.
+    bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f)
+    {
+        const bool ok = preamp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ false);
+        const juce::uint64 h = ok ? contentHash (data, size) : 0;
+        if (ok && h != lastPreampBytesHash) { lastPreampBytesHash = h; bumpLevelContext(); }
+        return ok;
+    }
+    void   clearPreampModel()                           { preamp.clearModel(); lastPreampBytesHash = 0; bumpLevelContext(); }
     bool   preampHasModel()        const                { return preamp.hasModel(); }
     int    preampLatencySamples()  const                { return preamp.latencySamples(); }
 
@@ -113,9 +133,25 @@ public:
     double sampleRate() const { return currentSampleRate; }
 
 private:
+    // Message-thread notification that the level context changed OUTSIDE Params (an IR or model
+    // load/clear/trim) — invalidates the per-route makeup memory on the audio side.
+    void bumpLevelContext() { modelGeneration.fetch_add (1, std::memory_order_relaxed); }
+
+    // FNV-1a over the model bytes — message-thread only, cheap vs the model build it guards.
+    static juce::uint64 contentHash (const void* data, std::size_t size) noexcept
+    {
+        const auto* p = static_cast<const unsigned char*> (data);
+        juce::uint64 h = 1469598103934665603ull;
+        for (std::size_t i = 0; i < size; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+        return h != 0 ? h : 1;   // 0 is the "nothing loaded" sentinel
+    }
+
     AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
+    DryAligner  preampBypassAlign;         // delays the dry to the preamp's PDC while it's OFF → toggling
+                                           // the preamp never changes reported latency (no host re-sync gap)
     AmpEq       ampEq;                      // amp tone stack, between the preamp and poweramp NAM stages
-    AmpStage    amp;                       // optional NAM poweramp, front of the cab
+    AmpStage    amp;                       // optional NAM poweramp (capture mode), front of the cab
+    poweramp::PowerAmpRouter powerAmpRouter; // poweramp seam: ampOn/mode → capture(amp) | tube, click-free
     IRSlot      slot[2];
     AutoLeveler autoLeveler;
     juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch
@@ -132,6 +168,70 @@ private:
     double currentSampleRate = 44100.0;
 
     float inputGainPrev = 1.0f;            // block-ramp start for zipper-free input trim
+
+    // Poweramp/preamp signal ROUTE (encoded {preampOn, ampOn, mode}), seeded in prepare(). A change
+    // marks a discrete switch used by the tube<->capture loudness match; the makeup slew-limit
+    // (AutoLeveler) keeps the leveler's own response gentle so a switch can't pump.
+    int   prevRoute = -1;
+
+    // --- per-route makeup memory: the deterministic leveler retarget on a route switch -------
+    // Each route's CONVERGED makeup is remembered while that route dwells (settled, non-silent,
+    // not fading). On a router-ACCEPTED route change the leveler SNAPS to the new route's
+    // remembered makeup (a bounded fast glide in sync with the 30 ms seam crossfade) instead of
+    // crawling there through the followers — the audible "~0.5 s volume drift" on capture<->tube
+    // A/B. A cache is only trusted while the level CONTEXT (everything that shapes the wet/dry
+    // spectral ratio: EQ, filters, dry/wet, IR content, models, input trim, tube knobs) is
+    // unchanged — a context edit invalidates all routes (stale snap = a pump risk; consilium).
+    struct LevelContext                        // the structural params the ratio depends on
+    {
+        float inputGainDb = 0.0f; float mixAB01 = 0.0f;
+        bool  aLoaded = false, bLoaded = false;
+        EqParams   eq;
+        TubeParams tube;
+        SlotParams slotA, slotB;               // incl. filters / dryWet / phase / mute
+        bool operator== (const LevelContext&) const = default;
+    };
+    // QUANTIZED snapshot: exact float compare would re-stale the caches on every block of a
+    // smoothed automation ramp or mere MIDI-CC jitter, silently disabling the snap in the very
+    // hands-on A/B workflow it serves (review finding). The grids are far below audibility for
+    // the makeup ratio (0.05 dB / 0.005 of a 0..1 amount / 1 Hz) but swallow LSB noise.
+    static LevelContext makeContext (const Params& p) noexcept
+    {
+        auto qDb = [] (float v) { return std::round (v * 20.0f) / 20.0f; };   // 0.05 dB grid
+        auto q01 = [] (float v) { return std::round (v * 200.0f) / 200.0f; }; // 0.005 grid
+        auto qHz = [] (float v) { return std::round (v); };                   // 1 Hz grid
+        LevelContext c;
+        c.inputGainDb = qDb (p.inputGainDb); c.mixAB01 = q01 (p.mixAB01);
+        c.aLoaded = p.aLoaded; c.bLoaded = p.bLoaded;
+        c.eq = p.eq; c.tube = p.tube; c.slotA = p.slot[0]; c.slotB = p.slot[1];
+        c.eq.bassDb = qDb (c.eq.bassDb); c.eq.midDb = qDb (c.eq.midDb);
+        c.eq.trebleDb = qDb (c.eq.trebleDb); c.eq.presenceDb = qDb (c.eq.presenceDb);
+        c.eq.hpfHz = qHz (c.eq.hpfHz); c.eq.lpfHz = qHz (c.eq.lpfHz);
+        c.tube.driveDb = qDb (c.tube.driveDb); c.tube.outputDb = qDb (c.tube.outputDb);
+        c.tube.autoComp = q01 (c.tube.autoComp);
+        c.tube.sag = q01 (c.tube.sag); c.tube.presence = q01 (c.tube.presence);
+        c.tube.depth = q01 (c.tube.depth); c.tube.load = q01 (c.tube.load);
+        c.tube.iron = q01 (c.tube.iron); c.tube.bias = q01 (c.tube.bias);
+        for (SlotParams* s : { &c.slotA, &c.slotB })
+        {
+            s->hpfHz = qHz (s->hpfHz); s->lpfHz = qHz (s->lpfHz);
+            s->dryWet01 = q01 (s->dryWet01);
+        }
+        return c;
+    }
+    static int routeIndex (int routeCode) noexcept { return (routeCode >= 100 ? 3 : 0) + routeCode % 100; }
+
+    struct RouteLevel { float makeupDb = 0.0f; juce::uint32 gen = 0; bool valid = false; };
+    RouteLevel   routeLevel[6];                // {preamp off/on} × {off, capture, tube}
+    LevelContext prevContext;
+    juce::uint32 contextGen = 0;               // audio-side: bumped on any context change
+    std::atomic<juce::uint32> modelGeneration { 0 };   // message-thread bumps (IR / model loads)
+    juce::uint32 lastModelGeneration = 0;
+    juce::uint64 lastAmpBytesHash = 0, lastPreampBytesHash = 0;   // identical-reload guards (message thread)
+    int          routeDwellSamples = 0;        // settled time in the current route
+    bool         prevAutoLevel = true;         // autoLevel flip ⇒ the leveler glides ⇒ re-dwell before trusting writes
+    static constexpr double kRouteDwellSeconds = 0.4;  // followers ~converged before a cache is trusted
+
     std::atomic<float> inLevel  { 0.0f };
     std::atomic<float> outLevel { 0.0f };
 

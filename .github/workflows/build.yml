@@ -63,6 +63,15 @@ jobs:
         shell: bash
         run: ./build/orbitcab_fade_measure_artefacts/Release/*.exe
 
+      # White-box tube power-amp core battery (block 2): PP even-cancellation / THD-vs-drive / drive-comp
+      # unity / measured latency / aliasing operating-range MAP / RT no-alloc / lifecycle + cross-platform
+      # robustness. Plain JUCE-free exe; returns non-zero on any failed check.
+      - name: Tube poweramp core golden
+        shell: bash
+        run: |
+          bin=$(find build -name 'orbitcab_poweramp_core_golden*' -type f | head -1)
+          echo "running $bin"; "$bin"
+
       - name: Validate (pluginval, VST3)
         shell: bash
         run: |

@@ -59,6 +59,7 @@ private:
     using APVTS = juce::AudioProcessorValueTreeState;
     using SAtt  = APVTS::SliderAttachment;
     using BAtt  = APVTS::ButtonAttachment;
+    using CAtt  = APVTS::ComboBoxAttachment;
 
     void timerCallback() override;
     bool keyPressed (const juce::KeyPress& key) override;   // 1/2/3/4 → A/B/C/D snapshot switch
@@ -135,8 +136,9 @@ private:
     //   • a one-off capture (a name with a single variant) is a SINGLETON — listed in a combo by its
     //     full filename.
     // ampOn gates + reveals; the chosen model is library state ("ampSel"), not a host param.
-    juce::ToggleButton    ampPowerBtn { "POWERAMP" };   // it's a poweramp, not a full amp (preamp+poweramp)
-    std::unique_ptr<BAtt> ampPowerAtt;
+    juce::ToggleButton    ampPowerBtn { "CAPTURES" };   // NAM poweramp captures — one of the two poweramp tabs (radio with SIMULATOR).
+    // No APVTS attachment: CAPTURES + SIMULATOR share the ONE poweramp slot (ampOn + ampMode) as a radio,
+    // so the toggle is driven manually by syncPowerAmpTabs() and its onClick sets ampOn/ampMode.
     TubeDisplay           tubeDisplay;          // symbolic amp + glowing tubes (count by mode: PP 2 / SE 1 / Other 0)
     std::vector<orbitcab::PowerampEntry>           ampLib;          // cached merged library (rebuilt on add/remove)
 
@@ -167,6 +169,27 @@ private:
     bool ampOnCache = false;                     // detect ampOn change on the timer (host automation)
     bool showTubesPref = true;                   // gear "Show tubes" view pref (default on) — shared by both rows
     bool hasPoweramps = false;                   // library non-empty (factory or user) → show the POWERAMP UI
+
+    // POWERAMP SIMULATOR (white-box tube, blocks 2+3) — the THIRD stage "tab". It shares the ONE poweramp
+    // slot with the NAM captures (ampOn + ampMode): SIMULATOR ⊕ CAPTURES is a RADIO — turning one on turns
+    // the other off (ampMode = Tube vs Capture). Its reveal row occupies the same poweramp row area (only one
+    // ever shows). Unlike captures it needs no .nam library, so its toggle is ALWAYS available.
+    juce::ToggleButton    tubeSimBtn { "SIMULATOR" };
+    TubeDisplay           tubeSimDisplay;                 // the selected tube ×(PP 2 / SE 1), warm glow
+    juce::TextButton      tubeTypeBtn[4];                 // 6L6 / EL34 / EL84 / KT88 → tubeType (radio highlight)
+    juce::TextButton      tubeTopoBtn[2];                 // x1 (push-pull) / x2 (single-ended) → tubeTopo
+    CentreUnitSlider      tubeDriveKnob, tubeSagKnob, tubePresKnob, tubeDepthKnob, tubeLoadKnob, tubeIronKnob, tubeBloomKnob, tubeOutKnob;
+    juce::Label           tubeDriveLbl, tubeSagLbl, tubePresLbl, tubeDepthLbl, tubeLoadLbl, tubeIronLbl, tubeBloomLbl, tubeOutLbl;
+    std::unique_ptr<SAtt> tubeDriveAtt, tubeSagAtt, tubePresAtt, tubeDepthAtt, tubeLoadAtt, tubeIronAtt, tubeBloomAtt, tubeOutAtt;
+    juce::ComboBox        tubeOsBox;              // OS quality: 4x / 8x HQ (live switch)
+    std::unique_ptr<CAtt> tubeOsAtt;
+    juce::Rectangle<int>  tubeSimRowBounds;
+    int  ampModeCache = 0;                                // detect ampMode change on the timer (host automation)
+    void syncPowerAmpTabs();                              // (ampOn, ampMode) → CAPTURES/SIMULATOR toggles + reveal the right row
+    void updateTubeSimRow();                              // sim controls visibility + resize (mutually exclusive w/ captures)
+    void selectTubeType (int t);                          // set the tubeType choice param + reflect the radio
+    void selectTubeTopo (bool singleEnded);              // set the tubeTopo choice param + reflect
+    int  tubeSimRowH() const { return showTubesPref ? 118 : 92; }   // taller than captures: display + type/topo + labelled knobs
 
     // PREAMP (NAM): the SECOND stage's selector — an exact sibling of the poweramp block above,
     // against the preamp library (channel / gain / boost dimensions instead of PP-SE / hours). Its
@@ -226,9 +249,11 @@ private:
     void resizeForAmpRows()
     {
         const bool front = (hasPreamps && preampPowerBtn.getToggleState()) || eqPowerBtn.getToggleState();
-        setSize (1040, kBaseHeight
-                       + (front ? frontRowH() : 0)
-                       + (hasPoweramps && ampPowerBtn.getToggleState() ? ampRowH() : 0));
+        // CAPTURES and SIMULATOR are mutually exclusive (radio) and share the poweramp row slot — at most
+        // one is on, so the poweramp band's height is the sim row's when SIMULATOR is on, else the captures row's.
+        const int paH = tubeSimBtn.getToggleState() ? tubeSimRowH()
+                      : (hasPoweramps && ampPowerBtn.getToggleState() ? ampRowH() : 0);
+        setSize (1040, kBaseHeight + (front ? frontRowH() : 0) + paH);
     }
 
     void updateEnablement();    // dim a muted/empty slot's WF+controls; disable MIX when not A&B

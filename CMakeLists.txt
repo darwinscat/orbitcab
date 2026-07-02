@@ -15,6 +15,24 @@ project(OrbitCab VERSION 1.6.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ----------------------------------------------------------------------------
+# Local incremental BUILD NUMBER — so you can tell which build the host actually loaded (the editor
+# shows it). A tiny counter is bumped on every build into generated/BuildInfo.h (number + HH:MM:SS).
+# Gitignored, dev-only; a tagged release build defines nothing special and simply won't show it.
+# ----------------------------------------------------------------------------
+set(ORBITCAB_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${ORBITCAB_GENERATED_DIR}")
+execute_process(COMMAND ${CMAKE_COMMAND}   # generate once now so the first compile has the header
+    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake)
+add_custom_target(orbitcab_bump_build ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake
+    BYPRODUCTS ${ORBITCAB_GENERATED_DIR}/BuildInfo.h
+    COMMENT "OrbitCab: bump local build number")
+include_directories(${ORBITCAB_GENERATED_DIR})
+
 if(MSVC)
     # 8 MB stack (the Unix default). The dsp-test console apps put the whole OrbitCabAudioProcessor on the
     # stack; MSVC's 1 MB default overflows on construction → an instant, output-less crash. Match Unix.
@@ -201,7 +219,13 @@ target_sources(OrbitCab PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
     src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
+    src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
+    src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
+add_dependencies(OrbitCab orbitcab_bump_build)   # regenerate BuildInfo.h (local build number) before each build
+# ...and force the editor TU to recompile whenever the number changes (every build), so the shown build
+# number is always CURRENT — not frozen at PluginEditor.cpp's last source edit (which lagged it badly).
+set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${ORBITCAB_GENERATED_DIR}/BuildInfo.h")
 
 # ----------------------------------------------------------------------------
 # Bundled IRs — embedded into the binary as a C++ byte array (no disk reads).
@@ -292,6 +316,9 @@ target_link_libraries(OrbitCab PRIVATE
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
     felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
+    felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
+    felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
+    felitronics::eq             # min-phase presence/depth shelves (block 3)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -319,6 +346,8 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_compile_definitions(orbitcab_dsp_test PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -333,6 +362,9 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     teq::core
     felitronics::analysis
     felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -359,6 +391,8 @@ target_sources(orbitcab_fade_measure PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_compile_definitions(orbitcab_fade_measure PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -373,6 +407,183 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     teq::core
     felitronics::analysis
     felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Offline AUDITION renderer for the "Tube" power-amp: a DI wav -> Tube mode -> cab,
+# writing one labelled .wav per voicing/feel setting so the sound is judged by ear.
+# Dev tool; not a CI gate.  Run: orbitcab_tube_audition <DI.wav> [cabIR.wav] [outDir]
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_tube_audition PRODUCT_NAME "OrbitCabTubeAudition")
+if(MSVC)
+    target_link_options(orbitcab_tube_audition PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_tube_audition PRIVATE
+    tools/dsp-test/tube_audition.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_tube_audition PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_tube_audition PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Offline reproduction of the poweramp enable/disable KICK: toggles the tube on/off on a steady
+# sine through the real processor and prints the output RMS envelope. Dev diagnostic; not a CI gate.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_poweramp_toggle_probe PRODUCT_NAME "OrbitCabPowerampToggleProbe")
+if(MSVC)
+    target_link_options(orbitcab_poweramp_toggle_probe PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_poweramp_toggle_probe PRIVATE
+    tools/dsp-test/poweramp_toggle_probe.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_poweramp_toggle_probe PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Offline DIAGNOSTIC for the capture<->tube switch cleanliness: decomposes the audible switch
+# transient (post-amp A/B step vs leveler vs frozen-stage state) into TSV sections. Dev tool;
+# not a CI gate.  Run: orbitcab_switch_probe <model.nam> <cab.wav>
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_switch_probe PRODUCT_NAME "OrbitCabSwitchProbe")
+if(MSVC)
+    target_link_options(orbitcab_switch_probe PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_switch_probe PRIVATE
+    tools/dsp-test/switch_probe.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_include_directories(orbitcab_switch_probe PRIVATE src)
+target_compile_definitions(orbitcab_switch_probe PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+)
+target_link_libraries(orbitcab_switch_probe PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# Processor-level PDC regression GATE: at 96 kHz (NAM stages rate-match), toggling a stage's power must
+# NOT change the reported latency — the invariant that, when broken, gave the enable/disable gap. Loads
+# a real factory preamp so the model's rate-match latency is exercised (and must persist while powered
+# off). Returns non-zero on failure. Same processor-linking recipe as the toggle probe above.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_latency_pdc_test PRODUCT_NAME "OrbitCabLatencyPdcTest")
+if(MSVC)
+    target_link_options(orbitcab_latency_pdc_test PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_latency_pdc_test PRIVATE
+    tests/LatencyPdcTest.cpp
+    src/PluginProcessor.cpp
+    src/Parameters.cpp
+    src/UpdateChecker.cpp
+    src/PresetManager.cpp
+    src/PluginEditor.cpp
+    src/ui/SlotComponent.cpp
+    src/ui/WaveformDisplay.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_compile_definitions(orbitcab_latency_pdc_test PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JucePlugin_Name="OrbitCab"
+    JucePlugin_VersionString="1.0.0"
+)
+target_link_libraries(orbitcab_latency_pdc_test PRIVATE
+    OrbitCabData
+    OrbitCabPreampData
+    nam_core
+    teq::core
+    felitronics::analysis
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -395,6 +606,8 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/SvfSmootherNull.cpp     # A/B null gate: felitronics eq::Svf / core::LinearSmoother vs the juce originals
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
+    tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
+    tests/PowerAmpSwitchLevelTest.cpp  # capture<->tube mode switch: AutoLeveler must not swell (~0.5 s volume rise) — CI gate
     tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
@@ -406,17 +619,22 @@ target_sources(OrbitCab_Tests PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
 )
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
-    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # IrNormalizationTests loads factory IRs
+    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # real .nam (router align) + factory IRs (IR norm)
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     teq::core                     # cab::AmpEq (AmpEqTests)
     felitronics::analysis         # cab::CabEngine SpectrumTap capture
     felitronics::convolution      # cab::Convolver
+    felitronics::saturation       # cab::poweramp::TubePowerAmp curves
+    felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS
+    felitronics::eq               # block-3 presence/depth shelves
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags
@@ -432,6 +650,17 @@ add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
 target_include_directories(orbitcab_coreconv_golden PRIVATE src)
 target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
+
+# ----------------------------------------------------------------------------
+# Headless golden for the white-box tube poweramp CORE (block 2): cab::poweramp::TubePowerAmp —
+# an oversampled PP/SE tube waveshaper. Asserts THD-vs-drive, PP even-harmonic cancellation vs SE
+# even-rich, <-70 dBc aliasing @4x, near-identity at Drive=min, and the 31-sample invariant latency.
+# JUCE-free (links only the felitronics header-only DSP). CI gate (non-zero on failure).
+# ----------------------------------------------------------------------------
+add_executable(orbitcab_poweramp_core_golden tests/PowerAmpCoreGolden.cpp src/poweramp/TubePowerAmp.cpp)
+target_include_directories(orbitcab_poweramp_core_golden PRIVATE src)
+target_link_libraries(orbitcab_poweramp_core_golden PRIVATE felitronics::saturation felitronics::oversampling felitronics::eq)
+target_compile_features(orbitcab_poweramp_core_golden PRIVATE cxx_std_20)
 
 # Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
 # real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).

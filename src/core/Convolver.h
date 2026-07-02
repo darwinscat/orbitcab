@@ -153,8 +153,8 @@ private:
             power[0]                    += (double) spec[0] * spec[0];                 // DC (unused below)
             power[(std::size_t) (N / 2)] += (double) spec[1] * spec[1];               // Nyquist
             for (int k = 1; k < N / 2; ++k)
-                power[(std::size_t) k] += (double) spec[2 * k] * spec[2 * k]
-                                        + (double) spec[2 * k + 1] * spec[2 * k + 1];
+                power[(std::size_t) k] += (double) spec[(std::size_t) (2 * k)] * spec[(std::size_t) (2 * k)]
+                                        + (double) spec[(std::size_t) (2 * k + 1)] * spec[(std::size_t) (2 * k + 1)];
         }
 
         double num = 0.0, den = 0.0;

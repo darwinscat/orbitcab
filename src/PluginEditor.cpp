@@ -5,6 +5,9 @@
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
+#if __has_include("BuildInfo.h")
+ #include "BuildInfo.h"   // generated local build number (dev builds; see cmake/bump_build.cmake)
+#endif
 
 #include <algorithm>
 
@@ -214,12 +217,19 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     mixABSlider.setDoubleClickReturnValue (true, 50.0);                        // double-click → centre
     styleLabel (mixABLabel, juce::String::fromUTF8 ("I    \xe2\x80\x94    MIX    \xe2\x80\x94    II"));
 
-    // ---- POWERAMP (NAM): power checkbox (bottom strip) + revealed selector row ----
-    ampPowerBtn.setTooltip (juce::String::fromUTF8 ("Power the NAM poweramp stage in front of the cab \xe2\x80\x94 reveals the model selector below."));
+    // ---- POWERAMP CAPTURES (NAM): power checkbox (bottom strip) + revealed selector row ----
+    // CAPTURES + SIMULATOR are a RADIO over the ONE poweramp slot (ampOn + ampMode) — no APVTS attachment;
+    // the toggle is set by syncPowerAmpTabs(), and clicking it powers the slot in CAPTURE mode (SIMULATOR off).
+    ampPowerBtn.setTooltip (juce::String::fromUTF8 ("NAM poweramp captures in front of the cab \xe2\x80\x94 the model selector below. Shares the poweramp slot with SIMULATOR (only one runs)."));
     ampPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
     addAndMakeVisible (ampPowerBtn);
-    ampPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "ampOn", ampPowerBtn);
-    ampPowerBtn.onClick = [this] { updateAmpRow(); };          // reveal/hide the row + resize on toggle
+    ampPowerBtn.onClick = [this]
+    {
+        auto set = [this] (const char* id, float v) { if (auto* p = processorRef.apvts.getParameter (id)) p->setValueNotifyingHost (v); };
+        if (ampPowerBtn.getToggleState()) { set ("ampMode", 0.0f); set ("ampOn", 1.0f); }   // → CAPTURE, poweramp on
+        else                                set ("ampOn", 0.0f);                              // → poweramp off
+        syncPowerAmpTabs();
+    };
 
     addAndMakeVisible (tubeDisplay);   // symbolic amp + glowing tube(s) in the revealed row
 
@@ -423,6 +433,74 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     };
     addAndMakeVisible (eqCurve);
 
+    // ---- POWERAMP SIMULATOR (white-box tube, blocks 2+3): the third stage tab (radio with CAPTURES) ----
+    tubeSimBtn.setTooltip (juce::String::fromUTF8 ("White-box tube poweramp simulator \xe2\x80\x94 no capture needed. Shares the poweramp slot with CAPTURES (only one runs)."));
+    tubeSimBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+    addAndMakeVisible (tubeSimBtn);   // ALWAYS available — the sim needs no .nam library
+    tubeSimBtn.onClick = [this]
+    {
+        auto set = [this] (const char* id, float v) { if (auto* p = processorRef.apvts.getParameter (id)) p->setValueNotifyingHost (v); };
+        if (tubeSimBtn.getToggleState()) { set ("ampMode", 1.0f); set ("ampOn", 1.0f); }   // → TUBE, poweramp on
+        else                               set ("ampOn", 0.0f);                             // → poweramp off
+        syncPowerAmpTabs();
+    };
+
+    addChildComponent (tubeSimDisplay);   // the selected tube(s), warm heater glow (count = PP 2 / SE 1)
+
+    // Tube TYPE — 6L6 / EL34 / EL84 / KT88 radio → the tubeType choice param.
+    static const char* const kTubeNames[4] = { "6L6", "EL34", "EL84", "KT88" };
+    for (int t = 0; t < 4; ++t)
+    {
+        tubeTypeBtn[t].setButtonText (kTubeNames[t]);
+        tubeTypeBtn[t].setClickingTogglesState (false);
+        tubeTypeBtn[t].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        tubeTypeBtn[t].setTooltip (juce::String ("Tube voicing: ") + kTubeNames[t]);
+        tubeTypeBtn[t].onClick = [this, t] { selectTubeType (t); };
+        addChildComponent (tubeTypeBtn[t]);
+    }
+    // Tube TOPOLOGY — PP = push-pull (class AB, 2 tubes), SE = single-ended (class A, 1 tube). Labelled
+    // PP/SE (not x2/x1) so it doesn't read as an oversampling "×N" series next to the Quality combo.
+    static const char* const kTopoNames[2] = { "PP", "SE" };   // [0] = PP push-pull, [1] = SE single-ended
+    for (int m = 0; m < 2; ++m)
+    {
+        tubeTopoBtn[m].setButtonText (kTopoNames[m]);
+        tubeTopoBtn[m].setClickingTogglesState (false);
+        tubeTopoBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+        tubeTopoBtn[m].setTooltip (m == 0 ? juce::String::fromUTF8 ("PP \xe2\x80\x94 push-pull (class AB): two tubes, tighter, even harmonics cancel")
+                                          : juce::String::fromUTF8 ("SE \xe2\x80\x94 single-ended (class A): one tube, sweeter, even-harmonic rich"));
+        tubeTopoBtn[m].onClick = [this, m] { selectTubeTopo (m == 1); };   // [1] = SE = single-ended
+        addChildComponent (tubeTopoBtn[m]);
+    }
+    // Feel knobs — Drive / Sag / Presence / Depth / Load / Output, warm amber to match the tube glow.
+    setupKnob (tubeDriveKnob, "tubeDrive",    tubeDriveAtt, juce::String::fromUTF8 ("Drive into the tube \xe2\x80\x94 how hard it's pushed"),             false, "dB");
+    setupKnob (tubeSagKnob,   "tubeSag",      tubeSagAtt,   juce::String::fromUTF8 ("Sag \xe2\x80\x94 power-supply bloom / touch / compression under load"), false, "%");
+    setupKnob (tubePresKnob,  "tubePresence", tubePresAtt,  juce::String::fromUTF8 ("Presence \xe2\x80\x94 NFB-style HF that opens up when pushed"),         false, "%");
+    setupKnob (tubeDepthKnob, "tubeDepth",    tubeDepthAtt, juce::String::fromUTF8 ("Depth \xe2\x80\x94 NFB-style LF that loosens when pushed"),            false, "%");
+    setupKnob (tubeLoadKnob,  "tubeLoad",     tubeLoadAtt,  juce::String::fromUTF8 ("Load \xe2\x80\x94 reactive-speaker impedance: bass punch, pick attack, 'amp in a room'"), false, "%");
+    setupKnob (tubeIronKnob,  "tubeIron",     tubeIronAtt,  juce::String::fromUTF8 ("Iron \xe2\x80\x94 output transformer: low-note grind/compression + softer top"),        false, "%");
+    setupKnob (tubeBloomKnob, "tubeBias",     tubeBloomAtt, juce::String::fromUTF8 ("Bloom \xe2\x80\x94 dynamic bias-shift under sag: crossover 'chew' as you dig in (needs Sag)"), false, "%");
+    setupKnob (tubeOutKnob,   "tubeOutput",   tubeOutAtt,   juce::String::fromUTF8 ("Output trim after the tube stage"),                                    false, "dB");
+    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeIronKnob, &tubeBloomKnob, &tubeOutKnob })
+    {
+        k->setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));   // warm amber
+        k->setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
+        k->setVisible (false);   // shown only when SIMULATOR is the active poweramp tab
+    }
+    styleLabel (tubeDriveLbl, "DRIVE");  styleLabel (tubeSagLbl, "SAG");  styleLabel (tubePresLbl, "PRESENCE");
+    styleLabel (tubeDepthLbl, "DEPTH");  styleLabel (tubeLoadLbl, "LOAD");  styleLabel (tubeIronLbl, "IRON");
+    styleLabel (tubeBloomLbl, "BLOOM");  styleLabel (tubeOutLbl, "OUTPUT");
+    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeIronLbl, &tubeBloomLbl, &tubeOutLbl }) l->setVisible (false);
+    // OS-quality picker (live) — items MUST match the "tubeOS" choice-param order (1-based ids).
+    tubeOsBox.addItem ("2x",  1);
+    tubeOsBox.addItem ("4x",  2);
+    tubeOsBox.addItem ("8x",  3);
+    tubeOsBox.addItem ("16x", 4);
+    tubeOsBox.addItem ("32x", 5);
+    tubeOsBox.setTooltip (juce::String::fromUTF8 ("Oversampling \xe2\x80\x94 higher = softer top (less aliasing), more CPU (16x/32x heavy). Switches live."));
+    tubeOsBox.setColour (juce::ComboBox::textColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    addChildComponent (tubeOsBox);   // shown only when SIMULATOR is the active poweramp tab
+    tubeOsAtt = std::make_unique<CAtt> (processorRef.apvts, "tubeOS", tubeOsBox);
+
     // ---- IR library + restore display ----
     slots[0].rebuildList();
     slots[1].rebuildList();
@@ -443,7 +521,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     startTimerHz (30);
     updateEqRow();       // initial reveal state for the amp-EQ row
     updatePreampRow();   // initial reveal state for the preamp row
-    updateAmpRow();      // + the poweramp row; resizeForAmpRows sizes the window for all three (off → 620)
+    syncPowerAmpTabs();  // poweramp tabs (CAPTURES ⊕ SIMULATOR): set toggles from ampOn/ampMode, reveal, size
 }
 
 OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
@@ -477,14 +555,17 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     // Reflect poweramp params onto the controls (host automation / state restore don't fire the
     // button onClicks). A change in ampOn re-runs the reveal + resize; otherwise just keep the
     // tube radio buttons in sync with the choice param.
-    if (hasPoweramps)                              // no bundled models → no POWERAMP UI to sync
+    // Poweramp tabs (CAPTURES ⊕ SIMULATOR): reflect ampOn/ampMode from host automation / state restore
+    // (the button onClicks don't fire for those). The sim needs no library, so this runs unconditionally.
     {
-        if ((processorRef.apvts.getRawParameterValue ("ampOn")->load() > 0.5f) != ampOnCache)
-            updateAmpRow();                        // ampOn flipped → reveal/hide + resize
-        else if (processorRef.selectedPowerampId() != ampSyncedId)
-            syncAmpSelector();                     // selection changed externally (automation / restore) → re-sync
-        if (ampPowerBtn.getToggleState())
-            tubeDisplay.tick();                    // advance the warm heater flicker (~30 Hz)
+        const bool ampOn = processorRef.apvts.getRawParameterValue ("ampOn")->load()   > 0.5f;
+        const int  mode  = processorRef.apvts.getRawParameterValue ("ampMode")->load() > 0.5f ? 1 : 0;
+        if (ampOn != ampOnCache || mode != ampModeCache)
+            syncPowerAmpTabs();                    // ampOn/ampMode changed → re-set toggles + reveal + resize
+        else if (hasPoweramps && ampPowerBtn.getToggleState() && processorRef.selectedPowerampId() != ampSyncedId)
+            syncAmpSelector();                     // capture selection changed externally (automation / restore)
+        if (ampPowerBtn.getToggleState()) tubeDisplay.tick();       // captures warm-heater flicker (~30 Hz)
+        if (tubeSimBtn.getToggleState())  tubeSimDisplay.tick();    // simulator warm-heater flicker
     }
     if (hasPreamps)                                // same, for the PREAMP stage
     {
@@ -642,8 +723,9 @@ void OrbitCabAudioProcessorEditor::openSettings()
         {
             showTubesPref = on;
             processorRef.appPreferences().setFlag ("showTubes", on);
-            updatePreampRow();                             // re-flow + resize BOTH NAM rows (tall ↔ slim strip)
+            updatePreampRow();                             // re-flow + resize the NAM rows (tall ↔ slim strip)
             updateAmpRow();                                // — each sets its own tube display's show-tubes flag
+            updateTubeSimRow();                            // + the tube simulator row (its display + height)
         },
         [this]                                             // Poweramp library…: open the poweramp manager
         {
@@ -894,7 +976,7 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
     ampPowerBtn.setVisible (hasPoweramps);
 
     const bool on = hasPoweramps && ampPowerBtn.getToggleState();
-    ampOnCache = ampPowerBtn.getToggleState();
+    // (ampOnCache / ampModeCache are owned by syncPowerAmpTabs — the CAPTURES⊕SIMULATOR radio.)
 
     // Powering on with no resolvable selection → default to the first library entry (so the stage
     // is never "on but silent"). A restored session that already carries a valid "ampSel" keeps it.
@@ -911,6 +993,64 @@ void OrbitCabAudioProcessorEditor::updateAmpRow()
 
     resizeForAmpRows();                                  // grow/shrink for both NAM rows (triggers resized on change)
     syncAmpSelector();                                   // contextual controls + tubes + final re-flow
+}
+
+//==============================================================================
+// POWERAMP TABS — CAPTURES (NAM) ⊕ SIMULATOR (white-box tube) share the ONE poweramp slot (ampOn +
+// ampMode) as a radio. syncPowerAmpTabs is the single point that reflects the two params onto the two
+// strip toggles + the tube type/topology radios + the glow display, then reveals the active row.
+//==============================================================================
+void OrbitCabAudioProcessorEditor::syncPowerAmpTabs()
+{
+    auto& a = processorRef.apvts;
+    const bool ampOn = a.getRawParameterValue ("ampOn")->load()   > 0.5f;
+    const bool tube  = a.getRawParameterValue ("ampMode")->load() > 0.5f;
+    ampOnCache   = ampOn;
+    ampModeCache = tube ? 1 : 0;
+
+    // Radio: at most one poweramp tab is active (CAPTURES needs a library; SIMULATOR is always available).
+    ampPowerBtn.setToggleState (ampOn && ! tube, juce::dontSendNotification);
+    tubeSimBtn .setToggleState (ampOn &&   tube, juce::dontSendNotification);
+
+    // reflect the tube TYPE + TOPOLOGY radios + the glow display
+    const int  type = juce::jlimit (0, 3, (int) std::lround (a.getRawParameterValue ("tubeType")->load()));
+    const bool se   = a.getRawParameterValue ("tubeTopo")->load() > 0.5f;
+    for (int t = 0; t < 4; ++t) tubeTypeBtn[t].setToggleState (t == type, juce::dontSendNotification);
+    tubeTopoBtn[0].setToggleState (! se, juce::dontSendNotification);   // PP push-pull
+    tubeTopoBtn[1].setToggleState (  se, juce::dontSendNotification);   // SE single-ended
+    tubeSimDisplay.setShowTubes (showTubesPref);
+    tubeSimDisplay.setSelection (type, se ? 1 : 2, tubeSimBtn.getToggleState());   // silhouette + count (PP 2 / SE 1) + glow
+
+    updateAmpRow();       // captures row visibility (keys off ampPowerBtn) + resize + syncAmpSelector
+    updateTubeSimRow();   // sim row visibility (keys off tubeSimBtn) + resize
+}
+
+void OrbitCabAudioProcessorEditor::updateTubeSimRow()
+{
+    const bool on = tubeSimBtn.getToggleState();
+    tubeSimDisplay.setShowTubes (showTubesPref);
+    tubeSimDisplay.setVisible (on);
+    for (auto& b : tubeTypeBtn) b.setVisible (on);
+    for (auto& b : tubeTopoBtn) b.setVisible (on);
+    for (auto* k : { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeIronKnob, &tubeBloomKnob, &tubeOutKnob }) k->setVisible (on);
+    for (auto* l : { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeIronLbl, &tubeBloomLbl, &tubeOutLbl })         l->setVisible (on);
+    tubeOsBox.setVisible (on);
+    resizeForAmpRows();   // size the poweramp band (sim row height when on; triggers resized on change)
+    resized();            // re-flow whichever poweramp tab is active into the shared band
+}
+
+void OrbitCabAudioProcessorEditor::selectTubeType (int t)
+{
+    if (auto* p = processorRef.apvts.getParameter ("tubeType"))
+        p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, (float) juce::jlimit (0, 3, t) / 3.0f));   // 4 choices → 0, 1/3, 2/3, 1
+    syncPowerAmpTabs();
+}
+
+void OrbitCabAudioProcessorEditor::selectTubeTopo (bool singleEnded)
+{
+    if (auto* p = processorRef.apvts.getParameter ("tubeTopo"))
+        p->setValueNotifyingHost (singleEnded ? 1.0f : 0.0f);   // 0 = push-pull, 1 = single-ended
+    syncPowerAmpTabs();
 }
 
 //==============================================================================
@@ -1549,6 +1689,8 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
             0xff24242b, 0xff17171c, 0.0f);
     if (! ampRowBounds.isEmpty())                                  // revealed poweramp row (darker shade)
         vpanel (ampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
+    if (! tubeSimRowBounds.isEmpty())                              // revealed tube-simulator row (same shade)
+        vpanel (tubeSimRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
     if (! preampRowBounds.isEmpty())                               // revealed preamp row (same shade)
         vpanel (preampRowBounds.toFloat(), 0xff1f1f26, 0xff141419, 0.0f);
     if (! eqRowBounds.isEmpty())                                   // revealed amp-EQ row (same shade)
@@ -1587,6 +1729,18 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText ("0", juce::Rectangle<float> (cx - 6.0f, track.getY() - 14.0f, 12.0f, 9.0f),
                     juce::Justification::centred, false);
     }
+
+   #if defined(ORBITCAB_BUILD_NUMBER)
+    // Local build id (dev builds only), pinned right under the version badge (so it tracks the badge
+    // instead of floating) — tells you which build the host loaded without reloading two or three times.
+    {
+        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText ("build " + juce::String (ORBITCAB_BUILD_NUMBER),
+                    juce::Rectangle<int> (getWidth() - 214, getHeight() - 16, 208, 14),
+                    juce::Justification::centredRight, false);   // absolute bottom-right — always inside the window
+    }
+   #endif
 }
 
 void OrbitCabAudioProcessorEditor::resized()
@@ -1635,6 +1789,7 @@ void OrbitCabAudioProcessorEditor::resized()
     if (hasPoweramps && ampPowerBtn.getToggleState())
     {
         ampRowBounds = r.removeFromBottom (ampRowH());
+        tubeSimRowBounds = {};                                       // captures active → sim row not laid out
         auto row = ampRowBounds.reduced (16, 10);
         // amp icon always; +tube area when Show-tubes is on (wider, taller row)
         tubeDisplay.setBounds (row.removeFromLeft (showTubesPref ? 152 : 52));
@@ -1679,8 +1834,44 @@ void OrbitCabAudioProcessorEditor::resized()
             }
         }
     }
-    else
+    else if (tubeSimBtn.getToggleState())    // SIMULATOR is the active poweramp tab — same bottom slot as captures
+    {
         ampRowBounds = {};
+        tubeSimRowBounds = r.removeFromBottom (tubeSimRowH());
+        auto row = tubeSimRowBounds.reduced (16, 8);
+        tubeSimDisplay.setBounds (row.removeFromLeft (showTubesPref ? 150 : 52));
+        row.removeFromLeft (14);
+
+        // TYPE (a row of 4) over TOPOLOGY (a row of 2), a two-row block on the left
+        {
+            auto blk   = row.removeFromLeft (206);
+            auto typeR = blk.removeFromTop (blk.getHeight() / 2).withSizeKeepingCentre (206, 26);
+            constexpr int tw = 48, tg = 3;
+            for (auto& b : tubeTypeBtn) { b.setBounds (typeR.removeFromLeft (tw)); typeR.removeFromLeft (tg); }
+            auto topoR = blk.withSizeKeepingCentre (206, 24);   // bottom row: TOPOLOGY (2) on the left, OS-quality combo on the right
+            constexpr int pw = 46, pg = 3;
+            for (auto& b : tubeTopoBtn) { b.setBounds (topoR.removeFromLeft (pw)); topoR.removeFromLeft (pg); }
+            topoR.removeFromLeft (8);
+            tubeOsBox.setBounds (topoR.removeFromLeft (72));
+        }
+        row.removeFromLeft (14);
+
+        // 8 feel knobs — a caption over a dial, sharing the remaining width
+        CentreUnitSlider* knobs[8] = { &tubeDriveKnob, &tubeSagKnob, &tubePresKnob, &tubeDepthKnob, &tubeLoadKnob, &tubeIronKnob, &tubeBloomKnob, &tubeOutKnob };
+        juce::Label*      labs [8] = { &tubeDriveLbl, &tubeSagLbl, &tubePresLbl, &tubeDepthLbl, &tubeLoadLbl, &tubeIronLbl, &tubeBloomLbl, &tubeOutLbl };
+        const int kw = juce::jmax (44, row.getWidth() / 8);
+        for (int i = 0; i < 8; ++i)
+        {
+            auto cell = (i < 7) ? row.removeFromLeft (kw) : row;
+            labs[i]->setBounds  (cell.removeFromTop (13));
+            knobs[i]->setBounds (cell.reduced (2, 0));
+        }
+    }
+    else
+    {
+        ampRowBounds = {};
+        tubeSimRowBounds = {};
+    }
 
     // Revealed PREAMP + TONE row — ONE merged strip above the poweramp row (signal order: preamp → EQ →
     // poweramp). Preamp picks sit on the LEFT, laid out in signal order: tube · NAME combo · orange GAIN
@@ -1772,10 +1963,11 @@ void OrbitCabAudioProcessorEditor::resized()
     // Bottom-left power checkboxes, in signal order: PREAMP, POWERAMP. (The tone EQ is now part of the
     // PREAMP stage — no separate toggle.) Each appears only when its library is non-empty.
     {
-        std::array<juce::ToggleButton*, 2> col {};
+        std::array<juce::ToggleButton*, 3> col {};
         int n = 0;
         if (hasPreamps)   col[(size_t) n++] = &preampPowerBtn;
         if (hasPoweramps) col[(size_t) n++] = &ampPowerBtn;
+        col[(size_t) n++] = &tubeSimBtn;   // SIMULATOR — always available (needs no .nam library)
 
         auto amps = strip.removeFromLeft (108).reduced (12, 2);
         if (n == 1)

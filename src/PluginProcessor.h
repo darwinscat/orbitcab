@@ -267,6 +267,18 @@ private:
     std::atomic<float>* inputGainParam = nullptr;
     std::atomic<float>* bypassParam    = nullptr;
     std::atomic<float>* ampOnParam     = nullptr;   // NAM poweramp stage master gate / bypass
+    std::atomic<float>* ampModeParam   = nullptr;   // poweramp mode: 0 = Capture (NAM), 1 = Tube (white-box)
+    std::atomic<float>* tubeDriveParam  = nullptr;  // Tube-mode controls (white-box poweramp) — packed into cab::Params.tube
+    std::atomic<float>* tubeOutputParam = nullptr;
+    std::atomic<float>* tubeTypeParam   = nullptr;
+    std::atomic<float>* tubeTopoParam   = nullptr;
+    std::atomic<float>* tubeSagParam      = nullptr;   // block-3 feel: sag / presence / depth (0..100 %)
+    std::atomic<float>* tubePresenceParam = nullptr;
+    std::atomic<float>* tubeDepthParam    = nullptr;
+    std::atomic<float>* tubeLoadParam     = nullptr;   // block-4: reactive-speaker virtual load (0..100 %)
+    std::atomic<float>* tubeIronParam     = nullptr;   // block-4: output-transformer amount (0..100 %)
+    std::atomic<float>* tubeBiasParam     = nullptr;   // block-4: dynamic bias-shift / bloom (0..100 %)
+    std::atomic<float>* tubeOsParam       = nullptr;   // OS quality: 0 = 4x, 1 = 8x HQ (live switch)
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
 
     // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.
@@ -321,6 +333,7 @@ private:
     std::atomic<bool> pendingTrimReloadB { false };
     std::atomic<bool> pendingPowerampReload { false };   // ampOn toggled / selection changed → reload the .nam
     std::atomic<bool> pendingPreampReload   { false };   // preampOn toggled / selection changed → reload the .nam
+    std::atomic<bool> pendingLatencyRefresh { false };   // ampMode (capture<->tube) changed → recompute PDC only (no reload)
     std::atomic<bool> enginePrepared     { false };
 
     // Per-model output makeup (dB) applied on top of loudness normalisation — a single flat
