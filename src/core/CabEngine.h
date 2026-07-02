@@ -87,7 +87,7 @@ public:
     // value, so nothing the caches depend on changed. Detected via a cheap content hash.
     bool   loadAmpModelBytes  (const void* data, std::size_t size, float trimDb = 0.0f)
     {
-        const bool ok = amp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ true);
+        const bool ok = amp.loadModelFromMemory (data, size, trimDb);
         const juce::uint64 h = ok ? contentHash (data, size) : 0;
         if (ok && h != lastAmpBytesHash) { lastAmpBytesHash = h; bumpLevelContext(); }
         return ok;
@@ -101,11 +101,10 @@ public:
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
     int    tubePowerAmpLatencySamples() const           { return powerAmpRouter.tubeLatencySamples(); }
 
-    // The preamp skips the ref-gain probe (nothing consumes its ref gain — only the poweramp's
-    // feeds the tube level-match) and uses the same identical-bytes guard as the poweramp.
+    // Same identical-bytes guard as the poweramp.
     bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f)
     {
-        const bool ok = preamp.loadModelFromMemory (data, size, trimDb, /*measureRefGain*/ false);
+        const bool ok = preamp.loadModelFromMemory (data, size, trimDb);
         const juce::uint64 h = ok ? contentHash (data, size) : 0;
         if (ok && h != lastPreampBytesHash) { lastPreampBytesHash = h; bumpLevelContext(); }
         return ok;
@@ -158,9 +157,12 @@ private:
     juce::AudioBuffer<float> dryBuffer;    // copy of the raw input for the dry/wet blend
 
     // Smoothed so live tweaks / automation don't zipper. Phase is a sign (+1/-1) ramped
-    // through 0 — a brief dip rather than a hard polarity click.
-    felitronics::core::LinearSmoother mixSm[2]   { { 1.0f }, { 1.0f } };
-    felitronics::core::LinearSmoother phaseSm[2] { { 1.0f }, { 1.0f } };
+    // through 0 — a brief dip rather than a hard polarity click. (LinearSm alias: the ctor is
+    // explicit in felitronics-core v0.1.3, so array members need direct-init, not copy-init —
+    // clang enforces this; MSVC let it slide, which is how CI stayed green.)
+    using LinearSm = felitronics::core::LinearSmoother;
+    felitronics::core::LinearSmoother mixSm[2]   { LinearSm (1.0f), LinearSm (1.0f) };   // explicit ctor: direct-init
+    felitronics::core::LinearSmoother phaseSm[2] { LinearSm (1.0f), LinearSm (1.0f) };
     felitronics::core::LinearSmoother mixABSmoothed { 0.0f };
     felitronics::core::LinearSmoother gainSmoothed  { 1.0f };
     felitronics::core::LinearSmoother muteGateSmoothed { 1.0f };
@@ -223,6 +225,11 @@ private:
 
     struct RouteLevel { float makeupDb = 0.0f; juce::uint32 gen = 0; bool valid = false; };
     RouteLevel   routeLevel[6];                // {preamp off/on} × {off, capture, tube}
+    // Learned makeup DELTAS between route pairs (dB, [to][from]). Unlike the caches they SURVIVE
+    // context changes: the A-vs-B spectral offset is largely IR/EQ-portable, so a first visit
+    // after a change snaps to (current + delta) — near the truth — instead of fading from scratch.
+    float        pairDeltaDb[6][6] {};
+    bool         pairDeltaKnown[6][6] {};
     LevelContext prevContext;
     juce::uint32 contextGen = 0;               // audio-side: bumped on any context change
     std::atomic<juce::uint32> modelGeneration { 0 };   // message-thread bumps (IR / model loads)

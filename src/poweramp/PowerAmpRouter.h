@@ -99,11 +99,6 @@ private:
     // the tube sits at ~the dry/capture level → no level jump on enable/disable (the "kick"). Purely a
     // function of the params (no follower) → deterministic, no chase/swell. Recomputed per block.
     float  tubeMakeup = 1.0f;
-    // The CAPTURE-referenced part of that trim glides at a bounded rate instead of stepping: the
-    // capture's measured ref gain flips asynchronously when a model finishes loading/clearing on
-    // the message thread, and an instant ±12 dB step on a LIVE tube signal would click.
-    float  capDbCur = 0.0f;
-    double sampleRateHz = 48000.0;
 };
 
 } // namespace cab::poweramp

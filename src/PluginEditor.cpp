@@ -220,7 +220,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     // ---- POWERAMP CAPTURES (NAM): power checkbox (bottom strip) + revealed selector row ----
     // CAPTURES + SIMULATOR are a RADIO over the ONE poweramp slot (ampOn + ampMode) — no APVTS attachment;
     // the toggle is set by syncPowerAmpTabs(), and clicking it powers the slot in CAPTURE mode (SIMULATOR off).
-    ampPowerBtn.setTooltip (juce::String::fromUTF8 ("NAM poweramp captures in front of the cab \xe2\x80\x94 the model selector below. Shares the poweramp slot with SIMULATOR (only one runs)."));
+    ampPowerBtn.setTooltip (juce::String::fromUTF8 ("NAM poweramp captures in front of the cab \xe2\x80\x94 the model selector below. Shares the poweramp slot with POWER AMP SIMULATOR (only one runs)."));
     ampPowerBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
     addAndMakeVisible (ampPowerBtn);
     ampPowerBtn.onClick = [this]
@@ -434,7 +434,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     addAndMakeVisible (eqCurve);
 
     // ---- POWERAMP SIMULATOR (white-box tube, blocks 2+3): the third stage tab (radio with CAPTURES) ----
-    tubeSimBtn.setTooltip (juce::String::fromUTF8 ("White-box tube poweramp simulator \xe2\x80\x94 no capture needed. Shares the poweramp slot with CAPTURES (only one runs)."));
+    tubeSimBtn.setTooltip (juce::String::fromUTF8 ("White-box tube poweramp simulator \xe2\x80\x94 no capture needed. Shares the poweramp slot with POWER AMP CAPTURES (only one runs)."));
     tubeSimBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
     addAndMakeVisible (tubeSimBtn);   // ALWAYS available — the sim needs no .nam library
     tubeSimBtn.onClick = [this]
@@ -1969,7 +1969,8 @@ void OrbitCabAudioProcessorEditor::resized()
         if (hasPoweramps) col[(size_t) n++] = &ampPowerBtn;
         col[(size_t) n++] = &tubeSimBtn;   // SIMULATOR — always available (needs no .nam library)
 
-        auto amps = strip.removeFromLeft (108).reduced (12, 2);
+        auto amps = strip.removeFromLeft (190).reduced (12, 2);   // wide enough for "POWER AMP SIMULATOR"
+                                                                   // at the stacked-toggle font; MIX absorbs the loss
         if (n == 1)
             col[0]->setBounds (amps.withSizeKeepingCentre (amps.getWidth(), 22));
         else

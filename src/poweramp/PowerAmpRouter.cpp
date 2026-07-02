@@ -17,23 +17,10 @@ namespace
     // can vary per block (tube ↔ capture) without ever reallocating on the audio thread.
     constexpr int kAlignRingSamples = 256;
 
-    // The tube route's own gain at the cab::levelprobe reference operating point (LP-shaped noise
-    // @ -18 dBFS RMS, default knobs, tubeMakeup applied) — measured via `orbitcab_switch_probe`'s
-    // refprobe section @ 48 kHz; a unit test re-measures it and fails if this constant drifts
-    // from the live code or the levelprobe stimulus changes. The capture level-match below
-    // offsets the tube from THIS anchor onto the loaded capture's measured reference gain
-    // (AmpStage::refGainDb, same stimulus), so a capture<->tube A/B sits level-honest at playing
-    // levels. Residual across the tube's own knobs is the knee-calibration residual (±1-2 dB);
-    // across input LEVELS the capture's harder limiting keeps an honest character difference on
-    // quiet decays (measured, documented); other host rates may add sub-dB drift (anchor is 48 kHz).
-    constexpr float kTubeRefGainDb = -1.96f;
-    constexpr double kCapMatchSlewDbPerSec = 40.0;   // capture-match glide — matches the leveler's snap rate
 }
 
 void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
 {
-    sampleRateHz = sampleRate > 1000.0 ? sampleRate : 48000.0;
-    capDbCur = 0.0f;
     // One tube per OS-quality option, ALL prepared here → the live OS switch is just picking `osSel` (a
     // per-block branch), never a reallocation on the audio thread. Latency is tpp-based (31), invariant
     // across OS factor, so switching costs 0 PDC. Higher OS = softer top (less folded aliasing).
@@ -100,19 +87,11 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
         // levelTrimDb is the measured make-up at the 18 dB default; the knee term re-references it to 18.
         const float slopeDb = 0.86f * (std::max (0.0f, d - 12.0f) - 6.0f);
         const float seDb    = tubeParams.singleEnded ? v.levelTrimSEDb : 0.0f;   // SE asymmetry shifts level per voicing
-        // CAPTURE level-match: with a capture model armed, lift the tube from its dry-referenced
-        // calibration onto the capture's measured reference gain (same levelprobe stimulus) so the
-        // capture<->tube A/B is level-honest. Deterministic (probed once at model load, atomic
-        // read here) — no follower, no chase. No model / failed probe → 0 (dry-referenced as
-        // before). The target lands asynchronously (a message-thread load/clear finishing), so
-        // the applied value GLIDES at a bounded rate — an instant ±12 dB step would click on a
-        // live tube signal. First block after prepare seeds directly (no fade-in of the trim).
-        const float capDbTarget = nam.refGainValid()
-                                    ? juce::jlimit (-12.0f, 12.0f, nam.refGainDb() - kTubeRefGainDb) : 0.0f;
-        const float capStep = (float) (kCapMatchSlewDbPerSec * (double) numSamples / sampleRateHz);
-        capDbCur = seeded ? juce::jlimit (capDbCur - capStep, capDbCur + capStep, capDbTarget)
-                          : capDbTarget;
-        const float trimDb  = juce::jlimit (-24.0f, 24.0f, v.levelTrimDb + slopeDb + seDb + capDbCur);
+        // No automatic capture level-match: the tube's loudness is Oleh's MANUAL per-voicing
+        // calibration only (an earlier auto-match to the loaded capture's probed reference gain
+        // made the tube's level depend on whether a capture happened to be ARMED — it jumped
+        // +5.6 dB mid-session the first time the user visited the NAM tab; removed by decision).
+        const float trimDb  = juce::jlimit (-24.0f, 24.0f, v.levelTrimDb + slopeDb + seDb);
         tubeMakeup = std::pow (10.0f, 0.05f * trimDb);
     }
     const Active target   = resolve (ampOn, mode);
@@ -135,17 +114,29 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
     }
     else if (! fading && target != current)
     {
-        // ANY live route change (off↔capture↔tube) → a 30 ms constant-sum crossfade, including the
-        // master on/off gate. "off" renders as the dry signal, so off↔tube is a dry↔tube blend. The
-        // gradual (not hard-step) change lets the cab auto-leveler TRACK the new level instead of
-        // overshooting on a step — that overshoot was the enable/disable volume "kick".
-        fadeFrom = current;
-        current  = target;
-        xfade.setCurrentAndTargetValue (0.0f);
-        xfade.setTargetValue (1.0f);
-        fading = true;
-        fadeStartedThisBlock = true;   // the engine keys its leveler route-snap off THIS (accepted
-                                       // transitions only), never off the raw params (see header)
+        if (target != Active::off && current != Active::off)
+        {
+            // capture<->tube MODE JUMP: deliberately HARD — no crossfade. The honest PDC
+            // re-report (0 <-> 31) makes the host re-sync/mute around this switch anyway, so a
+            // 30 ms blend of two time-misaligned stages bought nothing and cost a smeared,
+            // audible "transition". The switch is a clean cut; the leveler retargets instantly
+            // off the same event (fadeStartedThisBlock).
+            current = target;
+            fadeStartedThisBlock = true;
+        }
+        else
+        {
+            // The master on/off gate keeps its 30 ms constant-sum crossfade ("off" renders as the
+            // latency-aligned dry, so off↔stage is a time-aligned blend — the beloved click-free
+            // power toggle). The gradual change also lets the auto-leveler TRACK the new level.
+            fadeFrom = current;
+            current  = target;
+            xfade.setCurrentAndTargetValue (0.0f);
+            xfade.setTargetValue (1.0f);
+            fading = true;
+            fadeStartedThisBlock = true;   // the engine keys its leveler route-snap off THIS (accepted
+                                           // transitions only), never off the raw params (see header)
+        }
     }
 
     if (! fading)

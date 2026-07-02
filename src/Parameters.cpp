@@ -40,7 +40,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "gain",   kParamVersion }, "Output",
                                                         NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
-    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "autoLevel", kParamVersion }, "Auto Level", true));
+    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "autoLevel", kParamVersion }, "Auto Level", false));   // default OFF (Oleh, 2026-07-02): IRs are reference-unity at load and the tube voicings are hand-calibrated — the plugin is level-honest without the leveler; Auto Level is an opt-in corrector now
     // POWERAMP (NAM) — `ampOn` is the only host param here: the master gate / bypass for the
     // neural poweramp stage in front of the cab (off by default, shapers-off policy). WHICH model
     // is loaded is NOT a host param — it's a library selection persisted as the "ampSel" property
@@ -58,7 +58,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // TUBE poweramp controls — the white-box "Tube" mode only (inert in Capture/off). First DSP block:
     // an oversampled push-pull / single-ended tube waveshaper with per-tube voicings. None affect PDC.
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDrive",  kParamVersion }, "Tube Drive",
-                                                        NormalisableRange<float> (0.0f, 36.0f, 0.1f), 18.0f,   // 12 o'clock = a calibrated crunch out of the box
+                                                        NormalisableRange<float> (0.0f, 36.0f, 0.1f), 10.0f,   // by-ear default (Oleh): lighter push than the 18 dB calibration point
                                                         AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeOutput", kParamVersion }, "Tube Output",
                                                         NormalisableRange<float> (-12.0f, 12.0f, 0.1f), 0.0f,  // symmetric ⇒ 12 o'clock = 0 dB unity
@@ -72,13 +72,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 75.0f,   // default ~3 o'clock — more bloom out of the box
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubePresence", kParamVersion }, "Tube Presence",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,    // by-ear default (Oleh): presence off out of the box
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeDepth",    kParamVersion }, "Tube Depth",
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // 12 o'clock
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeLoad",     kParamVersion }, "Tube Load",
-                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 30.0f,   // reactive-speaker virtual load — subtle "in the room" by default
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 10.0f,   // reactive-speaker virtual load — by-ear default (Oleh): just a touch
                                                         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
     layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "tubeIron",     kParamVersion }, "Tube Iron",
                                                         NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,   // output-transformer (LF grind + HF rolloff) — half by default

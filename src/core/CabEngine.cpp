@@ -62,6 +62,8 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     routeDwellSamples = 0;
     prevAutoLevel = initial.autoLevel;
     for (auto& r : routeLevel) r = RouteLevel {};   // route memory restarts with the stream
+    for (auto& row : pairDeltaDb)    for (auto& v : row) v = 0.0f;   // pair deltas too — they are
+    for (auto& row : pairDeltaKnown) for (auto& v : row) v = false;  // per-stream learned estimates
 
     inputGainPrev = juce::Decibels::decibelsToGain (initial.inputGainDb);
     inLevel.store (0.0f);
@@ -279,15 +281,31 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         const int chs = juce::jmax (1, numCh);
         const double dryMS = dMS / chs;
 
-        // Route snap: entering a route whose converged makeup is REMEMBERED for the current level
-        // context → retarget the leveler deterministically (bounded fast glide, synced with the
-        // seam's 30 ms crossfade) instead of letting the followers crawl there over ~0.5 s. An
-        // unvisited/stale route just converges normally (bounded by the 9 dB/s slew).
+        // Route snap: entering a route whose makeup is REMEMBERED for the current level context →
+        // retarget the leveler deterministically (bounded fast glide, synced with the seam's
+        // 30 ms crossfade). No fresh memory (first visit / context changed)? Then start NEAR, not
+        // from scratch: snap to (current makeup + learned pair delta) — the spectral A-vs-B
+        // offset is largely portable across IR/EQ changes, so the residual is ~±1-2 dB instead of
+        // the full step. No delta either (very first transition ever)? Open the transition window
+        // so the followers converge at their natural 150 ms speed (ceiling 20 dB/s) instead of
+        // being slew-starved at 9 dB/s.
         if (routeSnapPending && p.autoLevel)
         {
-            const RouteLevel& rl = routeLevel[routeIndex (route)];
+            const int to = routeIndex (route), from = routeIndex (oldRoute);
+            const RouteLevel& rl = routeLevel[to];
             if (rl.valid && rl.gen == contextGen)
                 autoLeveler.snapRatioTo (juce::Decibels::decibelsToGain (rl.makeupDb));
+            else if (from >= 0 && from < 6 && pairDeltaKnown[to][from])
+            {
+                // An ESTIMATE (the delta was learned under a possibly different context — e.g. a
+                // dry/wet move dilutes the mode difference): land on it instantly, then open the
+                // transition window so the followers correct the residual at 20 dB/s, not 9.
+                autoLeveler.snapRatioTo (juce::Decibels::decibelsToGain (
+                    autoLeveler.currentGainDb() + pairDeltaDb[to][from]));
+                autoLeveler.openTransitionWindow();
+            }
+            else
+                autoLeveler.openTransitionWindow();
         }
 
         autoLeveler.processBlock (dryMS, mMS / chs, p.autoLevel, numSamples);
@@ -302,13 +320,32 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         }
 
         // Route-makeup memory: while the current route DWELLS (leveler on, not fading, signal
-        // above the silence floor, gain LANDED — never a mid-glide value) past the trust
-        // threshold, keep its converged makeup fresh.
-        if (p.autoLevel && ! powerAmpRouter.isFading() && dryMS > 1.0e-6 && autoLeveler.settled())
+        // above the silence floor, no deterministic glide in flight) past the trust threshold,
+        // keep its makeup fresh. On live (non-stationary) material the value wobbles ±~1 dB with
+        // the program — that is fine for a snap target (the followers correct the residual); the
+        // write gate only has to exclude the SNAP GLIDES themselves (a mid-glide value is not a
+        // measurement). An earlier settled()-gate required applied==target and on real playing
+        // that is ~never true — caches never formed and every mode switch re-faded (field bug).
+        if (p.autoLevel && ! powerAmpRouter.isFading() && dryMS > 1.0e-6 && ! autoLeveler.snapGliding())
         {
             routeDwellSamples = juce::jmin (routeDwellSamples + numSamples, 1 << 30);
             if (routeDwellSamples >= (int) (kRouteDwellSeconds * currentSampleRate))
-                routeLevel[routeIndex (route)] = { autoLeveler.currentGainDb(), contextGen, true };
+            {
+                const int idx = routeIndex (route);
+                routeLevel[idx] = { autoLeveler.currentGainDb(), contextGen, true };
+                // Learn PAIR DELTAS against every other route measured under the SAME context.
+                // Deltas survive context changes (they are spectral A-vs-B offsets, largely
+                // IR/EQ-portable) and give the first visit after a change a "start near, not
+                // from scratch" snap estimate.
+                for (int other = 0; other < 6; ++other)
+                    if (other != idx && routeLevel[other].valid && routeLevel[other].gen == contextGen)
+                    {
+                        pairDeltaDb[idx][other] = routeLevel[idx].makeupDb - routeLevel[other].makeupDb;
+                        pairDeltaKnown[idx][other] = true;
+                        pairDeltaDb[other][idx] = -pairDeltaDb[idx][other];
+                        pairDeltaKnown[other][idx] = true;
+                    }
+            }
         }
     }
 

@@ -136,7 +136,7 @@ private:
     //   • a one-off capture (a name with a single variant) is a SINGLETON — listed in a combo by its
     //     full filename.
     // ampOn gates + reveals; the chosen model is library state ("ampSel"), not a host param.
-    juce::ToggleButton    ampPowerBtn { "CAPTURES" };   // NAM poweramp captures — one of the two poweramp tabs (radio with SIMULATOR).
+    juce::ToggleButton    ampPowerBtn { "POWER AMP CAPTURES" };   // NAM poweramp captures — one of the two poweramp tabs (radio with SIMULATOR).
     // No APVTS attachment: CAPTURES + SIMULATOR share the ONE poweramp slot (ampOn + ampMode) as a radio,
     // so the toggle is driven manually by syncPowerAmpTabs() and its onClick sets ampOn/ampMode.
     TubeDisplay           tubeDisplay;          // symbolic amp + glowing tubes (count by mode: PP 2 / SE 1 / Other 0)
@@ -174,7 +174,7 @@ private:
     // slot with the NAM captures (ampOn + ampMode): SIMULATOR ⊕ CAPTURES is a RADIO — turning one on turns
     // the other off (ampMode = Tube vs Capture). Its reveal row occupies the same poweramp row area (only one
     // ever shows). Unlike captures it needs no .nam library, so its toggle is ALWAYS available.
-    juce::ToggleButton    tubeSimBtn { "SIMULATOR" };
+    juce::ToggleButton    tubeSimBtn { "POWER AMP SIMULATOR" };
     TubeDisplay           tubeSimDisplay;                 // the selected tube ×(PP 2 / SE 1), warm glow
     juce::TextButton      tubeTypeBtn[4];                 // 6L6 / EL34 / EL84 / KT88 → tubeType (radio highlight)
     juce::TextButton      tubeTopoBtn[2];                 // x1 (push-pull) / x2 (single-ended) → tubeTopo

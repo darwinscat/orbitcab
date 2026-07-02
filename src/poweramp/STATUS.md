@@ -280,6 +280,50 @@ envelope traces, stale-wake A/B nulls, shared-stimulus reference gains.
 - Cleanups: one shared LCG (`levelprobe::white`) across probe/tool/tests; dead legacy
   `rampSeconds` param dropped from `AutoLeveler::prepare`; dead includes removed.
 
+## HARD mode switches + route memory that works on live material (2026-07-02, post-merge)
+
+Field feedback after the merged build: (a) NAM<->PW re-faded on EVERY switch (not just the
+first), (b) the audible pain was the HOST's PDC re-sync hole at the switch start (the honest
+0<->31 re-report makes the DAW mute briefly), which made our careful in-plugin transition
+pointless there. Decisions (user's call): keep the PDC report HONEST (0 -> 0, 31 -> 31) and
+REMOVE all in-plugin transitions between the modes; keep every other smoothing (power on/off
+fades, IR-swap crossfades, EQ/trim glides, mute gates) untouched.
+
+- Field bug root cause: the review-round settled()-gate on route-cache writes required
+  applied==target — ~never true on live (non-stationary) material — so caches never formed and
+  every switch was a "first visit". Gate narrowed to the actual poison case (snap glides);
+  regression test added ON BURSTS (the stationary-noise tests could not see it).
+- capture<->tube in the router is now a HARD cut (no 30 ms crossfade; the off<->on gate keeps
+  its fade). The leveler retarget lands INSTANTLY (snapRatioTo sets the applied gain).
+- PAIR-DELTA memory: the engine learns makeup deltas between route pairs measured under the
+  same context; deltas SURVIVE context changes. A first visit after an IR/EQ/dry-wet change
+  snaps instantly to (current + delta) — worst measured estimate error ≈ 2.3 dB on a harsh
+  dry/wet dilution — then the followers converge the residual at τ=150 ms inside a transition
+  window (target slew ceiling 20 dB/s there; 9 dB/s otherwise). Only the very first transition
+  ever (nothing learned yet) still measures from scratch at follower speed.
+- Processor-level probe confirmed there is NO silence hole inside the plugin on mode flips
+  (worst dip −22.6 dB over 6 flips = programme floor): the start-of-switch hole is the host's
+  PDC rebuild, by design of the honest report.
+
+## By-ear loudness calibration + de-automation (2026-07-02, user-driven)
+
+Field session with Oleh on the merged build; all decisions his, implemented same-day:
+- **Automatic capture level-match REMOVED** (with its AmpStage load-time ref-gain probe and the
+  kTubeRefGainDb anchor): it made the tube's absolute level depend on whether a capture model
+  happened to be ARMED — the tube jumped +5.6 dB mid-session the first time the NAM tab was
+  visited. The tube's loudness now has ONE source: the manual per-voicing table + the drive knee.
+- **From-scratch by-ear voicing calibration** at the new defaults (all trims zeroed first):
+  PP 6L6 8 / EL34 6 / EL84 7 / KT88 4 dB; SE totals 8 / 7 / 4 / 8 (stored as SE−PP).
+- **New factory defaults:** Drive 10 (was 18), Presence 0 (was 50), Load 10 (was 30); Sag 75 /
+  Depth 50 / Iron 50 / Bloom 70 / 6L6 / PP / 4x kept. **Auto Level defaults OFF** — with
+  reference-unity IRs (#93) and the hand-calibrated voicings the plugin is level-honest without
+  the leveler; it stays as an opt-in corrector (the route memory only runs while it is on).
+- UI: the poweramp tabs are now POWER AMP CAPTURES / POWER AMP SIMULATOR (column widened).
+- Post-context-change leveler contract made SELF-SCALING in the tests (progress vs the landing
+  residual): the mode-gap magnitude is a calibration-era variable, absolute bounds encoded the
+  old era. Build fix on the way: pinned felitronics-core v0.1.3 has an explicit LinearSmoother
+  ctor — CabEngine's smoother arrays needed direct-init (MSVC tolerated the old form, clang not).
+
 ### KNOWN LIMITATION (found by B9, pre-existing block 3): feel-layer block-size determinism
 At feel=0 the stage is BIT-EXACT across block schedules (S3 = 0.0). But with the FEEL layer engaged there is
 a small (~1e-2, steady-state) block-size discrepancy — it is present in block 3's sag/presence/depth (which
