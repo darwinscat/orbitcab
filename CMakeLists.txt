@@ -128,7 +128,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.3" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.1.4" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -162,6 +162,17 @@ juce_add_plugin(OrbitCab
     BUNDLE_ID                   "com.darwinscat.orbitcab"
     PLUGIN_MANUFACTURER_CODE    Dcat
     PLUGIN_CODE                 Orbt
+    # Bundle / executable icon — the orbit mark (resources/icon/OrbitCab.svg → …-1024.png).
+    # JUCE feeds this square PNG to juceaide, which builds the macOS AppIcon.icns (into every
+    # .app / .vst3 / .component bundle, wired via Info.plist) and the Windows icon.ico (embedded
+    # in the .exe / .vst3 through a generated .rc). One 1024² source is enough — juceaide
+    # downscales it for all icon sizes (16→1024). No ICON_SMALL on purpose: JUCEUtils appends
+    # BIG-then-SMALL but juceaide reads them small-then-big, so passing both can swap the slots.
+    # NOTE: JUCE has no Linux icon step (launcher icons there are a .desktop + hicolor-theme
+    # concern, handled at packaging). The CLAP wrapper gets its own clap.icns from JUCE — we
+    # overwrite it with the orbit mark in a POST_BUILD below (see OrbitCab_CLAP). Net: all four
+    # formats are branded on macOS; VST3 + Standalone also carry the .ico on Windows.
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/OrbitCab-1024.png"
     FORMATS                     VST3 AU Standalone
     VST3_CATEGORIES             "Fx" "Distortion"
     AU_MAIN_TYPE                "kAudioUnitType_Effect"
@@ -183,6 +194,19 @@ juce_add_plugin(OrbitCab
 clap_juce_extensions_plugin(TARGET OrbitCab
     CLAP_ID       "com.darwinscat.orbitcab"
     CLAP_FEATURES audio-effect "guitar" "cabinet")
+
+# The CLAP wrapper ships its own default clap.icns (the generic CLAP logo) and JUCE's ICON_BIG
+# does not reach it. Overwrite it in place with the orbit-mark AppIcon.icns that juceaide already
+# generated for the JUCE formats (configure-time execute_process, so JUCE_ICON_FILE exists on disk
+# before any build step), keeping the wrapper's existing Info.plist CFBundleIconFile=clap.icns
+# reference valid. macOS only — the CLAP on Windows/Linux is a plain shared library, no icon resource.
+if(APPLE)
+    add_custom_command(TARGET OrbitCab_CLAP POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy
+                "$<TARGET_PROPERTY:OrbitCab,JUCE_ICON_FILE>"
+                "$<TARGET_BUNDLE_DIR:OrbitCab_CLAP>/Contents/Resources/clap.icns"
+        VERBATIM)
+endif()
 
 target_sources(OrbitCab PRIVATE
     src/PluginProcessor.cpp
@@ -579,6 +603,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/TestMain.cpp
     tests/CabEngineTests.cpp
     tests/IRSlotTests.cpp
+    tests/SvfSmootherNull.cpp     # A/B null gate: felitronics eq::Svf / core::LinearSmoother vs the juce originals
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
     tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
@@ -590,6 +615,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
+    tests/IrNormalizationTests.cpp # load-time IR reference-unity normalization — factory-cab acceptance gate
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
@@ -599,7 +625,7 @@ target_sources(OrbitCab_Tests PRIVATE
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
-    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # PowerAmpRouterAlignTests loads a real 48k .nam
+    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # real .nam (router align) + factory IRs (IR norm)
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration

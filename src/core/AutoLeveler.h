@@ -74,8 +74,12 @@ public:
         targetGain = g;
         appliedGain = g;
         fastSamplesLeft = 0;
-        dryMeanSq = 1.0;
-        mixMeanSq = 1.0 / ((double) g * g);     // sqrt(dryMeanSq / mixMeanSq) == g
+        // Seed the followers at a REALISTIC program energy (−18 dBFS mean-square), not 1.0
+        // (= 0 dBFS): the seed state decays at the follower τ, and a 0 dBFS seed out-masses a
+        // real signal (~−15..−20 dBFS) for ~5τ ≈ 0.75 s, pinning the ratio to the seed long
+        // after audio arrives. At −18 dBFS the followers hand over to the live signal promptly.
+        dryMeanSq = kSeedMeanSq;
+        mixMeanSq = kSeedMeanSq / ((double) g * g);     // sqrt(dryMeanSq / mixMeanSq) == g
     }
 
     // DETERMINISTIC route retarget (the poweramp seam capture<->tube/off switch): jump the
@@ -168,6 +172,7 @@ public:
 
 private:
     static constexpr double kMatchTimeConstant  = 0.15;   // s — slow enough not to pump
+    static constexpr double kSeedMeanSq         = 0.0158; // −18 dBFS² — realistic program energy for seeds
     static constexpr double kMakeupSlewDbPerSec = 9.0;    // dB/s — hard cap on makeup movement (no pump, ever)
     static constexpr double kSnapSlewDbPerSec   = 40.0;   // dB/s — deterministic-retarget glide (route snap / on-off)
     static constexpr double kSnapWindowSeconds  = 0.35;   // fast-rate budget per snap (covers ±12 dB and lands)

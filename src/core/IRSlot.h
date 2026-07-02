@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <juce_dsp/juce_dsp.h>
+#include <felitronics/eq/Svf.h>            // JUCE-free HPF/LPF (Cytomic/Zavalishin TPT) — replaces juce::dsp::StateVariableTPTFilter
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <cstddef>
 
@@ -57,7 +57,7 @@ public:
 
 private:
     Convolver conv;
-    juce::dsp::StateVariableTPTFilter<float> hpf, lpf;
+    felitronics::eq::Svf hpf, lpf;
     bool prevHpfOn = false, prevLpfOn = false;   // last processWet on-state — reset a filter on re-enable
 
     juce::AudioBuffer<float> original;     // full decoded IR (message-thread only)

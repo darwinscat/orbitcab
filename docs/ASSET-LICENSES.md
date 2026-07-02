@@ -32,10 +32,14 @@ rate is enough and halves the binary cost.
 |-------|---------|----------------|--------|
 | **Michroma** (`resources/fonts/Michroma-Regular.ttf`) | **SIL Open Font License 1.1** | Google Fonts / github.com/googlefonts/Michroma-font; OFL text archived at `resources/fonts/Michroma-OFL.txt` | ✅ cleared to embed in the binary (OFL §1 allows bundling in software, incl. closed-source) |
 | **Darwin's Cat logo** (`resources/brand/logo-darwinscat.svg`) | © Darwin's Cat (own mark) | First-party brand asset | ✅ our own |
+| **OrbitCab app icon** (`resources/icon/OrbitCab.svg` + `OrbitCab-1024.png`) | © Darwin's Cat — reserved trademark (not under the code license) | First-party brand asset — the orbit mark rendered as the bundle/executable icon (`ICON_BIG`) | ✅ our own |
 
-The **orbit "O" mark** in the header is drawn programmatically (no asset). OFL only forbids
-selling the font *by itself* and reserving the name — embedding it in the plugin is fine;
-credit it in `THIRD_PARTY_NOTICES.md`.
+The **orbit "O" mark** in the header is drawn programmatically (no asset); the same mark is
+committed as an SVG + rendered PNG under `resources/icon/` purely to serve as the app/bundle
+icon fed to JUCE's `ICON_BIG`.
+
+The Michroma **OFL** only forbids selling the font *by itself* and reserving the name —
+embedding it in the plugin is fine; credit it in `THIRD_PARTY_NOTICES.md`.
 
 ## Test / demo audio (NOT shipped in the plugin)
 
