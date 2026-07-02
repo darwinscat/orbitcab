@@ -26,7 +26,7 @@ namespace
     // levels. Residual across the tube's own knobs is the knee-calibration residual (±1-2 dB);
     // across input LEVELS the capture's harder limiting keeps an honest character difference on
     // quiet decays (measured, documented); other host rates may add sub-dB drift (anchor is 48 kHz).
-    constexpr float kTubeRefGainDb = -1.96f;
+    constexpr float kTubeRefGainDb = -5.63f;   // re-baked at ZEROED voicing trims (recalibration state)
     constexpr double kCapMatchSlewDbPerSec = 40.0;   // capture-match glide — matches the leveler's snap rate
 }
 

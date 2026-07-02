@@ -158,7 +158,7 @@ struct PowerAmpSwitchLevelTest : juce::UnitTest
         //================================================================ 0. anchor guard
         {
             // Re-measure the tube route's reference gain with NO capture armed (capDb inactive)
-            // and pin it to the kTubeRefGainDb anchor baked in PowerAmpRouter.cpp (−1.96 dB,
+            // and pin it to the kTubeRefGainDb anchor baked in PowerAmpRouter.cpp (−5.63 dB at the zeroed trims,
             // measured @48 kHz via orbitcab_switch_probe's refprobe). If the levelprobe stimulus,
             // the voicing tables, or the knee calibration change, THIS fails and both must be
             // re-measured together — the capture level-match silently drifts otherwise.
@@ -166,7 +166,7 @@ struct PowerAmpSwitchLevelTest : juce::UnitTest
             CabEngine e; e.prepare (sr, 512, 2, p);
             Params pt = p; pt.powerAmpMode = PowerAmpMode::tube;
             const float gTubeAnchor = refStimGainDb (e, pt);
-            expectWithinAbsoluteError<float> (gTubeAnchor, -1.96f, 0.35f,
+            expectWithinAbsoluteError<float> (gTubeAnchor, -5.63f, 0.35f,
                 "tube ref gain " + juce::String (gTubeAnchor, 2)
                 + " dB drifted from the baked anchor — re-measure kTubeRefGainDb (PowerAmpRouter.cpp)");
         }
