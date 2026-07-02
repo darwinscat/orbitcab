@@ -28,10 +28,11 @@ struct TubeVoicing
     float sagFastMs, sagRecoveryMs, sagMaxDroop, sagBiasDepth;       // sag: attack, recovery, max rail collapse; sagBiasDepth reserved (future per-sample bias)
     float presenceHz, presenceMaxDb, depthHz, depthMaxDb, nfbOpen;   // shelves + how much they "open" under sag/drive
     float midHz, midDb, midQ;                                        // static MID bell — the amp fingerprint (scoop vs push)
-    float levelTrimDb;                                               // static per-voicing output trim (dB). ZEROED 2026-07-02 for a from-scratch
-                                                                     // by-ear recalibration (Oleh) — the next dictated values land here directly.
-    float levelTrimSEDb;                                             // + this extra trim in single-ended (x1) mode. ZEROED with levelTrimDb for
-                                                                     // the recalibration; stores SE−PP once new SE numbers are dictated.
+    float levelTrimDb;                                               // static per-voicing output trim (dB) — Oleh's by-ear calibration
+                                                                     // (2026-07-02, from-scratch at Drive 10 / zeroed baseline, no auto
+                                                                     // capture-match): PP 6L6 8 / EL34 5 / EL84 7 / KT88 4.
+    float levelTrimSEDb;                                             // + this extra trim in single-ended (x1) mode, stored as SE−PP.
+                                                                     // By-ear SE totals: 6L6 8 / EL34 5 / EL84 5 / KT88 9.
     // block 4 — VIRTUAL LOAD (reactive-speaker impedance pre-EQ, BEFORE the nonlinearity + the sag detector):
     float loadResHz, loadResQ, loadResDb;                            // LF cone-resonance impedance peak (Bell) — peaks the DRIVE ~80-110 Hz.
     float loadRiseHz, loadRiseDb;                                    // HF inductive impedance rise (HighShelf, Q 0.707) — lifts the drive
@@ -48,15 +49,15 @@ struct TubeVoicing
 // (exact PP cancellation held; per-tube even-harmonic leak is a later liveliness pass — see DESIGN-block3.md).
 inline constexpr TubeVoicing kTubeVoicings[4] = {
     /* 6L6  American: scooped mids, deep tight lows, smooth (not sharp) top */
-    { 0.82f, 2.3f, 0.25f, 0.30f, 0.0f,   8.0f, 130.0f, 0.20f, 0.40f,   5000.0f, 3.0f,  95.0f, 7.5f, 0.45f,    500.0f, -5.0f, 0.70f,   0.0f,  0.0f,    90.0f, 1.6f, 4.0f,  1600.0f, 3.0f,   150.0f, 1.8f, 8000.0f },
+    { 0.82f, 2.3f, 0.25f, 0.30f, 0.0f,   8.0f, 130.0f, 0.20f, 0.40f,   5000.0f, 3.0f,  95.0f, 7.5f, 0.45f,    500.0f, -5.0f, 0.70f,   8.0f,  0.0f,    90.0f, 1.6f, 4.0f,  1600.0f, 3.0f,   150.0f, 1.8f, 8000.0f },
     /* EL34 British: forward mids, aggressive upper-mid crunch */
-    { 1.12f, 3.2f, 0.15f, 0.20f, 0.0f,   6.0f,  90.0f, 0.22f, 0.50f,   3400.0f, 5.0f, 118.0f, 4.0f, 0.60f,    680.0f,  4.5f, 0.70f,    0.0f,  0.0f,   100.0f, 1.8f, 3.5f,  1500.0f, 4.0f,   170.0f, 2.2f, 7000.0f },
+    { 1.12f, 3.2f, 0.15f, 0.20f, 0.0f,   6.0f,  90.0f, 0.22f, 0.50f,   3400.0f, 5.0f, 118.0f, 4.0f, 0.60f,    680.0f,  4.5f, 0.70f,    5.0f,  0.0f,   100.0f, 1.8f, 3.5f,  1500.0f, 4.0f,   170.0f, 2.2f, 7000.0f },
     /* EL84 Vox chime: bright upper-mid, early soft breakup, heavy spongy sag */
-    { 1.45f, 1.7f, 0.45f, 0.18f, 0.0f,  14.0f, 240.0f, 0.42f, 0.70f,   5500.0f, 4.0f, 130.0f, 3.0f, 0.75f,   1600.0f,  4.0f, 0.70f,    0.0f,  0.0f,   110.0f, 2.0f, 4.0f,  1800.0f, 4.5f,   210.0f, 2.6f, 8500.0f },
+    { 1.45f, 1.7f, 0.45f, 0.18f, 0.0f,  14.0f, 240.0f, 0.42f, 0.70f,   5500.0f, 4.0f, 130.0f, 3.0f, 0.75f,   1600.0f,  4.0f, 0.70f,    7.0f, -2.0f,   110.0f, 2.0f, 4.0f,  1800.0f, 4.5f,   210.0f, 2.6f, 8500.0f },
     /* KT88 hi-fi: huge tight lows + a low resonance "thump", near-flat mids, clean late breakup, stiff supply.
        The "mid" bell is repurposed LOW (100 Hz, resonant Q) — KT88's mids are near-flat, so it buys the
        Hiwatt/Ampeg low-end resonance the ear wants; the depth low-shelf below it adds broad extension. */
-    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.30f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,   0.0f,  0.0f,    80.0f, 1.4f, 4.0f,  1300.0f, 2.5f,   120.0f, 1.4f, 10000.0f },
+    { 0.60f, 3.8f, 0.05f, 0.34f, 0.0f,   4.0f,  80.0f, 0.12f, 0.30f,   4800.0f, 4.0f,  68.0f, 10.0f, 0.30f,    100.0f,  5.0f, 1.40f,   4.0f,  5.0f,    80.0f, 1.4f, 4.0f,  1300.0f, 2.5f,   120.0f, 1.4f, 10000.0f },
 };
 
 // Stateless composite tube transfer. configure() once per block from (smoothed) coeffs; at()
