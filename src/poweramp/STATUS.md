@@ -305,6 +305,25 @@ fades, IR-swap crossfades, EQ/trim glides, mute gates) untouched.
   (worst dip −22.6 dB over 6 flips = programme floor): the start-of-switch hole is the host's
   PDC rebuild, by design of the honest report.
 
+## By-ear loudness calibration + de-automation (2026-07-02, user-driven)
+
+Field session with Oleh on the merged build; all decisions his, implemented same-day:
+- **Automatic capture level-match REMOVED** (with its AmpStage load-time ref-gain probe and the
+  kTubeRefGainDb anchor): it made the tube's absolute level depend on whether a capture model
+  happened to be ARMED — the tube jumped +5.6 dB mid-session the first time the NAM tab was
+  visited. The tube's loudness now has ONE source: the manual per-voicing table + the drive knee.
+- **From-scratch by-ear voicing calibration** at the new defaults (all trims zeroed first):
+  PP 6L6 8 / EL34 6 / EL84 7 / KT88 4 dB; SE totals 8 / 7 / 4 / 8 (stored as SE−PP).
+- **New factory defaults:** Drive 10 (was 18), Presence 0 (was 50), Load 10 (was 30); Sag 75 /
+  Depth 50 / Iron 50 / Bloom 70 / 6L6 / PP / 4x kept. **Auto Level defaults OFF** — with
+  reference-unity IRs (#93) and the hand-calibrated voicings the plugin is level-honest without
+  the leveler; it stays as an opt-in corrector (the route memory only runs while it is on).
+- UI: the poweramp tabs are now POWER AMP CAPTURES / POWER AMP SIMULATOR (column widened).
+- Post-context-change leveler contract made SELF-SCALING in the tests (progress vs the landing
+  residual): the mode-gap magnitude is a calibration-era variable, absolute bounds encoded the
+  old era. Build fix on the way: pinned felitronics-core v0.1.3 has an explicit LinearSmoother
+  ctor — CabEngine's smoother arrays needed direct-init (MSVC tolerated the old form, clang not).
+
 ### KNOWN LIMITATION (found by B9, pre-existing block 3): feel-layer block-size determinism
 At feel=0 the stage is BIT-EXACT across block schedules (S3 = 0.0). But with the FEEL layer engaged there is
 a small (~1e-2, steady-state) block-size discrepancy — it is present in block 3's sag/presence/depth (which
