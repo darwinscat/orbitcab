@@ -20,7 +20,9 @@ namespace
         for (int i = 0; i < blocks; ++i)
         {
             a.processBlock (dryMS, mixMS, enabled, 512);
-            a.getNextGain();
+            for (int s = 0; s < 512; ++s) a.getNextGain();   // advance the smoother a FULL block (per-sample,
+                                                             // as the real chain does) so currentGain() tracks
+                                                             // the target — the dB/s makeup slew is referenced to it
         }
         return a.currentGain();
     }

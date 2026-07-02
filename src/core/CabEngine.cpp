@@ -13,6 +13,14 @@ namespace cab
 namespace
 {
     constexpr double kRampSeconds = 0.03;          // live tweaks / automation glide
+
+    // Encode the poweramp/preamp signal ROUTE as a small int; any change means the spectrum feeding
+    // the cab (hence the leveler's wet/dry match) stepped. preamp on/off shifts it too (it's upstream).
+    int routeCode (const Params& p) noexcept
+    {
+        return (p.preampOn ? 100 : 0)
+             + (! p.ampOn ? 0 : (p.powerAmpMode == PowerAmpMode::tube ? 2 : 1));
+    }
 }
 
 //==============================================================================
@@ -48,6 +56,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     muteGateSmoothed.setCurrentAndTargetValue (1.0f);
 
     autoLeveler.prepare (sampleRate, kRampSeconds);
+    prevRoute = routeCode (initial);   // seed so a session booting in any route isn't seen as a switch on block 1
 
     inputGainPrev = juce::Decibels::decibelsToGain (initial.inputGainDb);
     inLevel.store (0.0f);
@@ -156,6 +165,14 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         phaseSm[i].setTargetValue (p.slot[i].phase ? -1.0f : 1.0f);
     }
     gainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (p.outputGainDb));
+
+    // Track the poweramp/preamp signal ROUTE (off<->capture<->tube, preamp on/off) so a switch can
+    // be handled deterministically downstream (the tube<->capture loudness match). A route change is
+    // a discrete step in the thing being levelled; the makeup slew-limit keeps the leveler gentle.
+    const int route = routeCode (p);
+    const bool routeChanged = (route != prevRoute);
+    prevRoute = route;
+    juce::ignoreUnused (routeChanged);   // consumed by the loudness match (added next)
 
     // MUTE: muting a slot solos the other (overrides MIX); both muted => the dry
     // signal passes through (bypass), not silence (smoothed gate, click-free).

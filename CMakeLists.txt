@@ -546,6 +546,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
     tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
+    tests/PowerAmpSwitchLevelTest.cpp  # capture<->tube mode switch: AutoLeveler must not swell (~0.5 s volume rise) — CI gate
     tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan

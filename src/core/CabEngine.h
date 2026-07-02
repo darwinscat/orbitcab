@@ -99,6 +99,7 @@ public:
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
+    float autoLevelGain() const { return autoLeveler.currentGain(); }   // current wet->dry makeup (tests/diagnostics)
 
     // DSP load meter — each stage's wall-clock as a smoothed % of the block's real-time budget.
     // Written on the audio thread (a few monotonic-clock reads per block), read by the GUI.
@@ -136,6 +137,12 @@ private:
     double currentSampleRate = 44100.0;
 
     float inputGainPrev = 1.0f;            // block-ramp start for zipper-free input trim
+
+    // Poweramp/preamp signal ROUTE (encoded {preampOn, ampOn, mode}), seeded in prepare(). A change
+    // marks a discrete switch used by the tube<->capture loudness match; the makeup slew-limit
+    // (AutoLeveler) keeps the leveler's own response gentle so a switch can't pump.
+    int   prevRoute = -1;
+
     std::atomic<float> inLevel  { 0.0f };
     std::atomic<float> outLevel { 0.0f };
 

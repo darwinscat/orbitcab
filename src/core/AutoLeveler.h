@@ -52,24 +52,40 @@ public:
     // smoothed makeup target. `enabled` false => aim for unity (the followers keep
     // running, so re-enabling snaps back instantly). Below the silence floor the target
     // is held (won't chase the noise floor).
+    //
+    // The makeup target is dB-domain SLEW-LIMITED to kMakeupSlewDbPerSec: a hard cap on how fast
+    // the loudness match can move. Normal playing never hits it (the 150 ms followers already move
+    // the target slowly), but it makes an audible loudness PUMP structurally impossible from any
+    // fast target jump — a poweramp route change, a pathological cab, a silence edge — instead of
+    // relying on the follower TC to stay gentle. A gentle bounded glide, never a swell.
     void processBlock (double dryBlockMeanSq, double mixBlockMeanSq, bool enabled, int numSamples)
     {
         const double a = 1.0 - std::exp (-(double) numSamples / (kMatchTimeConstant * currentSampleRate));
         dryMeanSq += a * (dryBlockMeanSq - dryMeanSq);
         mixMeanSq += a * (mixBlockMeanSq - mixMeanSq);
 
+        float rawTarget;
         if (! enabled)
-            matchSmoothed.setTargetValue (1.0f);
+            rawTarget = 1.0f;
         else if (dryMeanSq > kMatchFloorMeanSq)
-            matchSmoothed.setTargetValue (juce::jlimit (kMatchMinGain, kMatchMaxGain,
-                                                        (float) std::sqrt (dryMeanSq / (mixMeanSq + 1.0e-12))));
+            rawTarget = juce::jlimit (kMatchMinGain, kMatchMaxGain,
+                                      (float) std::sqrt (dryMeanSq / (mixMeanSq + 1.0e-12)));
+        else
+            return;   // silence gate: hold the last target (don't chase the noise floor)
+
+        // dB-domain slew limit relative to the currently-applied makeup.
+        const float stepDb = (float) (kMakeupSlewDbPerSec * (double) numSamples / currentSampleRate);
+        const float curDb  = juce::Decibels::gainToDecibels (matchSmoothed.getCurrentValue(), -120.0f);
+        const float tgtDb  = juce::Decibels::gainToDecibels (rawTarget, -120.0f);
+        matchSmoothed.setTargetValue (juce::Decibels::decibelsToGain (juce::jlimit (curDb - stepDb, curDb + stepDb, tgtDb)));
     }
 
     float getNextGain()      { return matchSmoothed.getNextValue(); }
     float currentGain() const { return matchSmoothed.getCurrentValue(); }
 
 private:
-    static constexpr double kMatchTimeConstant = 0.15;    // s — slow enough not to pump
+    static constexpr double kMatchTimeConstant  = 0.15;   // s — slow enough not to pump
+    static constexpr double kMakeupSlewDbPerSec = 9.0;    // dB/s — hard cap on makeup movement (no pump, ever)
     static constexpr double kMatchFloorMeanSq  = 1.0e-6;  // ~ -60 dBFS RMS: below this, hold
     static constexpr float  kMatchMinGain      = 0.0631f; // -24 dB
     static constexpr float  kMatchMaxGain      = 63.10f;  // +36 dB (headroom for lossy IRs)
