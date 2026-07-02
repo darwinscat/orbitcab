@@ -3,8 +3,9 @@
 //
 // Real-material numeric proof: convolve a real sweep through real cab IRs with the core backend
 // (cab::CoreConvolver over felitronics::convolution) and null it against a DIRECT (textbook) convolution
-// of the EXACT IR the adapter loads — resampled off host rate, then JUCE's Normalise::no gain (irSr/hostSr).
-// That makes the whole load+resample+convolve path verifiable against the math, on real cabs, deterministically.
+// of the EXACT IR the adapter loads — resampled off host rate, then the loader's reference-unity
+// normalization gain (see Convolver.h). That makes the whole load+resample+normalize+convolve path
+// verifiable against the math, on real cabs, deterministically.
 //
 //   usage:  <exe> <sweep.wav> <ir1.wav> [ir2.wav ...]
 //
@@ -100,15 +101,16 @@ int main (int argc, char** argv)
         for (int i = 0; i < maxUse; ++i) in[(std::size_t)(warm+i)] = sweep[(std::size_t) i];
         std::vector<float> cL = in, cR = in;
 
-        // the EXACT IR the adapter is expected to convolve with: resample off host rate, then apply JUCE's
-        // Normalise::no gain (irSr/hostSr). This mirrors CoreConvolver's internal load EXACTLY, so a direct
-        // convolution with it is the mathematical ground truth for the whole adapter (load + resample + conv).
+        // the EXACT IR the adapter is expected to convolve with: resample off host rate, then the
+        // loader's reference-unity normalization gain (queried back exactly as applied). This mirrors
+        // cab::Convolver's internal load EXACTLY, so a direct convolution with it is the mathematical
+        // ground truth for the whole adapter (load + resample + normalize + conv).
         std::vector<float> expIr = (irSr != sr) ? felitronics::convolution::resampleIr (ir.data(), irLen, irSr, sr) : ir;
-        const float g = (irSr > 0.0) ? (float) (irSr / sr) : 1.0f;
-        for (float& v : expIr) v *= g;
 
         const float* irp[1] { ir.data() };
         cab::Convolver cc; cc.prepare (sr, 512, 2, std::max (0.6, (int) expIr.size() / sr + 0.1)); cc.loadIR (irp, 1, irLen, irSr);
+        const float g = cc.irNormalizationGain();
+        for (float& v : expIr) v *= g;
         runBlocks (cc, cL, cR, total);
 
         const int    from = warm + (int) expIr.size(), to = total;                            // steady region

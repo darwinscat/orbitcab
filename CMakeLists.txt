@@ -402,6 +402,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
+    tests/IrNormalizationTests.cpp # load-time IR reference-unity normalization — factory-cab acceptance gate
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
@@ -409,6 +410,7 @@ target_sources(OrbitCab_Tests PRIVATE
 target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #include "core/..." and "Metadata.h"
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # IrNormalizationTests loads factory IRs
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration

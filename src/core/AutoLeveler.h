@@ -45,8 +45,12 @@ public:
     {
         const float g = juce::jlimit (kMatchMinGain, kMatchMaxGain, makeupGain);
         matchSmoothed.setCurrentAndTargetValue (g);
-        dryMeanSq = 1.0;
-        mixMeanSq = 1.0 / ((double) g * g);     // sqrt(dryMeanSq / mixMeanSq) == g
+        // Seed the followers at a REALISTIC program energy (−18 dBFS mean-square), not 1.0
+        // (= 0 dBFS): the seed state decays at the follower τ, and a 0 dBFS seed out-masses a
+        // real signal (~−15..−20 dBFS) for ~5τ ≈ 0.75 s, pinning the ratio to the seed long
+        // after audio arrives. At −18 dBFS the followers hand over to the live signal promptly.
+        dryMeanSq = kSeedMeanSq;
+        mixMeanSq = kSeedMeanSq / ((double) g * g);     // sqrt(dryMeanSq / mixMeanSq) == g
     }
 
     // Advance the followers with this block's dry / mixed mean-square energy and set the
@@ -71,6 +75,7 @@ public:
 
 private:
     static constexpr double kMatchTimeConstant = 0.15;    // s — slow enough not to pump
+    static constexpr double kSeedMeanSq        = 0.0158;  // −18 dBFS² — realistic program energy for seeds
     static constexpr double kMatchFloorMeanSq  = 1.0e-6;  // ~ -60 dBFS RMS: below this, hold
     static constexpr float  kMatchMinGain      = 0.0631f; // -24 dB
     static constexpr float  kMatchMaxGain      = 63.10f;  // +36 dB (headroom for lossy IRs)

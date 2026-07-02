@@ -97,6 +97,7 @@ public:
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
+    float autoLevelGain() const { return autoLeveler.currentGain(); }   // current wet->dry makeup (tests/diagnostics)
 
     // DSP load meter — each stage's wall-clock as a smoothed % of the block's real-time budget.
     // Written on the audio thread (a few monotonic-clock reads per block), read by the GUI.
