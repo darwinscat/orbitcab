@@ -135,17 +135,29 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
     }
     else if (! fading && target != current)
     {
-        // ANY live route change (off↔capture↔tube) → a 30 ms constant-sum crossfade, including the
-        // master on/off gate. "off" renders as the dry signal, so off↔tube is a dry↔tube blend. The
-        // gradual (not hard-step) change lets the cab auto-leveler TRACK the new level instead of
-        // overshooting on a step — that overshoot was the enable/disable volume "kick".
-        fadeFrom = current;
-        current  = target;
-        xfade.setCurrentAndTargetValue (0.0f);
-        xfade.setTargetValue (1.0f);
-        fading = true;
-        fadeStartedThisBlock = true;   // the engine keys its leveler route-snap off THIS (accepted
-                                       // transitions only), never off the raw params (see header)
+        if (target != Active::off && current != Active::off)
+        {
+            // capture<->tube MODE JUMP: deliberately HARD — no crossfade. The honest PDC
+            // re-report (0 <-> 31) makes the host re-sync/mute around this switch anyway, so a
+            // 30 ms blend of two time-misaligned stages bought nothing and cost a smeared,
+            // audible "transition". The switch is a clean cut; the leveler retargets instantly
+            // off the same event (fadeStartedThisBlock).
+            current = target;
+            fadeStartedThisBlock = true;
+        }
+        else
+        {
+            // The master on/off gate keeps its 30 ms constant-sum crossfade ("off" renders as the
+            // latency-aligned dry, so off↔stage is a time-aligned blend — the beloved click-free
+            // power toggle). The gradual change also lets the auto-leveler TRACK the new level.
+            fadeFrom = current;
+            current  = target;
+            xfade.setCurrentAndTargetValue (0.0f);
+            xfade.setTargetValue (1.0f);
+            fading = true;
+            fadeStartedThisBlock = true;   // the engine keys its leveler route-snap off THIS (accepted
+                                           // transitions only), never off the raw params (see header)
+        }
     }
 
     if (! fading)

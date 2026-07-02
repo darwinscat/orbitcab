@@ -158,9 +158,12 @@ private:
     juce::AudioBuffer<float> dryBuffer;    // copy of the raw input for the dry/wet blend
 
     // Smoothed so live tweaks / automation don't zipper. Phase is a sign (+1/-1) ramped
-    // through 0 — a brief dip rather than a hard polarity click.
-    felitronics::core::LinearSmoother mixSm[2]   { { 1.0f }, { 1.0f } };
-    felitronics::core::LinearSmoother phaseSm[2] { { 1.0f }, { 1.0f } };
+    // through 0 — a brief dip rather than a hard polarity click. (LinearSm alias: the ctor is
+    // explicit in felitronics-core v0.1.3, so array members need direct-init, not copy-init —
+    // clang enforces this; MSVC let it slide, which is how CI stayed green.)
+    using LinearSm = felitronics::core::LinearSmoother;
+    felitronics::core::LinearSmoother mixSm[2]   { LinearSm (1.0f), LinearSm (1.0f) };   // explicit ctor: direct-init
+    felitronics::core::LinearSmoother phaseSm[2] { LinearSm (1.0f), LinearSm (1.0f) };
     felitronics::core::LinearSmoother mixABSmoothed { 0.0f };
     felitronics::core::LinearSmoother gainSmoothed  { 1.0f };
     felitronics::core::LinearSmoother muteGateSmoothed { 1.0f };
@@ -223,6 +226,11 @@ private:
 
     struct RouteLevel { float makeupDb = 0.0f; juce::uint32 gen = 0; bool valid = false; };
     RouteLevel   routeLevel[6];                // {preamp off/on} × {off, capture, tube}
+    // Learned makeup DELTAS between route pairs (dB, [to][from]). Unlike the caches they SURVIVE
+    // context changes: the A-vs-B spectral offset is largely IR/EQ-portable, so a first visit
+    // after a change snaps to (current + delta) — near the truth — instead of fading from scratch.
+    float        pairDeltaDb[6][6] {};
+    bool         pairDeltaKnown[6][6] {};
     LevelContext prevContext;
     juce::uint32 contextGen = 0;               // audio-side: bumped on any context change
     std::atomic<juce::uint32> modelGeneration { 0 };   // message-thread bumps (IR / model loads)

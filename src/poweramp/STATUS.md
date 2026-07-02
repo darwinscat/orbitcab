@@ -280,6 +280,31 @@ envelope traces, stale-wake A/B nulls, shared-stimulus reference gains.
 - Cleanups: one shared LCG (`levelprobe::white`) across probe/tool/tests; dead legacy
   `rampSeconds` param dropped from `AutoLeveler::prepare`; dead includes removed.
 
+## HARD mode switches + route memory that works on live material (2026-07-02, post-merge)
+
+Field feedback after the merged build: (a) NAM<->PW re-faded on EVERY switch (not just the
+first), (b) the audible pain was the HOST's PDC re-sync hole at the switch start (the honest
+0<->31 re-report makes the DAW mute briefly), which made our careful in-plugin transition
+pointless there. Decisions (user's call): keep the PDC report HONEST (0 -> 0, 31 -> 31) and
+REMOVE all in-plugin transitions between the modes; keep every other smoothing (power on/off
+fades, IR-swap crossfades, EQ/trim glides, mute gates) untouched.
+
+- Field bug root cause: the review-round settled()-gate on route-cache writes required
+  applied==target — ~never true on live (non-stationary) material — so caches never formed and
+  every switch was a "first visit". Gate narrowed to the actual poison case (snap glides);
+  regression test added ON BURSTS (the stationary-noise tests could not see it).
+- capture<->tube in the router is now a HARD cut (no 30 ms crossfade; the off<->on gate keeps
+  its fade). The leveler retarget lands INSTANTLY (snapRatioTo sets the applied gain).
+- PAIR-DELTA memory: the engine learns makeup deltas between route pairs measured under the
+  same context; deltas SURVIVE context changes. A first visit after an IR/EQ/dry-wet change
+  snaps instantly to (current + delta) — worst measured estimate error ≈ 2.3 dB on a harsh
+  dry/wet dilution — then the followers converge the residual at τ=150 ms inside a transition
+  window (target slew ceiling 20 dB/s there; 9 dB/s otherwise). Only the very first transition
+  ever (nothing learned yet) still measures from scratch at follower speed.
+- Processor-level probe confirmed there is NO silence hole inside the plugin on mode flips
+  (worst dip −22.6 dB over 6 flips = programme floor): the start-of-switch hole is the host's
+  PDC rebuild, by design of the honest report.
+
 ### KNOWN LIMITATION (found by B9, pre-existing block 3): feel-layer block-size determinism
 At feel=0 the stage is BIT-EXACT across block schedules (S3 = 0.0). But with the FEEL layer engaged there is
 a small (~1e-2, steady-state) block-size discrepancy — it is present in block 3's sag/presence/depth (which

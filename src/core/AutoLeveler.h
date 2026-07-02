@@ -93,12 +93,16 @@ public:
         const float g = juce::jlimit (kMatchMinGain, kMatchMaxGain, makeupGain);
         targetDb = juce::Decibels::gainToDecibels (g, kSilentDb);
         targetGain = g;
+        // The retarget lands INSTANTLY — mode switches are deliberately HARD (the honest PDC
+        // re-report already makes the host re-sync around the switch, so any glide of ours is
+        // masked noise; the user chose "no transitions between the modes, period").
+        appliedGain = g;
         // Re-seed the mix follower so the followers AGREE with the snapped ratio — otherwise the
         // very next block's raw target would pull straight back toward the OLD route's spectrum.
         // In silence the dry state is floored so the pair stays consistent (tiny but ratio-true);
         // when signal returns both followers climb together and the ratio holds.
         mixMeanSq = std::max (dryMeanSq, kMatchFloorMeanSq) / ((double) g * g);
-        fastSamplesLeft = (int) std::lround (kSnapWindowSeconds * currentSampleRate);
+        fastSamplesLeft = 0;
     }
 
     // Advance the followers with this block's dry / mixed mean-square energy and set the
@@ -138,8 +142,15 @@ public:
 
         // dB-domain slew limit against the PREVIOUS TARGET (not the applied gain — clamping
         // around the applied value compounds with the applied glide into a block-size-dependent
-        // crawl). Exactly kMakeupSlewDbPerSec regardless of block size.
-        const float stepDb = (float) (kMakeupSlewDbPerSec * (double) numSamples / currentSampleRate);
+        // crawl). Exactly kMakeupSlewDbPerSec regardless of block size — except inside a
+        // TRANSITION window (a route change just happened): there the followers are legitimately
+        // re-measuring a stepped ratio, so the cap opens to kTransitionSlewDbPerSec and the
+        // convergence is follower-limited (τ = 150 ms) instead of slew-starved. The followers'
+        // own dynamics stay untouched — this is NOT the old 10 ms fast-track (which pumped by
+        // making the ESTIMATE jumpy); the estimate stays slow and smooth, only its rate ceiling
+        // briefly matches its natural speed.
+        const double slew = fastSamplesLeft > 0 ? kTransitionSlewDbPerSec : kMakeupSlewDbPerSec;
+        const float stepDb = (float) (slew * (double) numSamples / currentSampleRate);
         targetDb = juce::jlimit (targetDb - stepDb, targetDb + stepDb, rawDb);
         targetGain = juce::Decibels::decibelsToGain (targetDb, kSilentDb);   // one pow per block
     }
@@ -162,12 +173,20 @@ public:
     float currentGain()   const { return appliedGain; }
     float currentGainDb() const { return juce::Decibels::gainToDecibels (appliedGain, kSilentDb); }
 
-    // True when the applied gain has landed on the target (no glide in progress). The engine
-    // gates its route-makeup cache writes on this so a mid-glide value (a snap, an enable flip,
-    // a slew-limited convergence) can never be remembered as "converged" (review finding).
-    bool settled() const
+    // A deterministic-retarget glide (route snap / on-off flip / transition window) is in
+    // progress. The engine blocks route-makeup cache WRITES during it so a mid-glide value can
+    // never be remembered as "converged". (An earlier, stricter settled()-gate also blocked
+    // writes whenever the applied gain merely trailed the wandering live target — on real,
+    // non-stationary material that is ~always, so caches never formed and every mode switch
+    // re-faded from scratch. The narrow window below is the actual poison case.)
+    bool snapGliding() const { return fastSamplesLeft > 0; }
+
+    // Open the transition window WITHOUT retargeting: a route change happened but no remembered
+    // makeup (and no learned pair delta) exists — let the followers re-measure at their natural
+    // speed with the transition slew ceiling instead of crawling at 9 dB/s.
+    void openTransitionWindow()
     {
-        return std::fabs (juce::Decibels::gainToDecibels (appliedGain, kSilentDb) - targetDb) < 0.05f;
+        fastSamplesLeft = (int) std::lround (kSnapWindowSeconds * currentSampleRate);
     }
 
 private:
@@ -175,6 +194,9 @@ private:
     static constexpr double kSeedMeanSq         = 0.0158; // −18 dBFS² — realistic program energy for seeds
     static constexpr double kMakeupSlewDbPerSec = 9.0;    // dB/s — hard cap on makeup movement (no pump, ever)
     static constexpr double kSnapSlewDbPerSec   = 40.0;   // dB/s — deterministic-retarget glide (route snap / on-off)
+    static constexpr double kTransitionSlewDbPerSec = 20.0; // dB/s — target ceiling inside a transition window
+                                                            // (≈ the 150 ms followers'' own initial slope for a
+                                                            // ~3 dB step — the cap stops starving them there)
     static constexpr double kSnapWindowSeconds  = 0.35;   // fast-rate budget per snap (covers ±12 dB and lands)
     static constexpr double kMatchFloorMeanSq  = 1.0e-6;  // ~ -60 dBFS RMS: below this, hold
     static constexpr float  kMatchMinGain      = 0.0631f; // -24 dB
