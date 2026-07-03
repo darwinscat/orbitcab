@@ -1079,7 +1079,12 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
         for (const auto& e : preampSel.lib) if (e.name == nm) return e.factory;   // a family's source = its first variant's
         return true;
     };
-    auto addSection = [this, &groups, &familyIsFactory] (bool factory, const char* header)
+    // Names treated as "clean"/near-transparent front-ends: curated to the BOTTOM next to BYPASS rather
+    // than listed among the voiced amp models (they colour almost nothing). "ISA Studio Pre" = Focusrite
+    // ISA Two studio pre — essentially flat. Prefix-matched so any ISA* label lands here. Singletons.
+    auto isCleanName = [] (const juce::String& nm) { return nm.startsWith ("ISA"); };
+
+    auto addSection = [this, &groups, &familyIsFactory, &isCleanName] (bool factory, const char* header)
     {
         bool wroteHeader = false;
         auto ensureHeader = [&] { if (! wroteHeader) { preampBox.addSectionHeading (header); wroteHeader = true; } };
@@ -1091,7 +1096,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
                 preampBox.addItem (nm, (int) preampBoxTargets.size());
             }
         for (const auto& e : preampSel.lib)
-            if (e.factory == factory && ! preampSel.isGroupName (e.name))
+            if (e.factory == factory && ! preampSel.isGroupName (e.name) && ! isCleanName (e.name))
             {
                 ensureHeader();
                 preampBoxTargets.push_back ({ false, e.id });
@@ -1101,10 +1106,18 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     addSection (true,  "Factory");
     addSection (false, "User");
 
-    // BYPASS — last entry: no neural preamp (the stage passes through), but the tone EQ still runs, so
-    // this is a standalone EQ (IR cab + tone). Sentinel id "bypass" (handled in applyPreamp).
+    // Bottom cluster — the "no voicing" end of the list: clean/near-transparent front-ends (ISA) then
+    // BYPASS. A clean pre colours almost nothing, so it sits with "no amp" rather than among the models.
+    // BYPASS itself: no neural preamp (the stage passes through), but the tone EQ still runs, so this is
+    // a standalone EQ (IR cab + tone). Sentinel id "bypass" (handled in applyPreamp).
     if (preampBox.getNumItems() > 0)
         preampBox.addSeparator();
+    for (const auto& e : preampSel.lib)
+        if (isCleanName (e.name))
+        {
+            preampBoxTargets.push_back ({ false, e.id });
+            preampBox.addItem (e.name, (int) preampBoxTargets.size());
+        }
     preampBoxTargets.push_back ({ false, "bypass" });
     preampBox.addItem (juce::String::fromUTF8 ("BYPASS \xe2\x80\x94 EQ only"), (int) preampBoxTargets.size());
 

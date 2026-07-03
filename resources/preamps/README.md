@@ -5,27 +5,48 @@ Neural Amp Modeler (`.nam`) preamp captures embedded as **factory** models for t
 **PREAMP** stage — the neural stage in front of the tone EQ and poweramp:
 **input → PREAMP → tone EQ → POWERAMP → cab**.
 
-The build bundles the author's own **V4KR** captures (below). Drop more `.nam` files into this folder
-and rebuild — CMake re-globs it (`CONFIGURE_DEPENDS`) and embeds whatever's present. All factory
-captures are 48 kHz (the rate-matcher runs them at the host's sample rate).
+The build bundles the author's own captures — the **Victory V4** preamp series (**V4KRAK**, **V4SHER**,
+**V4COPP**) plus a clean studio preamp (**ISA Studio Pre**). This folder is the tracked, shipped factory
+set; drop **private/experimental** `.nam` into [`../preamps-local/`](../preamps-local/) instead — CMake
+globs both (`CONFIGURE_DEPENDS`) and embeds whatever's present, but the local folder is gitignored so it
+never ships. All factory captures are 48 kHz (the rate-matcher runs them at the host's sample rate).
 
-## V4KR — capture provenance
+## Victory V4 series (V4KRAK / V4SHER / V4COPP) — capture provenance
 
-`V4KR` is a **two-channel valve preamp** — a **red** high-gain channel and a **green** lower-gain
-channel — captured across its gain range: 11 captures per channel at gain clock positions 7h…17h.
+Three **two-channel valve preamps** from the Victory V4 pedal line — each a **red** higher-gain channel
+and a **green** lower-gain channel — captured across the full gain range: 11 captures per channel at
+gain clock positions 7h…17h.
 
-**How it was captured** (electrical loop — no mic, no room):
+* **V4KRAK** — *The Kraken* (modern high-gain).
+* **V4SHER** — *The Sheriff* (British crunch → lead).
+* **V4COPP** — *The Copper* (lower-gain, vintage-voiced).
+
+**How they were captured** — one electrical loop, no mic, no room; **identical rig for all three**:
 
 ```
 Focusrite Clarett+ 8Pre (line OUT)
   → Radial Engineering Pro RMP (passive reamp: line → Hi-Z)
-  → V4KR preamp (one channel; ALL knobs at noon, only GAIN rotated per capture; built-in cab-sim OFF)
+  → V4 preamp (one channel; ALL knobs at noon, only GAIN rotated per capture; built-in cab-sim OFF)
   → Focusrite Clarett+ 8Pre (line IN)
 ```
 
 - Only **Gain** is swept (7h…17h); every other knob stays at **noon**.
 - The **tone stack is captured flat** and rebuilt in the `teq` software EQ — not baked into the model.
 - The unit's **built-in cab-sim is OFF**; OrbitCab supplies the cabinet via its own IR.
+
+## ISA Studio Pre — capture provenance
+
+`ISA Studio Pre` is a **Focusrite ISA Two** — a transformer-coupled studio channel preamp, not a guitar amp. It's
+captured as a **single, essentially transparent** model (near-unity; no channels, no gain sweep) — a
+neutral transformer-flavoured front end to stack ahead of a poweramp + cab, or to run practically as a
+clean bypass.
+
+```
+Focusrite Clarett+ 8Pre (line OUT)  →  Focusrite ISA Two (line, unity-ish)  →  Focusrite Clarett+ 8Pre (line IN)
+```
+
+- A **single** capture → the selector shows it with **no channel or gain controls** (just the name).
+- Like the V4 captures: tone flat, no cab-sim, 48 kHz.
 
 ## Two sources, one selector
 
@@ -42,8 +63,8 @@ Each dimension is an OPTIONAL whole-word token in the filename, dropped from the
 appears only when the current choice has ≥2 values for that dimension:
 
 ```
-V4KR-red-9h.nam       → name "V4KR",  channel "Red" (glows red),  gain 9h
-V4KR-green-12h.nam    → name "V4KR",  channel "Green",            gain 12h
+V4KRAK-red-9h.nam       → name "V4KRAK",  channel "Red" (glows red),  gain 9h
+V4KRAK-green-12h.nam    → name "V4KRAK",  channel "Green",            gain 12h
 Amp ch2 16h boost.nam → name "Amp",   channel 2 ("Ch 2"), gain 16h, boost on
 Studio.nam            → name "Studio"                             (just the name)
 ```

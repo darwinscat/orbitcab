@@ -52,7 +52,11 @@ public:
         using FT = teq::FilterType;
         auto mk = [] (bool on, FT type, double freq, double gainDb, double Q) noexcept
         {
-            teq::BandParams b; b.on = on; b.type = type; b.freq = freq; b.gainDb = gainDb; b.Q = Q;
+            // v0.3.0 lanes model: a single-filter band lives on the Stereo lane (on by default). The
+            // shared "point" carries on/type; the lane carries freq/gainDb/Q. slope stays the 12 dB/oct
+            // default → HP/LP at Q=0.707 are Butterworth, shelves ignore Q — same voicing as the flat model.
+            teq::BandParams b; b.on = on; b.type = type;
+            auto& L = b.lane (teq::Lane::Stereo); L.freq = freq; L.gainDb = gainDb; L.Q = Q;
             return b;
         };
         out[0] = mk (eq.hpfOn,               FT::HighPass,  eq.hpfHz,    0.0,            kCutQ);

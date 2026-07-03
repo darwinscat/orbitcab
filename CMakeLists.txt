@@ -128,7 +128,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.1.4" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.3.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -246,10 +246,14 @@ file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/r
 # CONFIGURE_DEPENDS re-globs on build, so dropping in the trained .nam files ships them.
 file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.nam")
 
-# Bundled factory PRE-amp NAM models: every .nam in resources/preamps/ — the SECOND neural stage
-# (input → preamp → poweramp → cab). These go into a SEPARATE binary-data target with its own
-# namespace (PreampBinaryData), so they never bleed into the poweramp's BinaryData enumeration.
-file(GLOB ORBITCAB_PREAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps/*.nam")
+# Bundled factory PRE-amp NAM models — the SECOND neural stage (input → preamp → poweramp → cab). Two
+# sources, both globbed: resources/preamps/ is the tracked, shipped factory set; resources/preamps-local/
+# is a gitignored drop zone for private/experimental captures (embedded on a local build, never shipped).
+# These go into a SEPARATE binary-data target + namespace (PreampBinaryData), so they never bleed into the
+# poweramp's BinaryData enumeration.
+file(GLOB ORBITCAB_PREAMP_FILES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps/*.nam"
+     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps-local/*.nam")
 
 juce_add_binary_data(OrbitCabData
     SOURCES

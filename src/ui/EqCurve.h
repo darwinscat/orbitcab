@@ -82,7 +82,7 @@ public:
             for (int i = 0; i < n; ++i)
             {
                 if (! bands[i].on) continue;
-                const double f = juce::jlimit (fLo, fHi, bands[i].freq);
+                const double f = juce::jlimit (fLo, fHi, bands[i].lane (teq::Lane::Stereo).freq);
                 const float  x = r.getX() + (float) (std::log (f / fLo) / logSpan) * r.getWidth();
                 g.drawDashedLine (juce::Line<float> (x, r.getY(), x, r.getBottom()), dashes, 2, 1.0f);
             }

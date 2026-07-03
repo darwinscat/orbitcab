@@ -70,12 +70,12 @@ struct PreampLibraryTest : juce::UnitTest
             parseFull ("Mesa ch4");      expect (n == "Mesa" && ch == 4 && lbl == "Ch 4" && col == 0);   // ch4 now in range, plain (no tint)
             parseFull ("Mesa ch1");      expect (ch == 1 && lbl == "Ch 1" && col == 0);
 
-            parseFull ("V4KR red 9h");                                                                    // colour → channel index + tint
-            expect (n == "V4KR" && ch == 1 && h == 9 && lbl == "Red" && col == 0xffe0524e);
-            parseFull ("V4KR GREEN 12h");                                                                 // case-insensitive; label Title-cased
-            expect (n == "V4KR" && ch == 2 && h == 12 && lbl == "Green" && col == 0xff57c06a);
-            parseFull ("V4KR-blue-17h");                                                                  // dash separators + colour
-            expect (n == "V4KR" && ch == 3 && h == 17 && lbl == "Blue");
+            parseFull ("V4KRAK red 9h");                                                                    // colour → channel index + tint
+            expect (n == "V4KRAK" && ch == 1 && h == 9 && lbl == "Red" && col == 0xffe0524e);
+            parseFull ("V4KRAK GREEN 12h");                                                                 // case-insensitive; label Title-cased
+            expect (n == "V4KRAK" && ch == 2 && h == 12 && lbl == "Green" && col == 0xff57c06a);
+            parseFull ("V4KRAK-blue-17h");                                                                  // dash separators + colour
+            expect (n == "V4KRAK" && ch == 3 && h == 17 && lbl == "Blue");
 
             parseFull ("Studio Pre");    expect (ch == 0 && lbl.isEmpty() && col == 0);                   // no channel → empty label, no tint
             parseFull ("Red Llama 12h"); expect (ch == 1 && n == "Llama" && lbl == "Red");               // a colour word IS taken as the channel (documented: use chN to avoid)
