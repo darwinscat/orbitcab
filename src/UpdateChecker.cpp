@@ -109,8 +109,16 @@ void UpdateChecker::checkNow (std::function<void (Result)> onDone)
         juce::MessageManager::callAsync ([weak, onDone, r]
         {
             if (auto* self = weak.get())                    // no-op if the plugin was removed meanwhile
+            {
+                // A successful check is the freshest truth: write the badge up when a newer
+                // release exists, and — crucially — clear it when it doesn't. Without the
+                // clear path, a stored "latest" that the server later retracts (a yanked
+                // release) would nag forever, since only a version bump clears it (ctor).
                 if (r.ok && r.outdated && r.latest.isNotEmpty())
                     self->storeOutdated (r.latest);
+                else if (r.ok)
+                    self->clearStored();
+            }
             if (onDone)
                 onDone (r);
         });
