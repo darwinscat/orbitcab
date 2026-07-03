@@ -244,7 +244,7 @@ public:
     orbitcab::UpdateChecker& updateChecker() { return updateCheckerInstance; }
 
     // The single global PropertiesFile owner (per-machine view-prefs: gear-panel toggles).
-    orbitcab::AppPreferences& appPreferences() { return appPreferencesInstance; }
+    orbitcab::AppPreferences& appPreferences() { return *appPreferencesInstance; }
 
 private:
     //==========================================================================
@@ -255,9 +255,11 @@ private:
     cab::CabEngine engine;
     cab::Params    packParams() const;            // APVTS atomics -> plain values (RT-safe)
 
-    // appPreferences MUST precede updateCheckerInstance: the checker takes it by reference,
-    // so it has to be constructed first (member init follows declaration order).
-    orbitcab::AppPreferences appPreferencesInstance;   // single global PropertiesFile owner
+    // appPreferencesInstance MUST precede updateCheckerInstance: the checker takes it by
+    // reference, so it has to be constructed first (member init follows declaration order).
+    // SharedResourcePointer = ONE AppPreferences per host process, shared by every OrbitCab
+    // instance (see AppPreferences.h) — no per-instance stale badge or concurrent-save clobber.
+    juce::SharedResourcePointer<orbitcab::AppPreferences> appPreferencesInstance;   // process-wide PropertiesFile owner
     orbitcab::UpdateChecker  updateCheckerInstance;    // version + opt-in update check
 
     double currentSampleRate = 44100.0;           // IR-load sample-rate fallback (message thread)

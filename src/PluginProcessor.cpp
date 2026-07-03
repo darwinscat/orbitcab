@@ -82,7 +82,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", orbitcab::createParameterLayout()),
-      updateCheckerInstance (JucePlugin_VersionString, appPreferencesInstance)
+      updateCheckerInstance (JucePlugin_VersionString, *appPreferencesInstance)
 {
     formatManager.registerBasicFormats();   // WAV/AIFF/FLAC… for IR decode (bundled + user files)
 
@@ -455,13 +455,13 @@ void OrbitCabAudioProcessor::persistRecents()
 {
     // Recents are a per-machine accumulator → store in the global prefs, NOT the session state,
     // so they survive removing + re-inserting the plugin (a fresh instance) and DAW restarts.
-    appPreferencesInstance.setString ("userIRs", userIRPaths.joinIntoString ("\n"));
+    appPreferencesInstance->setString ("userIRs", userIRPaths.joinIntoString ("\n"));
 }
 
 void OrbitCabAudioProcessor::loadRecentsFromPrefs()
 {
     userIRPaths.clear();
-    userIRPaths.addLines (appPreferencesInstance.getString ("userIRs"));
+    userIRPaths.addLines (appPreferencesInstance->getString ("userIRs"));
     userIRPaths.removeEmptyStrings();
     while (userIRPaths.size() > kMaxUserIRs)
         userIRPaths.remove (userIRPaths.size() - 1);
@@ -540,7 +540,7 @@ std::vector<orbitcab::PowerampEntry> OrbitCabAudioProcessor::powerampLibrary() c
     std::sort (out.begin(), out.end(),
                [] (const auto& a, const auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });
 
-    auto user = orbitcab::scanPowerampLibrary (appPreferencesInstance.powerampDir());   // already sorted
+    auto user = orbitcab::scanPowerampLibrary (appPreferencesInstance->powerampDir());   // already sorted
     out.insert (out.end(), std::make_move_iterator (user.begin()), std::make_move_iterator (user.end()));
     return out;
 }
@@ -561,7 +561,7 @@ juce::File OrbitCabAudioProcessor::importPoweramp (const juce::File& src)
     // Name clash → suffix " (2)", " (3)"… Returns the destination ({} on failure).
     if (! src.existsAsFile() || src.getSize() > (juce::int64) kMaxEmbeddedNamBytes)
         return {};                     // missing, or far bigger than any real .nam → refuse (don't import junk)
-    const auto dir = appPreferencesInstance.powerampDir();
+    const auto dir = appPreferencesInstance->powerampDir();
     auto dest = dir.getChildFile (src.getFileName());
     for (int n = 2; dest.existsAsFile(); ++n)
         dest = dir.getChildFile (src.getFileNameWithoutExtension() + " (" + juce::String (n) + ")." + src.getFileExtension().trimCharactersAtStart ("."));
@@ -710,7 +710,7 @@ std::vector<orbitcab::PreampEntry> OrbitCabAudioProcessor::preampLibrary() const
         return (int) a.boost < (int) b.boost;
     });
 
-    auto user = orbitcab::scanPreampLibrary (appPreferencesInstance.preampDir());   // already sorted
+    auto user = orbitcab::scanPreampLibrary (appPreferencesInstance->preampDir());   // already sorted
     out.insert (out.end(), std::make_move_iterator (user.begin()), std::make_move_iterator (user.end()));
     return out;
 }
@@ -726,7 +726,7 @@ juce::File OrbitCabAudioProcessor::importPreamp (const juce::File& src)
 {
     if (! src.existsAsFile() || src.getSize() > (juce::int64) kMaxEmbeddedNamBytes)
         return {};                     // missing, or far bigger than any real .nam → refuse (don't import junk)
-    const auto dir = appPreferencesInstance.preampDir();
+    const auto dir = appPreferencesInstance->preampDir();
     auto dest = dir.getChildFile (src.getFileName());
     for (int n = 2; dest.existsAsFile(); ++n)
         dest = dir.getChildFile (src.getFileNameWithoutExtension() + " (" + juce::String (n) + ")." + src.getFileExtension().trimCharactersAtStart ("."));
