@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 2.0.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 2.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -698,13 +698,21 @@ target_link_libraries(OrbitCab_Tests PRIVATE
 )
 
 # ----------------------------------------------------------------------------
-# Headless golden test for the JUCE-FREE cab convolution backend (cab::CoreConvolver over
-# felitronics::convolution) vs a direct-convolution reference. No JUCE at all — proves the de-JUCE
-# convolution is sound-preserving before the in-plugin A/B switch. CI gate (non-zero on failure).
+# Headless golden test for the cab convolution backend (cab::Convolver) vs a direct-convolution
+# reference: impulse->normalized-IR, noise==direct-conv, reference-unity gain, mono broadcast, file-
+# scale invariance, silent-IR floor, true-stereo imaging. CI gate (non-zero on failure).
+# NOTE: cab::Convolver is now backed by juce::dsp::Convolution, so this target is no longer JUCE-free
+# — it links juce::juce_dsp (which pulls juce_core for the async-loader pump). The convolution CORE is
+# JUCE-dependent again (accepted tradeoff; the IR reference-unity analysis stays felitronics-only).
 # ----------------------------------------------------------------------------
 add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
 target_include_directories(orbitcab_coreconv_golden PRIVATE src)
-target_link_libraries(orbitcab_coreconv_golden PRIVATE felitronics::convolution)
+target_compile_definitions(orbitcab_coreconv_golden PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+target_link_libraries(orbitcab_coreconv_golden PRIVATE
+    felitronics::convolution               # resample-on-load (message-thread one-shot)
+    juce::juce_dsp                          # cab::Convolver backend (juce::dsp::Convolution) + juce_core
+    juce::juce_recommended_config_flags)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
 
 # ----------------------------------------------------------------------------

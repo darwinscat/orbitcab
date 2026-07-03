@@ -17,6 +17,8 @@
 
 #include "core/Convolver.h"
 
+#include <juce_core/juce_core.h>   // juce::Thread::sleep — pump juce::dsp::Convolution's async loader
+
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -89,6 +91,18 @@ double refNormGainDb (const std::vector<float>& ir, double sr)
 // process `total` samples through the convolver in a hostile variable block sweep (all <= maxBlock).
 void runVariableBlocks (Convolver& c, std::vector<float>& L, std::vector<float>& R, int total)
 {
+    // juce::dsp::Convolution loads the IR ASYNCHRONOUSLY on its own background thread and swaps it in
+    // during process() with a 50 ms crossfade. In a bare console app that races (the buffer is
+    // processed in microseconds, faster than the ~10 ms loader poll). So first drive the loader to
+    // completion — pump silence + sleep until the requested IR is the live engine (isBusy() false) —
+    // then flush the first-load crossfade on silence, leaving the fully-installed IR with zeroed
+    // internal state before the measured signal is fed. (The plugin + OrbitCab_Tests pump the same way.)
+    {
+        std::vector<float> z0 (512, 0.0f), z1 (512, 0.0f);
+        auto pump = [&] { float* io[2] { z0.data(), z1.data() }; c.process (io, 2, 512); };
+        for (int i = 0; i < 800 && c.isBusy(); ++i) { pump(); juce::Thread::sleep (3); }   // await install (~2.4 s cap)
+        for (int s = 0; s < 6000; s += 512) pump();                                          // flush >50 ms crossfade @48k
+    }
     static const int blk[] = { 1, 17, 64, 128, 333, 512 };
     int pos = 0, bi = 0;
     while (pos < total) { const int n = std::min (blk[bi % 6], total - pos); float* io[2] { L.data() + pos, R.data() + pos }; c.process (io, 2, n); pos += n; ++bi; }

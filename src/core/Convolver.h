@@ -3,19 +3,25 @@
 
 #pragma once
 
-#include <felitronics/convolution/ConvolutionEngine.h>
-#include <felitronics/convolution/IrResampler.h>
-#include <felitronics/core/Fft.h>
+#include <felitronics/convolution/IrResampler.h>   // resample-on-load (message thread, one-shot)
+#include <felitronics/core/Fft.h>                   // DefaultRealFft — analysis FFT for the reference-unity gain
+#include <juce_dsp/juce_dsp.h>                       // juce::dsp::Convolution — the cab convolution backend
 
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
 //==============================================================================
-// cab::Convolver — the cab IR convolution, JUCE-FREE: it runs on
-// felitronics::convolution::ConvolutionEngine (partitioned, zero-latency, click-free IR swap) instead
-// of juce::dsp::Convolution. The public methods speak raw floats + sizes, so the adapter (IRSlot) is
-// unchanged. NULL-tested to −170 dB against a direct convolution on real cabs (host + resampled).
+// cab::Convolver — the cab IR convolution. The backend is `juce::dsp::Convolution` (default ctor =
+// zero-latency, uniform-partitioned, Apple vDSP / JUCE FFT), the fast path. The public methods speak
+// raw floats + sizes, so the adapter (IRSlot) is unchanged.
+//
+// PERF/PROVENANCE: this is the pre-#89 convolution backend, re-instated. The interim
+// felitronics::convolution::ConvolutionEngine (scalar direct-head, ~5x slower than juce at block=512)
+// was a JUCE-free experiment; juce's partitioned FFT is the shipping cab DSP path. NOTE: this makes
+// the CAB path JUCE-dependent again (the JUCE-free-core property is lost for the cab — an accepted
+// tradeoff, tracked as felitronics-core#21 for a proper uniform-partition core convolver). The IR
+// ANALYSIS below is still JUCE-free (felitronics DefaultRealFft, a message-thread one-shot).
 //
 // LOUDNESS: every IR is normalized AT LOAD to reference-unity — unity RMS gain for a guitar-band
 // reference signal (white noise through a one-pole low-pass at kIrRefShapeHz), computed in the
@@ -27,12 +33,18 @@
 // quieter the input. After normalization a cab contributes TONE, not gain: the auto-leveler
 // shrinks to a small signal-dependent corrector and the plugin is usable with it off.
 //
-// This deliberately REPLACES the JUCE gain semantics (Normalise::no's irSr/hostSr factor and the
-// Normalise::yes 0.125-energy fallback — both paths now normalize identically): the reference
-// gain is measured on the resampled IR, which supersedes both. Engine behaviour is otherwise
-// JUCE-parity per felitronics-core/docs/migration/convolution-core-api.md: resample ONLY when
-// irSr != hostSr; 50 ms swap crossfade; zero latency. Byte-decoding stays OUT in the adapter
-// (IRSlot) so this header remains JUCE-free.
+// We measure the reference gain on the RESAMPLED taps, apply it, then hand the taps to juce with
+// Normalise::no + at HOST rate (so juce neither re-normalizes nor resamples them — it copies them
+// in verbatim). This deliberately supersedes JUCE's own gain semantics (Normalise::no's irSr/hostSr
+// factor and the Normalise::yes 0.125-energy fallback). Byte-decoding stays OUT in the adapter
+// (IRSlot); this header handles taps + sizes only.
+//
+// THREADING (juce::dsp::Convolution): loadImpulseResponse() is wait-free and safe to call from the
+// message thread while process() runs on the audio thread — the heavy FFT partition build happens on
+// juce's own background loader thread and the new IR is atomic-swapped in during process() with a
+// 50 ms crossfade (click-free). So a fresh load never needs the felitronics-style retry-coalescing:
+// flushPending()/hasPending() are sane no-ops, and isBusy() reflects "load in flight" via
+// getCurrentIRSize(). Zero latency (juce default ctor) — latencySamples() == 0.
 //==============================================================================
 namespace cab
 {
@@ -52,22 +64,27 @@ public:
     static constexpr float  kIrNormMaxDb  = 30.0f;
     static constexpr double kIrRefFloorDb = -60.0;    // near-silent IR ⇒ keep g = 1 (don't amplify garbage)
 
-    // maxIrSeconds sizes the convolution and the ONE cold-start fade (= the configured tail, NOT the IR
-    // length). ~4 s keeps the first-load fade sane; OrbitCab's 20 s DECODE cap is a separate safety limit.
+    // maxIrSeconds is retained for API parity (it sized the felitronics engine's cold fade). juce's
+    // Convolution sizes its partitions per-IR automatically, so the argument is accepted but unused.
     void prepare (double sampleRate, int maxBlock, int numChannels, double maxIrSeconds = 4.0)
     {
+        juce::ignoreUnused (maxIrSeconds);
         hostSr_   = sampleRate > 0.0 ? sampleRate : 48000.0;
         channels_ = std::clamp (numChannels, 1, 2);
-        int P = 128; while (P < std::max (1, maxBlock)) P <<= 1;               // partition >= maxBlock (engine rule)
-        const int maxIr = std::max (P * 2, (int) std::ceil (maxIrSeconds * hostSr_));
-        const int xfade = std::max (1, (int) std::lround (0.05 * hostSr_));    // 50 ms — matches JUCE
-        engine_.prepare (P, maxIr, xfade, channels_);
+        maxBlock_ = std::max (1, maxBlock);
+
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate       = hostSr_;
+        spec.maximumBlockSize = (juce::uint32) maxBlock_;
+        spec.numChannels      = (juce::uint32) channels_;
+        convolution_.prepare (spec);                 // arms the engine; zero-latency default ctor
+        pendingLen_ = 0;
     }
 
-    void reset() { engine_.reset(); }
+    void reset() { convolution_.reset(); }
 
-    // Load an IR (JUCE Stereo::yes parity: mono broadcasts) — normalized to reference-unity.
-    // Message thread.
+    // Load an IR (JUCE Stereo::yes parity: mono broadcasts) — normalized to reference-unity, resampled
+    // to host rate. Message thread (wait-free; the FFT build + atomic swap happen on juce's loader).
     void loadIR (const float* const* samples, int numChannels, int numSamples, double irSampleRate)
     {
         buildAndStage (samples, numChannels, numSamples, irSampleRate);
@@ -81,22 +98,28 @@ public:
     // RT-safe in-place convolution of `numChannels` planar channels.
     void process (float* const* io, int numChannels, int numSamples)
     {
-        engine_.process (io, io, std::min (numChannels, channels_), numSamples);
+        const int nc = std::clamp (std::min (numChannels, channels_), 1, 2);
+        juce::dsp::AudioBlock<float> block (io, (std::size_t) nc, (std::size_t) numSamples);
+        juce::dsp::ProcessContextReplacing<float> ctx (block);
+        convolution_.process (ctx);
     }
 
-    bool isBusy() const noexcept { return engine_.isBusy(); }
-    static constexpr int latencySamples() noexcept { return 0; }
-
-    // Message thread. If a previous loadIR() was rejected because the engine was mid-crossfade, retry it
-    // now (the latest IR is kept staged in ir_). The engine accepts once its crossfade finishes, so a
-    // periodic caller (the reload poll) lands the coalesced swap. Returns true when nothing is pending.
-    bool flushPending()
+    // "A load is in flight": the async loader hasn't yet installed the requested IR as the active
+    // engine. juce reports the active engine's IR length via getCurrentIRSize(); we load at host
+    // rate (no juce-side resample/trim), so it equals the length we handed in once live.
+    bool isBusy() const noexcept
     {
-        if (pendingLen_ <= 0) return true;
-        if (engine_.setIr (ptrs_.data(), pendingNch_, pendingLen_)) { pendingLen_ = 0; return true; }
-        return false;
+        return pendingLen_ > 0 && convolution_.getCurrentIRSize() != pendingLen_;
     }
-    bool hasPending() const noexcept { return pendingLen_ > 0; }
+
+    static constexpr int latencySamples() noexcept { return 0; }   // juce default ctor = zero latency
+
+    // Message thread, driven by the reload poll. juce's async loader always eventually applies the
+    // most recent load (it coalesces + retries internally), so there is nothing to retry here: a
+    // fresh load never gets rejected the way the felitronics coalesced-swap could. Kept for API
+    // parity — returns true (nothing pending), so the poll is a harmless no-op.
+    bool flushPending() { return true; }
+    bool hasPending() const noexcept { return false; }
 
 private:
     void buildAndStage (const float* const* samples, int nch, int len, double irSr)
@@ -113,6 +136,7 @@ private:
                 ir_[(std::size_t) c].assign (samples[c], samples[c] + len);
             outLen = (int) ir_[(std::size_t) c].size();
         }
+        if (outLen <= 0) return;
 
         // Reference-unity normalization of the FINAL (resampled) IR — one common gain, all channels.
         const float g = normalizationGain (outLen);
@@ -120,10 +144,17 @@ private:
         normGainDb_ = 20.0f * std::log10 (std::max (1.0e-6f, g));
         for (auto& ch : ir_) for (float& v : ch) v *= g;
 
-        ptrs_.resize ((std::size_t) nch);
-        for (int c = 0; c < nch; ++c) ptrs_[(std::size_t) c] = ir_[(std::size_t) c].data();
-        if (! engine_.setIr (ptrs_.data(), nch, outLen)) { pendingLen_ = outLen; pendingNch_ = nch; }
-        else pendingLen_ = 0;
+        // Hand the normalized taps to juce AT HOST RATE (irSr == hostSr here — we already resampled),
+        // Trim::no + Normalise::no so juce copies them in verbatim: no re-normalize, no re-resample.
+        juce::AudioBuffer<float> buf (nch, outLen);
+        for (int c = 0; c < nch; ++c)
+            juce::FloatVectorOperations::copy (buf.getWritePointer (c), ir_[(std::size_t) c].data(), outLen);
+
+        convolution_.loadImpulseResponse (std::move (buf), hostSr_,
+                                          juce::dsp::Convolution::Stereo::yes,
+                                          juce::dsp::Convolution::Trim::no,
+                                          juce::dsp::Convolution::Normalise::no);
+        pendingLen_ = outLen;
     }
 
     // 1 / (reference RMS gain) of the staged IR: G² = Σ w(f)·P(f) / Σ w(f) over the positive-
@@ -175,13 +206,13 @@ private:
 
     double hostSr_   = 48000.0;
     int    channels_ = 2;
+    int    maxBlock_ = 512;
     float  normGain_ = 1.0f;
     float  normGainDb_ = 0.0f;
-    felitronics::convolution::ConvolutionEngine<felitronics::core::fft::DefaultRealFft, 2> engine_;
+    juce::dsp::Convolution convolution_;   // zero-latency, uniform-partitioned (default ctor)
 
-    std::vector<std::vector<float>> ir_;
-    std::vector<const float*>       ptrs_;
-    int pendingLen_ = 0, pendingNch_ = 0;
+    std::vector<std::vector<float>> ir_;   // staging: resampled + normalized taps (message thread)
+    int pendingLen_ = 0;                   // length of the last requested IR (for isBusy)
 };
 
 } // namespace cab
