@@ -16,21 +16,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ----------------------------------------------------------------------------
-# Local incremental BUILD NUMBER — so you can tell which build the host actually loaded (the editor
-# shows it). A tiny counter is bumped on every build into generated/BuildInfo.h (number + HH:MM:SS).
-# Gitignored, dev-only; a tagged release build defines nothing special and simply won't show it.
+# Generated headers dir. The build-version stamp (OrbitCabVersion.h) lands here — its generator is
+# wired below, AFTER felitronics-core is resolved, so the stamp can also name the core version.
 # ----------------------------------------------------------------------------
 set(ORBITCAB_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${ORBITCAB_GENERATED_DIR}")
-execute_process(COMMAND ${CMAKE_COMMAND}   # generate once now so the first compile has the header
-    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
-    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake)
-add_custom_target(orbitcab_bump_build ALL
-    COMMAND ${CMAKE_COMMAND}
-        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${ORBITCAB_GENERATED_DIR}/BuildInfo.h
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/bump_build.cmake
-    BYPRODUCTS ${ORBITCAB_GENERATED_DIR}/BuildInfo.h
-    COMMENT "OrbitCab: bump local build number")
 include_directories(${ORBITCAB_GENERATED_DIR})
 
 if(MSVC)
@@ -149,6 +139,68 @@ if(_teq_inc)
 endif()
 
 # ----------------------------------------------------------------------------
+# OrbitCabVersion.h — git-describe build stamp, baked into the binary (end users have no repo).
+# Regenerated on EVERY build (the target is always out-of-date) so the stamp reflects the tree AT
+# BUILD TIME; also generated once at configure so clangd + the first compile have the header. Never
+# fails the build (missing git => "0.0.0-dev"/"unknown"). Replaces the old local build-counter.
+# ----------------------------------------------------------------------------
+find_package(Git QUIET)
+set(ORBITCAB_VERSION_HEADER "${ORBITCAB_GENERATED_DIR}/OrbitCabVersion.h")
+
+# Build architecture label for the stamp (Universal when a fat binary, else the single arch).
+if(APPLE)
+    list(LENGTH CMAKE_OSX_ARCHITECTURES _oc_narch)
+    if(_oc_narch GREATER 1)
+        set(_oc_arch "Universal")
+    elseif(CMAKE_OSX_ARCHITECTURES)
+        set(_oc_arch "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(_oc_arch "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+else()
+    set(_oc_arch "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+# Build OS label for the stamp.
+if(APPLE)
+    set(_oc_os "macOS")
+elseif(WIN32)
+    set(_oc_os "Windows")
+elseif(UNIX)
+    set(_oc_os "Linux")
+else()
+    set(_oc_os "${CMAKE_SYSTEM_NAME}")
+endif()
+
+# Mirror the felitronics-core FetchContent decision above so kCoreVersion names the checkout used.
+if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
+    set(_oc_fcore_local ON)
+else()
+    set(_oc_fcore_local OFF)
+endif()
+
+set(_oc_ver_args
+    -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+    -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+    -DOUT_FILE=${ORBITCAB_VERSION_HEADER}
+    -DARCH=${_oc_arch}
+    -DOS=${_oc_os}
+    -DFCORE_LOCAL=${_oc_fcore_local}
+    -DFCORE_DIR=${ORBITCAB_FCORE_DIR}
+    -DFCORE_TAG=${ORBITCAB_FCORE_TAG})
+
+# Generate once at configure time too, so the header exists for IDEs / clangd before the first build.
+execute_process(COMMAND ${CMAKE_COMMAND} ${_oc_ver_args}
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateOrbitCabVersion.cmake")
+
+add_custom_target(OrbitCabVersionGen ALL
+    COMMAND ${CMAKE_COMMAND} ${_oc_ver_args}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateOrbitCabVersion.cmake"
+    BYPRODUCTS "${ORBITCAB_VERSION_HEADER}"
+    COMMENT "OrbitCab: baking OrbitCabVersion.h build stamp"
+    VERBATIM)
+
+# ----------------------------------------------------------------------------
 # The plugin target.
 #
 # 4-char codes (LOCKED post-release):
@@ -222,10 +274,10 @@ target_sources(OrbitCab PRIVATE
     src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
     src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
-add_dependencies(OrbitCab orbitcab_bump_build)   # regenerate BuildInfo.h (local build number) before each build
-# ...and force the editor TU to recompile whenever the number changes (every build), so the shown build
+add_dependencies(OrbitCab OrbitCabVersionGen)   # bake OrbitCabVersion.h (build stamp) before each build
+# ...and force the editor TU to recompile whenever the stamp changes (every build), so the shown build
 # number is always CURRENT — not frozen at PluginEditor.cpp's last source edit (which lagged it badly).
-set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${ORBITCAB_GENERATED_DIR}/BuildInfo.h")
+set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${ORBITCAB_VERSION_HEADER}")
 
 # ----------------------------------------------------------------------------
 # Bundled IRs — embedded into the binary as a C++ byte array (no disk reads).

@@ -246,6 +246,22 @@ public:
     // The single global PropertiesFile owner (per-machine view-prefs: gear-panel toggles).
     orbitcab::AppPreferences& appPreferences() { return *appPreferencesInstance; }
 
+    // The running plugin format for the version badge: "VST3" / "AU" / "CLAP" / "Standalone".
+    // JUCE has no native CLAP wrapper, so a CLAP instance (via clap-juce-extensions) leaves
+    // wrapperType == Undefined — and among the formats we ship that is unambiguously CLAP. This only
+    // ever renders inside a running plugin instance, so the Undefined⟺CLAP mapping is exact here.
+    // (An if-chain, not a switch: -Wswitch-enum would flag the enumerators we don't ship.)
+    // AU is spelled "AudioUnit" by JUCE, so map it to the shorter "AU".
+    juce::String pluginFormat() const
+    {
+        if (wrapperType == wrapperType_VST3)        return "VST3";
+        if (wrapperType == wrapperType_AudioUnit)   return "AU";
+        if (wrapperType == wrapperType_AudioUnitv3) return "AUv3";
+        if (wrapperType == wrapperType_Standalone)  return "Standalone";
+        if (wrapperType == wrapperType_Undefined)   return "CLAP";
+        return juce::AudioProcessor::getWrapperTypeDescription (wrapperType);
+    }
+
 private:
     //==========================================================================
     // The headless DSP core (cab::CabEngine) owns the whole real-time signal path —

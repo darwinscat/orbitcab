@@ -5,9 +5,6 @@
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
-#if __has_include("BuildInfo.h")
- #include "BuildInfo.h"   // generated local build number (dev builds; see cmake/bump_build.cmake)
-#endif
 
 #include <algorithm>
 
@@ -45,6 +42,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     brand.setTooltip ("darwinscat.com/orbitcab — OrbitCab by Darwin's Cat");
     addAndMakeVisible (brand);
 
+    versionBadge.setBrandTypeface (brand.wordmarkTypeface);   // Michroma for the (i) popover title mark
     addAndMakeVisible (versionBadge);   // bottom version + opt-in update check
     addAndMakeVisible (perfBadge);      // latency + DSP load, left of the version
 
@@ -1743,17 +1741,6 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
                     juce::Justification::centred, false);
     }
 
-   #if defined(ORBITCAB_BUILD_NUMBER)
-    // Local build id (dev builds only), pinned right under the version badge (so it tracks the badge
-    // instead of floating) — tells you which build the host loaded without reloading two or three times.
-    {
-        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
-        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-        g.drawText ("build " + juce::String (ORBITCAB_BUILD_NUMBER),
-                    juce::Rectangle<int> (getWidth() - 214, getHeight() - 16, 208, 14),
-                    juce::Justification::centredRight, false);   // absolute bottom-right — always inside the window
-    }
-   #endif
 }
 
 void OrbitCabAudioProcessorEditor::resized()
@@ -1971,7 +1958,7 @@ void OrbitCabAudioProcessorEditor::resized()
 
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient
-    versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 15));   // version always bottom-right
+    versionBadge.setBounds (strip.removeFromRight (120).reduced (12, 6));   // version + 14-digit build no. (two lines), bottom-right
     perfBadge.setBounds    (strip.removeFromRight (140).reduced (6, 15));   // latency + DSP load, just left of it
     // Bottom-left power checkboxes, in signal order: PREAMP, POWERAMP. (The tone EQ is now part of the
     // PREAMP stage — no separate toggle.) Each appears only when its library is non-empty.
