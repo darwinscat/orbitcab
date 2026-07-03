@@ -23,6 +23,11 @@ namespace
         s = s.replaceCharacters (seps, juce::String::repeatedString (".", seps.length()));
         return s.getDoubleValue();
     }
+
+    // Preamp names treated as "clean"/near-transparent front-ends (the ISA studio pre). Single source of
+    // truth for both the selector (curated to the bottom next to BYPASS) and the default pick (preferred
+    // over the voiced amp models). Prefix-matched so any "ISA*" label counts.
+    inline bool preampNameIsClean (const juce::String& nm) { return nm.startsWith ("ISA"); }
 }
 
 //==============================================================================
@@ -1082,7 +1087,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     // Names treated as "clean"/near-transparent front-ends: curated to the BOTTOM next to BYPASS rather
     // than listed among the voiced amp models (they colour almost nothing). "ISA Studio Pre" = Focusrite
     // ISA Two studio pre — essentially flat. Prefix-matched so any ISA* label lands here. Singletons.
-    auto isCleanName = [] (const juce::String& nm) { return nm.startsWith ("ISA"); };
+    auto isCleanName = [] (const juce::String& nm) { return preampNameIsClean (nm); };
 
     auto addSection = [this, &groups, &familyIsFactory, &isCleanName] (bool factory, const char* header)
     {
@@ -1236,11 +1241,16 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     // (hidden) eqPowerBtn keeps the eqOn parameter and the tone-control visibility in lock-step.
     eqPowerBtn.setToggleState (on, juce::sendNotificationSync);
 
-    // Powering on with no resolvable selection → default to the first library entry (never "on but
-    // silent"). A restored session that already carries a valid "preampSel" keeps it. "bypass" counts as
-    // a real (non-empty) selection, so it is preserved (standalone EQ).
+    // Powering on with no resolvable selection → default to the clean front-end (ISA) if present, else
+    // the first library entry (never "on but silent"). Explicit ISA preference so the default doesn't
+    // ride on library sort order. A restored session that already carries a valid "preampSel" keeps it;
+    // "bypass" counts as a real (non-empty) selection, so it is preserved (standalone EQ).
     if (on && ! preampSel.lib.empty() && processorRef.selectedPreampId().isEmpty())
-        processorRef.selectPreamp (preampSel.lib.front().id);
+    {
+        const auto clean = std::find_if (preampSel.lib.begin(), preampSel.lib.end(),
+                                         [] (const auto& e) { return preampNameIsClean (e.name); });
+        processorRef.selectPreamp (clean != preampSel.lib.end() ? clean->id : preampSel.lib.front().id);
+    }
 
     preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
     preampTubeDisplay.setVisible (on);
