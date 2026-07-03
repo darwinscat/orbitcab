@@ -17,9 +17,9 @@ Three **two-channel valve preamps** from the Victory V4 pedal line — each a **
 and a **green** lower-gain channel — captured across the full gain range: 11 captures per channel at
 gain clock positions 7h…17h.
 
-* **V4KRAK** — *The Kraken* (modern high-gain).
-* **V4SHER** — *The Sheriff* (British crunch → lead).
-* **V4COPP** — *The Copper* (lower-gain, vintage-voiced).
+* **V4KRAK** — captured from the **Victory V4 "The Kraken"** (modern British high-gain).
+* **V4SHER** — captured from the **Victory V4 "The Sheriff"** (classic British crunch → lead).
+* **V4COPP** — captured from the **Victory V4 "The Copper"** (lower-gain, vintage-voiced).
 
 **How they were captured** — one electrical loop, no mic, no room; **identical rig for all three**:
 
