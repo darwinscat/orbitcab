@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "OrbitCabLookAndFeel.h"
 #include "../UpdateChecker.h"
+#include "OrbitCabVersion.h"   // orbitcab::version::* — the generated build stamp (git describe, build no., arch)
 
 //==============================================================================
 // VersionBadge — a small clickable "v1.0.0" label, bottom-left. Always shown,
@@ -28,17 +29,31 @@ public:
     {
         auto r = getLocalBounds().toFloat();
         const bool upd = checker.updateAvailable();
+        const bool twoLine = orbitcab::version::kBuildCount > 0;   // dev build past a release tag
 
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.setColour (juce::Colour (upd ? OrbitCabLookAndFeel::kAccentHover : 0xff70707a));
-        g.drawText ("v" + checker.currentVersion(), r, juce::Justification::centredLeft, false);
+        // Line 1 — the version, a touch bigger. When a build line follows, it takes the top row.
+        auto verRow = twoLine ? r.removeFromTop (r.getHeight() * 0.56f) : r;
+        const juce::Font verFont (juce::FontOptions (14.0f, juce::Font::bold));
+        const juce::String ver = "v" + checker.currentVersion();
+        g.setFont (verFont);
+        g.setColour (juce::Colour (upd ? OrbitCabLookAndFeel::kAccentHover : 0xff8a8a92));
+        g.drawText (ver, verRow, juce::Justification::centredLeft, false);
+
+        // Line 2 — the build number (commits past the last release tag; hidden on a clean release).
+        if (twoLine)
+        {
+            g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+            g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.9f));
+            g.drawText ("build " + juce::String (orbitcab::version::kBuildCount),
+                        r, juce::Justification::centredLeft, false);
+        }
 
         if (upd)   // bright static dot just right of the version (update available)
         {
             juce::GlyphArrangement ga;
-            ga.addLineOfText (g.getCurrentFont(), "v" + checker.currentVersion(), 0.0f, 0.0f);
+            ga.addLineOfText (verFont, ver, 0.0f, 0.0f);
             const float tw = ga.getBoundingBox (0, -1, true).getWidth();
-            const float cx = r.getX() + tw + 7.0f, cy = r.getCentreY();
+            const float cx = verRow.getX() + tw + 7.0f, cy = verRow.getCentreY();
             g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccentB));   // orange = "new"
             g.fillEllipse (cx - 3.0f, cy - 3.0f, 6.0f, 6.0f);
         }
@@ -54,6 +69,27 @@ private:
     //--- the CallOutBox content ----------------------------------------------
     struct Panel final : public juce::Component
     {
+        // The build-info block, assembled from the baked constants (mirrors TabbyEQ's (i)):
+        //   OrbitCab v1.6.0-3-g1a2b3c4
+        //   build 20260703191423 · arm64
+        //   g1a2b3c4 (dirty) · oleh
+        //   core v0.3.0 (local)
+        static juce::String buildInfoText()
+        {
+            using namespace orbitcab::version;
+            juce::String hashLine = juce::String ("g") + kGitHash;
+            if (kGitDirty) hashLine << " (dirty)";
+            hashLine << " " << juce::String::fromUTF8 ("\xc2\xb7") << " " << kBuilder;   // middot separator
+
+            juce::StringArray lines;
+            lines.add (juce::String ("OrbitCab ") + kDescribe);
+            lines.add (juce::String ("build ") + juce::String (kBuildNumber)
+                       + juce::String::fromUTF8 (" \xc2\xb7 ") + kArch);
+            lines.add (hashLine);
+            lines.add (juce::String ("core ") + kCoreVersion);
+            return lines.joinIntoString ("\n");
+        }
+
         explicit Panel (orbitcab::UpdateChecker& uc, VersionBadge& ownerBadge)
             : checker (uc), owner (&ownerBadge)
         {
@@ -62,8 +98,10 @@ private:
             title.setColour (juce::Label::textColourId, juce::Colour (OrbitCabLookAndFeel::kText));
             addAndMakeVisible (title);
 
-            version.setText ("Version " + checker.currentVersion(), juce::dontSendNotification);
-            version.setFont (juce::FontOptions (12.0f));
+            version.setText (buildInfoText(), juce::dontSendNotification);
+            version.setFont (juce::FontOptions (11.0f).withName (juce::Font::getDefaultMonospacedFontName()));
+            version.setJustificationType (juce::Justification::topLeft);
+            version.setMinimumHorizontalScale (1.0f);
             version.setColour (juce::Label::textColourId, juce::Colour (0xffb0b0b8));
             addAndMakeVisible (version);
 
@@ -96,7 +134,7 @@ private:
                 showUpdate (checker.storedLatest(),
                             juce::URL ("https://github.com/darwinscat/orbitcab/releases/latest"));
 
-            setSize (250, 156);
+            setSize (268, 204);
         }
 
         void resized() override
@@ -104,7 +142,7 @@ private:
             auto r = getLocalBounds().reduced (14, 12);
             title.setBounds   (r.removeFromTop (20));
             link.setBounds    (r.removeFromTop (18));
-            version.setBounds (r.removeFromTop (18));
+            version.setBounds (r.removeFromTop (62));   // 4-line monospaced build block
             r.removeFromTop (6);
             check.setBounds   (r.removeFromTop (26));
             r.removeFromTop (4);

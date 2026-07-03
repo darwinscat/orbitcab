@@ -55,6 +55,3 @@ resources/poweramps/*.nam
 
 # Stray build/tool logs
 *.log
-
-# local incremental build counter (per-checkout, dev-only — see cmake/bump_build.cmake)
-.orbitcab_build_number
