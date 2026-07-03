@@ -47,10 +47,11 @@ notarize-credentials*
 CLAUDE.md
 .claude/
 
-# Preamp/poweramp NAM captures: ignore models dropped into these folders; ship the author's V4KR set.
+# Preamp NAM captures — resources/preamps/ is the SHIPPED factory set (fully tracked). Drop private or
+# experimental captures into resources/preamps-local/ instead: CMake still embeds them on a local build,
+# but they're gitignored, so they're never committed / shipped.
+resources/preamps-local/*.nam
 resources/poweramps/*.nam
-resources/preamps/*.nam
-!resources/preamps/V4KR-*.nam
 
 # Stray build/tool logs
 *.log

@@ -117,7 +117,7 @@ struct PowerAmpSwitchLevelTest : juce::UnitTest
        #ifndef ORBITCAB_RES_DIR
         beginTest ("skipped — no ORBITCAB_RES_DIR"); expect (true);
        #else
-        const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KR-red-12h.nam");
+        const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
         beginTest ("a real 48k capture model is present");
         expect (nf.existsAsFile(), "need a test .nam: " + nf.getFullPathName());
         if (! nf.existsAsFile()) return;

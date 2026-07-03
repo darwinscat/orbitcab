@@ -36,7 +36,7 @@ namespace orbitcab
 //   • boost   — a whole-word "boost" token → boost on. Absent = boost off.
 // Every matched token is dropped from the display name, in any order:
 //   "Voltage ch2 12h boost.nam" → name "Voltage", channel 2 ("Ch 2"),  gain 12h, boost on
-//   "V4KR red 9h.nam"           → name "V4KR",    channel 1 ("Red", glows red), gain 9h
+//   "V4KRAK red 9h.nam"           → name "V4KRAK",    channel 1 ("Red", glows red), gain 9h
 //   "Voltage 16h.nam"           → name "Voltage", channel 0, gain 16h, boost off (only a gain slider)
 //   "Studio Pre.nam"            → name "Studio Pre", channel 0, gain 0, boost off (just the name)
 //==============================================================================
@@ -82,7 +82,7 @@ inline const PreampChannelColour* findPreampChannelColour (const juce::String& w
 // No channel token → 0 (empty label, no colour); no <N>h → hours 0; no "boost" → false. If the tokens
 // were the whole name, the base is kept so there's always something to show.
 //   "Voltage ch2 12h boost" → name "Voltage", channel 2 ("Ch 2"),       hours 12, boost true
-//   "V4KR red 9h"           → name "V4KR",    channel 1 ("Red", glow),  hours 9
+//   "V4KRAK red 9h"           → name "V4KRAK",    channel 1 ("Red", glow),  hours 9
 //   "Vortex 9h"             → name "Vortex",  channel 0,                hours 9,  boost false
 inline void parsePreampName (const juce::String& base, juce::String& nameOut,
                              int& channelOut, int& hoursOut, bool& boostOut,
