@@ -3,26 +3,50 @@
 
 #include "UpdateChecker.h"
 
+#include <utility>           // std::exchange
+
 namespace orbitcab
 {
 
 namespace
 {
     constexpr int  kTimeoutMs     = 5000;   // short — opt-in, non-blocking
+    // Join budget on destruction: the connect timeout is 5 s and cancel() aborts a blocked
+    // connect/read promptly, so 8 s is generous headroom before stopThread force-kills (last resort).
+    constexpr int  kJoinMs        = 8000;
     constexpr char kReleasesApi[] = "https://api.github.com/repos/darwinscat/orbitcab/releases/latest";
     constexpr char kKeyLatest[]   = "lastSeenLatest";
     constexpr char kKeyEpoch[]    = "lastCheckEpoch";
 }
 
 UpdateChecker::UpdateChecker (juce::String currentVersion, AppPreferences& prefsRef)
-    : current (std::move (currentVersion)), prefs (prefsRef)
+    : juce::Thread ("OrbitCab UpdateChecker"),
+      current (std::move (currentVersion)), prefs (prefsRef)
 {
-    // Badge-clear: if the installed version has caught up to (or passed) a previously
-    // seen "latest", drop the stored value so no stale badge shows. The ONLY place the
-    // plugin compares versions itself.
+    // Cross-process freshness: same-process instances share the PropertiesFile object (see
+    // AppPreferences), but another HOST PROCESS may have stored a newer tag — pick it up once here.
+    prefs.reload();
+
+    // Badge-clear: if the installed version has caught up to (or passed) a previously seen
+    // "latest", drop the stored value so no stale badge shows. The ONLY place the plugin
+    // compares versions at ctor time.
     const juce::String seen = storedLatest();
     if (seen.isNotEmpty() && ! isNewer (seen, current))
         clearStored();
+}
+
+UpdateChecker::~UpdateChecker()
+{
+    // JOIN the worker before the plugin module can unload: signal, abort any blocking connect/read,
+    // wait. Then drop an undelivered async result (the AsyncUpdater base asserts on pending updates).
+    signalThreadShouldExit();
+    {
+        const juce::ScopedLock sl (streamLock);
+        if (activeStream != nullptr)
+            activeStream->cancel();                 // cross-thread-safe: unblocks connect/read promptly
+    }
+    stopThread (kJoinMs);
+    cancelPendingUpdate();
 }
 
 juce::String UpdateChecker::storedLatest() const
@@ -57,7 +81,9 @@ void UpdateChecker::clearStored()
     }
 }
 
-UpdateChecker::Result UpdateChecker::fetch (const juce::String& version)
+// Worker thread. Blocking; the stream is registered under streamLock while it can block so the
+// destructor can cancel() it from another thread.
+UpdateChecker::Result UpdateChecker::fetch()
 {
     Result r;
 
@@ -72,12 +98,28 @@ UpdateChecker::Result UpdateChecker::fetch (const juce::String& version)
     web.withConnectionTimeout (kTimeoutMs)
        .withNumRedirectsToFollow (3)
        .withExtraHeaders (headers);
-    if (! web.connect (nullptr))            // no network / DNS / TLS failure
-        return r;
-    if (web.getStatusCode() != 200)         // 404 = no releases yet, 403 = rate-limited, etc.
+
+    {
+        const juce::ScopedLock sl (streamLock);
+        if (threadShouldExit())
+            return r;                               // shutting down — never even start the request
+        activeStream = &web;                        // publish for cross-thread cancel()
+    }
+
+    const bool connected = web.connect (nullptr);   // no network / DNS / TLS failure → false
+    juce::String body;
+    if (connected && web.getStatusCode() == 200)    // 404 = no releases yet, 403 = rate-limited, etc.
+        body = web.readEntireStreamAsString();
+
+    {
+        const juce::ScopedLock sl (streamLock);
+        activeStream = nullptr;                     // retire BEFORE the stack-scope stream dies
+    }
+
+    if (threadShouldExit() || body.isEmpty())
         return r;
 
-    const juce::var json = juce::JSON::parse (web.readEntireStreamAsString());
+    const juce::var json = juce::JSON::parse (body);
     if (! json.isObject())
         return r;
 
@@ -94,35 +136,45 @@ UpdateChecker::Result UpdateChecker::fetch (const juce::String& version)
     r.latest   = tag;
     r.url      = json.getProperty ("html_url", juce::var()).toString();   // the release page
     r.notes    = json.getProperty ("name",     juce::var()).toString();   // release title (optional)
-    r.outdated = isNewer (r.latest, version);
+    r.outdated = isNewer (r.latest, current);
     return r;
 }
 
-void UpdateChecker::checkNow (std::function<void (Result)> onDone)
+void UpdateChecker::run()
 {
-    const juce::String ver = current;                       // capture by value (thread-safe)
-    juce::WeakReference<UpdateChecker> weak (this);
-    juce::Thread::launch ([weak, ver, onDone]
-    {
-        const Result r = fetch (ver);                       // static — touches no instance state
-        // Store + notify on the message thread (PropertiesFile + UI are not RT/thread-safe).
-        juce::MessageManager::callAsync ([weak, onDone, r]
-        {
-            if (auto* self = weak.get())                    // no-op if the plugin was removed meanwhile
-            {
-                // A successful check is the freshest truth: write the badge up when a newer
-                // release exists, and — crucially — clear it when it doesn't. Without the
-                // clear path, a stored "latest" that the server later retracts (a yanked
-                // release) would nag forever, since only a version bump clears it (ctor).
-                if (r.ok && r.outdated && r.latest.isNotEmpty())
-                    self->storeOutdated (r.latest);
-                else if (r.ok)
-                    self->clearStored();
-            }
-            if (onDone)
-                onDone (r);
-        });
-    });
+    const Result r = fetch();
+    if (threadShouldExit())
+        return;                                     // shutting down — drop the result silently
+    pending = r;                                    // visible to handleAsyncUpdate: the message post synchronizes
+    triggerAsyncUpdate();
+}
+
+void UpdateChecker::handleAsyncUpdate()
+{
+    // Message thread. Persist first (PropertiesFile + UI are not RT/thread-safe), then notify the badge.
+    // A successful check is the freshest truth: write the badge up when a newer release exists, and
+    // clear it when it doesn't — otherwise a stored "latest" that the server later retracts (a yanked
+    // release) would nag forever, since only a version bump clears it (ctor). A FAILED check (ok=false)
+    // touches nothing, so an offline click never wipes a real badge.
+    if (pending.ok && pending.outdated && pending.latest.isNotEmpty())
+        storeOutdated (pending.latest);
+    else if (pending.ok)
+        clearStored();
+
+    if (auto cb = std::exchange (onDone, nullptr))
+        cb (pending);
+}
+
+void UpdateChecker::checkNow (std::function<void (Result)> cb)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    onDone = std::move (cb);
+    // Also gate on isUpdatePending(): between run() calling triggerAsyncUpdate() and exiting, and
+    // handleAsyncUpdate() actually firing, isThreadRunning() is already false while the result is
+    // still queued. Without this a second click there would spin up a 2nd worker that races `pending`;
+    // instead we just keep the replaced callback and deliver the in-flight result to it (last click wins).
+    if (! isThreadRunning() && ! isUpdatePending())
+        startThread();                              // a finished, fully-delivered worker restarts cleanly
 }
 
 bool UpdateChecker::isNewer (const juce::String& latest, const juce::String& current)

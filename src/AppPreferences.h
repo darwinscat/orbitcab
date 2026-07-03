@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <juce_data_structures/juce_data_structures.h>   // ApplicationProperties / PropertiesFile
+#include <juce_data_structures/juce_data_structures.h>   // ApplicationProperties / PropertiesFile / InterProcessLock
 
 namespace orbitcab
 {
@@ -11,9 +11,18 @@ namespace orbitcab
 //==============================================================================
 // orbitcab::AppPreferences — owns the plugin's single GLOBAL PropertiesFile:
 // per-machine, shared across every instance, surviving restarts (NOT the DAW
-// session state). One owner is the whole point — two PropertiesFile instances on
-// the same path would race on save. It backs the app-wide UI view-prefs (the
-// gear-panel Dry/Wet + Spectrum toggles) and the UpdateChecker's last-seen tag.
+// session state). It backs the app-wide UI view-prefs (the gear-panel Dry/Wet +
+// Spectrum toggles) and the UpdateChecker's last-seen tag.
+//
+// Sharing model — one PropertiesFile object per host process, never two racing on save:
+//   • SAME PROCESS: the processor holds this via juce::SharedResourcePointer, so every
+//     instance in the host process shares ONE PropertiesFile object — no same-process
+//     staleness (a badge stored by one instance is instantly visible to the others) and
+//     no concurrent-save clobbering.
+//   • CROSS PROCESS: options.processLock (an InterProcessLock) serializes file writes
+//     between host processes, so saves can't corrupt each other. A value written by
+//     ANOTHER process is picked up via reload() (called at UpdateChecker construction);
+//     between checks it may be stale — accepted (the badge is advisory, not safety-critical).
 //
 // Adapter layer (host glue: storage). The cab:: DSP core never sees it.
 //==============================================================================
@@ -28,6 +37,7 @@ public:
         o.folderName          = "Darwin's Cat" + juce::String (juce::File::getSeparatorString()) + "OrbitCab";
         o.filenameSuffix      = "settings";
         o.osxLibrarySubFolder = "Application Support";
+        o.processLock         = &ipLock;   // cross-process write serialization (see the header note)
         props.setStorageParameters (o);
     }
 
@@ -68,6 +78,13 @@ public:
         if (auto* s = file()) { s->setValue (key, value); s->saveIfNeeded(); }
     }
 
+    // Re-read the file from disk to pick up ANOTHER PROCESS's writes (same-process instances share
+    // this object, and every setter here saves immediately, so no same-process state can be lost).
+    void reload()
+    {
+        if (auto* s = file()) s->reload();
+    }
+
     // Raw PropertiesFile access for richer needs (the UpdateChecker's string tag +
     // epoch + removeValue). Logically const — getUserSettings() is non-const in JUCE.
     juce::PropertiesFile* file() const
@@ -96,6 +113,10 @@ private:
         dir.createDirectory();
         return dir;
     }
+
+    // Declared FIRST: the PropertiesFile keeps a pointer to this lock, so it must outlive
+    // props (members are destroyed in reverse declaration order).
+    juce::InterProcessLock ipLock { "DarwinsCat.OrbitCab.settings" };
 
     juce::ApplicationProperties props;
 
