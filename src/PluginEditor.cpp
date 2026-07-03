@@ -42,6 +42,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     brand.setTooltip ("darwinscat.com/orbitcab — OrbitCab by Darwin's Cat");
     addAndMakeVisible (brand);
 
+    versionBadge.setBrandTypeface (brand.wordmarkTypeface);   // Michroma for the (i) popover title mark
     addAndMakeVisible (versionBadge);   // bottom version + opt-in update check
     addAndMakeVisible (perfBadge);      // latency + DSP load, left of the version
 

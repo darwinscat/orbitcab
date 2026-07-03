@@ -5,6 +5,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "OrbitCabLookAndFeel.h"
+#include "BrandMark.h"          // orbitcab::brand — shared orbit mark + Michroma wordmark
 
 #include <functional>
 #include <cmath>
@@ -18,6 +19,7 @@
 // link) over "Cabinet IR Loader" (dim), the two right-aligned to each other and the bottom
 // line sharing the wordmark's baseline. All text in Michroma (embedded). The whole strip
 // links to the IR page with a soft accent halo on hover, and sizes itself to its content.
+// The orbit mark + wordmark font live in ui/BrandMark.h (shared with the (i) popover).
 //==============================================================================
 class HeaderBrand final : public juce::Component,
                           public juce::SettableTooltipClient
@@ -34,9 +36,9 @@ public:
     int preferredWidth (int height) const
     {
         const float h = (float) height;
-        const float subW = textWidth (wordmarkFont (subHeight (h)), kSub);   // byline right-aligns within this
+        const float subW = orbitcab::brand::textWidth (font (subHeight (h)), kSub);   // byline right-aligns within this
         return height + kGap
-             + (int) std::ceil (markDiameter (h) + kMarkGap + textWidth (wordmarkFont (wordHeight (h)), kWord))
+             + (int) std::ceil (markDiameter (h) + kMarkGap + orbitcab::brand::textWidth (font (wordHeight (h)), kWord))
              + kSubGap + (int) std::ceil (subW) + kPadR;
     }
 
@@ -68,27 +70,27 @@ public:
         // orbit mark = the "O" of OrbitCab (~ the cat-logo height)
         const float markD = markDiameter (h);
         const float cy    = b.getCentreY();
-        drawOrbit (g, b.getX() + markD * 0.5f, cy, markD);
+        orbitcab::brand::drawOrbit (g, b.getX() + markD * 0.5f, cy, markD, hover);
         float x = b.getX() + markD + (float) kMarkGap;   // pen x after the orbit
 
         // Shared baseline so "rbitCab" and "Cabinet IR Loader" sit on the SAME bottom line
         // (bottom-aligned, not centred). Baseline placed so the big wordmark is centred.
-        const auto wf = wordmarkFont (wordHeight (h));
+        const auto wf = font (wordHeight (h));
         const float baseline = cy + (wf.getAscent() - wf.getDescent()) * 0.5f;
 
         // "rbitCab" wordmark (Michroma, large)
         g.setFont (wf);
         g.setColour (hover ? juce::Colours::white : juce::Colour (0xffeef0f6));
         g.drawSingleLineText (kWord, juce::roundToInt (x), juce::roundToInt (baseline));
-        x += textWidth (wf, kWord) + (float) kSubGap;
+        x += orbitcab::brand::textWidth (wf, kWord) + (float) kSubGap;
 
         // Two stacked lines right of the wordmark:
         //   "by Darwin's Cat"   (accent, brand link — top)
         //   "Cabinet IR Loader" (dim grey — bottom, SAME baseline as "rbitCab")
-        const auto sf = wordmarkFont (subHeight (h));      // bottom line
-        const auto bf = wordmarkFont (bylineHeight (h));   // top line (byline)
-        const float subW = textWidth (sf, kSub);
-        const float bylW = textWidth (bf, kByline);
+        const auto sf = font (subHeight (h));      // bottom line
+        const auto bf = font (bylineHeight (h));   // top line (byline)
+        const float subW = orbitcab::brand::textWidth (sf, kSub);
+        const float bylW = orbitcab::brand::textWidth (bf, kByline);
 
         // "by Darwin's Cat" — right-aligned to the subtitle's right edge (so the "Cat" end
         // lines up with the "Loader" end), and a bit higher than the bottom line.
@@ -104,23 +106,6 @@ public:
     }
 
 private:
-    // Concentric rings (the SVG was designed at d=40); scale strokes with the diameter.
-    void drawOrbit (juce::Graphics& g, float cx, float cy, float d) const
-    {
-        const float r = d * 0.5f;
-        const float s = d / 40.0f;
-        g.setColour (juce::Colour (0xff0b0b11));                      // dark planet body
-        g.fillEllipse (cx - r, cy - r, d, d);
-        g.setColour (hover ? juce::Colour (0xff9778ff).brighter (0.2f) : juce::Colour (0xff9778ff));
-        g.drawEllipse (cx - r, cy - r, d, d, 2.0f * s);              // violet outer ring
-        const float r2 = r * (13.0f / 20.0f);
-        g.setColour (juce::Colour (0xffb9a6ff));                      // lilac middle ring
-        g.drawEllipse (cx - r2, cy - r2, r2 * 2.0f, r2 * 2.0f, 2.0f * s);
-        const float r3 = r * (6.0f / 20.0f);
-        g.setColour (juce::Colour (0xffff8a3d));                      // orange inner ring
-        g.drawEllipse (cx - r3, cy - r3, r3 * 2.0f, r3 * 2.0f, 2.5f * s);
-    }
-
     // Sizes scale with the strip height: orbit ≈ the cat-logo size, wordmark large,
     // subtitle ~half the wordmark. (orbit / wordHeight ≈ 1.5, matching the SVG.)
     static float markDiameter (float h) { return h * 0.78f; }
@@ -128,19 +113,7 @@ private:
     static float subHeight    (float h) { return h * 0.30f; }    // "Cabinet IR Loader" (bottom line)
     static float bylineHeight (float h) { return h * 0.21f; }    // "by Darwin's Cat" (top line, a bit smaller)
 
-    juce::Font wordmarkFont (float height) const
-    {
-        if (wordmarkTypeface != nullptr)
-            return juce::Font (juce::FontOptions().withHeight (height).withTypeface (wordmarkTypeface));
-        return juce::Font (juce::FontOptions (height, juce::Font::bold));   // fallback if not embedded
-    }
-
-    static float textWidth (const juce::Font& f, const juce::String& s)
-    {
-        juce::GlyphArrangement ga;
-        ga.addLineOfText (f, s, 0.0f, 0.0f);
-        return ga.getBoundingBox (0, -1, true).getWidth();
-    }
+    juce::Font font (float height) const { return orbitcab::brand::wordmarkFont (wordmarkTypeface, height); }
 
     bool hover = false;
     static constexpr int kGap = 8, kMarkGap = 7, kSubGap = 16, kPadR = 12;
