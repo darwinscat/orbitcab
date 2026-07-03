@@ -104,7 +104,7 @@ private:
     juce::ComboBox        presetBox;
     std::unique_ptr<juce::Drawable> logo;  // Darwin's Cat mark (drawn inside HeaderBrand)
     HeaderBrand           brand;           // logo + OrbitCab brand -> /orbitcab
-    VersionBadge          versionBadge { processorRef.updateChecker() };   // bottom version + update check
+    VersionBadge          versionBadge { processorRef.updateChecker(), processorRef.pluginFormat() };   // bottom version + format + update check
     PerfBadge             perfBadge;                                        // latency + DSP load (click → per-stage breakdown)
 
     // INPUT block (left): bypass + input fader + IN meter

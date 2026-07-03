@@ -161,6 +161,17 @@ else()
     set(_oc_arch "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+# Build OS label for the stamp.
+if(APPLE)
+    set(_oc_os "macOS")
+elseif(WIN32)
+    set(_oc_os "Windows")
+elseif(UNIX)
+    set(_oc_os "Linux")
+else()
+    set(_oc_os "${CMAKE_SYSTEM_NAME}")
+endif()
+
 # Mirror the felitronics-core FetchContent decision above so kCoreVersion names the checkout used.
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     set(_oc_fcore_local ON)
@@ -173,6 +184,7 @@ set(_oc_ver_args
     -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
     -DOUT_FILE=${ORBITCAB_VERSION_HEADER}
     -DARCH=${_oc_arch}
+    -DOS=${_oc_os}
     -DFCORE_LOCAL=${_oc_fcore_local}
     -DFCORE_DIR=${ORBITCAB_FCORE_DIR}
     -DFCORE_TAG=${ORBITCAB_FCORE_TAG})

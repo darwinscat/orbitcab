@@ -78,10 +78,14 @@ if(GIT_EXECUTABLE AND SRC_DIR)
     endif()
 endif()
 
-# --- kArch: the build architecture label (passed in by the parent CMake) --------------------
+# --- kArch / kOS: the build architecture + OS labels (passed in by the parent CMake) ---------
 set(_arch "unknown")
 if(ARCH)
     set(_arch "${ARCH}")
+endif()
+set(_os "unknown")
+if(OS)
+    set(_os "${OS}")
 endif()
 
 # --- kCoreVersion: the resolved felitronics-core --------------------------------------------
@@ -122,6 +126,7 @@ _orbitcab_cxx_escape(_hash)
 _orbitcab_cxx_escape(_builder)
 _orbitcab_cxx_escape(_core)
 _orbitcab_cxx_escape(_arch)
+_orbitcab_cxx_escape(_os)
 
 # --- emit the header ------------------------------------------------------------------------
 set(_content "// SPDX-License-Identifier: AGPL-3.0-or-later
@@ -147,6 +152,7 @@ namespace orbitcab::version
     inline constexpr const char* kBuilder     = \"${_builder}\"; // env ORBITCAB_BUILDER, else username
     inline constexpr const char* kCoreVersion = \"${_core}\";    // resolved felitronics-core
     inline constexpr const char* kArch        = \"${_arch}\";    // build arch (arm64 / x86_64 / Universal)
+    inline constexpr const char* kOS          = \"${_os}\";      // build OS   (macOS / Windows / Linux)
 }
 ")
 

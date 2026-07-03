@@ -1957,7 +1957,7 @@ void OrbitCabAudioProcessorEditor::resized()
 
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient
-    versionBadge.setBounds (strip.removeFromRight (96).reduced (12, 6));    // version + build no. (two lines), bottom-right
+    versionBadge.setBounds (strip.removeFromRight (120).reduced (12, 6));   // version + 14-digit build no. (two lines), bottom-right
     perfBadge.setBounds    (strip.removeFromRight (140).reduced (6, 15));   // latency + DSP load, just left of it
     // Bottom-left power checkboxes, in signal order: PREAMP, POWERAMP. (The tone EQ is now part of the
     // PREAMP stage — no separate toggle.) Each appears only when its library is non-empty.

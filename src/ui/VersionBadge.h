@@ -19,34 +19,31 @@ class VersionBadge final : public juce::Component,
                            public juce::SettableTooltipClient
 {
 public:
-    explicit VersionBadge (orbitcab::UpdateChecker& uc) : checker (uc)
+    VersionBadge (orbitcab::UpdateChecker& uc, juce::String pluginFormat)
+        : checker (uc), format (std::move (pluginFormat))
     {
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        setTooltip ("OrbitCab v" + checker.currentVersion() + " — click to check for updates");
+        setTooltip ("OrbitCab v" + checker.currentVersion() + " (" + format + ") — click to check for updates");
     }
 
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
         const bool upd = checker.updateAvailable();
-        const bool twoLine = orbitcab::version::kBuildCount > 0;   // dev build past a release tag
 
-        // Line 1 — the version, a touch bigger. When a build line follows, it takes the top row.
-        auto verRow = twoLine ? r.removeFromTop (r.getHeight() * 0.56f) : r;
+        // Line 1 — the version, a touch bigger; line 2 (below) is the running plugin format.
+        auto verRow = r.removeFromTop (r.getHeight() * 0.56f);
         const juce::Font verFont (juce::FontOptions (14.0f, juce::Font::bold));
         const juce::String ver = "v" + checker.currentVersion();
         g.setFont (verFont);
         g.setColour (juce::Colour (upd ? OrbitCabLookAndFeel::kAccentHover : 0xff8a8a92));
         g.drawText (ver, verRow, juce::Justification::centredLeft, false);
 
-        // Line 2 — the build number (commits past the last release tag; hidden on a clean release).
-        if (twoLine)
-        {
-            g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-            g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.9f));
-            g.drawText ("build " + juce::String (orbitcab::version::kBuildCount),
-                        r, juce::Justification::centredLeft, false);
-        }
+        // Line 2 — the running plugin format (VST3 / AU / CLAP / Standalone). The build number
+        // lives only in the (i) popover — the corner stays version + format.
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.9f));
+        g.drawText (format, r, juce::Justification::centredLeft, false);
 
         if (upd)   // bright static dot just right of the version (update available)
         {
@@ -69,12 +66,13 @@ private:
     //--- the CallOutBox content ----------------------------------------------
     struct Panel final : public juce::Component
     {
-        // The build-info block, assembled from the baked constants (mirrors TabbyEQ's (i)):
+        // The build-info block, assembled from the baked constants + the running format (mirrors EQ's (i)):
         //   OrbitCab v1.6.0-3-g1a2b3c4
-        //   build 20260703191423 · arm64
+        //   VST3 · macOS arm64
+        //   build 20260703191423
         //   g1a2b3c4 (dirty) · oleh
         //   core v0.3.0 (local)
-        static juce::String buildInfoText()
+        static juce::String buildInfoText (const juce::String& format)
         {
             using namespace orbitcab::version;
             juce::String hashLine = juce::String ("g") + kGitHash;
@@ -83,14 +81,14 @@ private:
 
             juce::StringArray lines;
             lines.add (juce::String ("OrbitCab ") + kDescribe);
-            lines.add (juce::String ("build ") + juce::String (kBuildNumber)
-                       + juce::String::fromUTF8 (" \xc2\xb7 ") + kArch);
+            lines.add (format + juce::String::fromUTF8 (" \xc2\xb7 ") + kOS + " " + kArch);
+            lines.add (juce::String ("build ") + juce::String (kBuildNumber));
             lines.add (hashLine);
             lines.add (juce::String ("core ") + kCoreVersion);
             return lines.joinIntoString ("\n");
         }
 
-        explicit Panel (orbitcab::UpdateChecker& uc, VersionBadge& ownerBadge)
+        Panel (orbitcab::UpdateChecker& uc, VersionBadge& ownerBadge, juce::String pluginFormat)
             : checker (uc), owner (&ownerBadge)
         {
             title.setText ("OrbitCab", juce::dontSendNotification);
@@ -98,7 +96,7 @@ private:
             title.setColour (juce::Label::textColourId, juce::Colour (OrbitCabLookAndFeel::kText));
             addAndMakeVisible (title);
 
-            version.setText (buildInfoText(), juce::dontSendNotification);
+            version.setText (buildInfoText (pluginFormat), juce::dontSendNotification);
             version.setFont (juce::FontOptions (11.0f).withName (juce::Font::getDefaultMonospacedFontName()));
             version.setJustificationType (juce::Justification::topLeft);
             version.setMinimumHorizontalScale (1.0f);
@@ -134,7 +132,7 @@ private:
                 showUpdate (checker.storedLatest(),
                             juce::URL ("https://github.com/darwinscat/orbitcab/releases/latest"));
 
-            setSize (268, 204);
+            setSize (268, 220);
         }
 
         void resized() override
@@ -142,7 +140,7 @@ private:
             auto r = getLocalBounds().reduced (14, 12);
             title.setBounds   (r.removeFromTop (20));
             link.setBounds    (r.removeFromTop (18));
-            version.setBounds (r.removeFromTop (62));   // 4-line monospaced build block
+            version.setBounds (r.removeFromTop (76));   // 5-line monospaced build block
             r.removeFromTop (6);
             check.setBounds   (r.removeFromTop (26));
             r.removeFromTop (4);
@@ -204,7 +202,7 @@ private:
 
     void showPopup()
     {
-        auto panel = std::make_unique<Panel> (checker, *this);
+        auto panel = std::make_unique<Panel> (checker, *this, format);
 
         // Parent the call-out to the editor, NOT the desktop (the nullptr overload). A
         // desktop call-out outlives the editor: close the plugin window with it open and it
@@ -218,6 +216,7 @@ private:
     }
 
     orbitcab::UpdateChecker& checker;
+    juce::String            format;   // running plugin format (VST3 / AU / CLAP / Standalone)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VersionBadge)
 };
