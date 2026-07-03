@@ -113,6 +113,15 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     juce::AudioBuffer<float> buffer (io, numChannels, numSamples);
     const int numCh = numChannels;
 
+    // Amp-section lane count. When the input was folded to a mono source (p.monoAmp — Input =
+    // Left/Right), run the NAM preamp / AMP EQ / poweramp on ONE lane: AmpStage has an explicit
+    // numChannels==1 branch that runs a single nam::DSP, so this halves the dominant NAM cost. We
+    // then duplicate ch0 -> the other channel(s) just before the cab, so the dry stash, both
+    // convolution lanes, mix, auto-level and meters keep running full-width (a mono source lands
+    // centred; a stereo IR still images L/R from the shared source; convolver tails stay warm).
+    // Stereo (monoAmp=false) => frontCh == numCh, i.e. unchanged v1 true-stereo behaviour.
+    const int frontCh = (p.monoAmp && numCh > 1) ? 1 : numCh;
+
     // DSP load meter: wall-clock each stage with a monotonic clock (a cheap userspace read — no
     // alloc/lock, RT-safe). Published as a smoothed % of the block's real-time budget at the end.
     using PerfClock = std::chrono::steady_clock;
@@ -204,19 +213,19 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       float* const* pio = buffer.getArrayOfWritePointers();
       preampBypassAlign.advance (pio, numCh, numSamples, preamp.latencySamples());
       if (p.preampOn)
-          preamp.process (pio, numCh, numSamples, /*normalize*/ true);
+          preamp.process (pio, frontCh, numSamples, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
       else
           for (int ch = 0; ch < numCh; ++ch)
               juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), numSamples);
       nsPre = elapsedNs (a); }
     { const auto a = PerfClock::now();
-      ampEq.process (buffer.getArrayOfWritePointers(), numCh, numSamples, p.eq);
+      ampEq.process (buffer.getArrayOfWritePointers(), frontCh, numSamples, p.eq);
       nsEq = elapsedNs (a); }
     { const auto a = PerfClock::now();
       // The poweramp seam: ampOn gates the stage; powerAmpMode picks NAM capture (`amp`, default)
       // vs the white-box tube stage. The router crossfades click-free on a live capture<->tube
       // switch and keeps the NAM path bit-identical to the legacy `if (p.ampOn) amp.process(...)`.
-      powerAmpRouter.process (buffer.getArrayOfWritePointers(), numCh, numSamples,
+      powerAmpRouter.process (buffer.getArrayOfWritePointers(), frontCh, numSamples,
                               p.ampOn, p.powerAmpMode, p.tube, amp);
       nsPwr = elapsedNs (a); }
 
@@ -228,6 +237,12 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     const bool routeSnapPending = powerAmpRouter.fadeJustStarted()
                                || (routeChanged && route / 100 != oldRoute / 100
                                    && ! powerAmpRouter.isFading());
+
+    // Mono amp fold: the front stages ran on ch0 only (frontCh=1) — copy the fully-amped ch0 onto
+    // the remaining channel(s) NOW, before the dry stash, so everything downstream (dry reference,
+    // both cab lanes, mix, auto-level, meters) sees a full-width post-amp signal. No-op in stereo.
+    for (int ch = frontCh; ch < numCh; ++ch)
+        buffer.copyFrom (ch, 0, buffer, 0, 0, numSamples);
 
     // --- stash the dry (now post-amp) signal for the per-slot Dry/Wet blend, before the filters ---
     for (int ch = 0; ch < numCh; ++ch)

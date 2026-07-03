@@ -685,12 +685,16 @@ void OrbitCabAudioProcessorEditor::applyWaveformScale()
 void OrbitCabAudioProcessorEditor::openSettings()
 {
     auto panel = std::make_unique<SettingsPanel> (
-        processorRef.getHeadTrim(), dryWetPref, spectrumEnabled, waveLogPref, waveFloorPref,
+        processorRef.getHeadTrim(), processorRef.getInputSource(), dryWetPref, spectrumEnabled, waveLogPref, waveFloorPref,
         showTubesPref,
         [this] (bool on)                                   // HEAD: persisted session setting
         {
             processorRef.setHeadTrim (on);
             pushFiltersToWave();                           // refresh the waveform head overlay
+        },
+        [this] (int mode)                                  // INPUT source: persisted session setting (Stereo/Left/Right)
+        {
+            processorRef.setInputSource (mode);
         },
         [this] (bool on)                                   // Dry/Wet sliders: global view preference
         {

@@ -5,6 +5,7 @@
 // original signal-path behaviour without a host or GUI.
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_core/juce_core.h>          // juce::File / juce::MemoryBlock for the real-.nam tests
 
 #include "core/CabEngine.h"
 
@@ -128,6 +129,133 @@ struct CabEngineTest : juce::UnitTest
             float tail = 0.0f;
             for (int n = 1; n < block; ++n) tail = juce::jmax (tail, std::abs (buf.getSample (0, n)));
             expect (tail < 0.2f, "delta IR should leave no tail");
+        }
+
+        beginTest ("mono-amp fold is sonically transparent for a mono (identical L/R) source");
+        {
+            // A folded mono source has identical L/R. The monoAmp CPU path runs the amp section on
+            // ch0 ONLY (frontCh=1 => AmpStage's single-instance branch => 1x NAM) then duplicates
+            // ch0 before the cab. For identical input this MUST produce bit-identical output to the
+            // full-stereo path — the core guarantee: Mono halves the amp/NAM cost WITHOUT changing
+            // the sound. EQ is ON so the amp section genuinely runs at a narrowed width (otherwise
+            // the two paths would be trivially equal even if the fold were broken).
+            auto fillMono = [] (juce::AudioBuffer<float>& b)
+            {
+                for (int n = 0; n < b.getNumSamples(); ++n)
+                {
+                    const float s = std::sin (0.05f * (float) n) * 0.5f;
+                    b.setSample (0, n, s); b.setSample (1, n, s);   // identical L/R = post-fold mono
+                }
+            };
+            Params base; base.autoLevel = false; base.aLoaded = false; base.slot[0].dryWet01 = 1.0f;
+            base.eq.on = true; base.eq.bassDb = 6.0f; base.eq.trebleDb = -4.0f;   // a stage that actually processes
+
+            Params pMono = base;   pMono.monoAmp   = true;
+            Params pStereo = base; pStereo.monoAmp = false;
+
+            CabEngine em; em.prepare (sr, block, 2, pMono);
+            CabEngine es; es.prepare (sr, block, 2, pStereo);
+            juce::AudioBuffer<float> bm (2, block); fillMono (bm);
+            juce::AudioBuffer<float> bs (2, block); fillMono (bs);
+            run (em, bm, pMono);
+            run (es, bs, pStereo);
+            expect (maxAbsDiff (bm, bs) < 1.0e-6f, "mono-amp path changed the sound of a mono source");
+
+            float lr = 0.0f;   // and the mono path's own output must be perfectly centred (L == R)
+            for (int n = 0; n < block; ++n) lr = juce::jmax (lr, std::abs (bm.getSample (0, n) - bm.getSample (1, n)));
+            expect (lr < 1.0e-7f, "mono-amp output is not centred (L != R)");
+        }
+
+        beginTest ("mono-amp sources ch0 only + centres an asymmetric input");
+        {
+            // With monoAmp the engine amps ch0 and duplicates it before the cab, so even an
+            // asymmetric stereo input yields a centred (L==R) output and ch1's original is discarded.
+            // (Host-side selects L or R into ch0; here we prove the engine centres + drops ch1.)
+            Params p; p.autoLevel = false; p.aLoaded = false; p.slot[0].dryWet01 = 1.0f; p.monoAmp = true;
+            CabEngine e; e.prepare (sr, block, 2, p);
+            juce::AudioBuffer<float> buf (2, block);
+            for (int n = 0; n < block; ++n)
+            {
+                buf.setSample (0, n, std::sin (0.05f * (float) n) * 0.5f);   // ch0 = signal
+                buf.setSample (1, n, std::sin (0.11f * (float) n) * 0.3f);   // ch1 = DIFFERENT (must be dropped)
+            }
+            run (e, buf, p);
+            float lr = 0.0f;
+            for (int n = 0; n < block; ++n) lr = juce::jmax (lr, std::abs (buf.getSample (0, n) - buf.getSample (1, n)));
+            expect (lr < 1.0e-7f, "mono-amp did not centre an asymmetric input");
+        }
+
+        // The two tests above fold through the EQ, which does NOT catch a regression that reverts only
+        // the NAM stages to full width (correct output, silently 2x NAM CPU — the fatal-on-old-laptop
+        // case). These two exercise a REAL nam::DSP through the engine seam (preamp + poweramp router).
+        beginTest ("mono-amp NAM path is sonically transparent for a mono source (preamp NAM)");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
+            expect (nf.existsAsFile(), "test resource .nam must exist: " + nf.getFullPathName());
+            juce::MemoryBlock mb; if (nf.existsAsFile()) nf.loadFileAsData (mb);
+            if (mb.getSize() > 0)
+            {
+                // Identical L/R = a folded mono source. Mono runs the preamp NAM on ch0 ONLY then
+                // duplicates it → output must match the full-stereo path bit-for-bit. autoLevel off so
+                // no context-dependent makeup can mask a difference; the NAM is the nonlinear stage.
+                Params base; base.autoLevel = false; base.aLoaded = false; base.slot[0].dryWet01 = 1.0f;
+                base.preampOn = true;
+                Params pMono = base;   pMono.monoAmp   = true;
+                Params pStereo = base; pStereo.monoAmp = false;
+
+                CabEngine em; em.prepare (sr, block, 2, pMono);
+                CabEngine es; es.prepare (sr, block, 2, pStereo);
+                expect (em.loadPreampModelBytes (mb.getData(), mb.getSize()), "preamp model loads (mono engine)");
+                expect (es.loadPreampModelBytes (mb.getData(), mb.getSize()), "preamp model loads (stereo engine)");
+
+                auto fillMono = [] (juce::AudioBuffer<float>& b)
+                {
+                    for (int n = 0; n < b.getNumSamples(); ++n)
+                    { const float s = std::sin (0.05f * (float) n) * 0.4f; b.setSample (0, n, s); b.setSample (1, n, s); }
+                };
+                juce::AudioBuffer<float> bm (2, block), bs (2, block);
+                for (int i = 0; i < 8; ++i)   // warm both identically, then compare the settled block
+                { fillMono (bm); fillMono (bs); run (em, bm, pMono); run (es, bs, pStereo); }
+
+                expect (maxAbsDiff (bm, bs) < 1.0e-5f, "mono NAM path changed the sound vs stereo for a mono source");
+                float lr = 0.0f;
+                for (int n = 0; n < block; ++n) lr = juce::jmax (lr, std::abs (bm.getSample (0, n) - bm.getSample (1, n)));
+                expect (lr < 1.0e-6f, "mono NAM output is not centred (L != R)");
+            }
+           #endif
+        }
+
+        beginTest ("mono-amp NAM path centres an asymmetric input (poweramp CAPTURE, router seam)");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
+            juce::MemoryBlock mb; if (nf.existsAsFile()) nf.loadFileAsData (mb);
+            if (mb.getSize() > 0)
+            {
+                // monoAmp sources ch0 only and duplicates before the cab, so even asymmetric input must
+                // come out centred (L==R) — via the PowerAmpRouter path (ampOn + capture), which the
+                // preamp test doesn't exercise. A dropped duplicate or un-narrowed router → L != R.
+                Params p; p.autoLevel = false; p.aLoaded = false; p.slot[0].dryWet01 = 1.0f;
+                p.monoAmp = true; p.ampOn = true; p.powerAmpMode = PowerAmpMode::capture;
+                CabEngine e; e.prepare (sr, block, 2, p);
+                expect (e.loadAmpModelBytes (mb.getData(), mb.getSize()), "capture model loads");
+
+                juce::AudioBuffer<float> buf (2, block);
+                float lr = 0.0f;
+                for (int i = 0; i < 8; ++i)   // warm, refilling asymmetric input each block
+                {
+                    for (int n = 0; n < block; ++n)
+                    {
+                        buf.setSample (0, n, std::sin (0.05f * (float) n) * 0.4f);   // ch0 = signal
+                        buf.setSample (1, n, std::sin (0.11f * (float) n) * 0.3f);   // ch1 = DIFFERENT (must be dropped)
+                    }
+                    run (e, buf, p);
+                }
+                for (int n = 0; n < block; ++n) lr = juce::jmax (lr, std::abs (buf.getSample (0, n) - buf.getSample (1, n)));
+                expect (lr < 1.0e-6f, "mono NAM (poweramp capture) did not centre an asymmetric input");
+            }
+           #endif
         }
     }
 };

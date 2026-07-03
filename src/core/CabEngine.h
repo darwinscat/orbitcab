@@ -188,6 +188,7 @@ private:
     {
         float inputGainDb = 0.0f; float mixAB01 = 0.0f;
         bool  aLoaded = false, bLoaded = false;
+        bool  monoAmp = false;                 // amp-lane fold: changes the levelled signal → route makeup depends on it
         EqParams   eq;
         TubeParams tube;
         SlotParams slotA, slotB;               // incl. filters / dryWet / phase / mute
@@ -204,7 +205,7 @@ private:
         auto qHz = [] (float v) { return std::round (v); };                   // 1 Hz grid
         LevelContext c;
         c.inputGainDb = qDb (p.inputGainDb); c.mixAB01 = q01 (p.mixAB01);
-        c.aLoaded = p.aLoaded; c.bLoaded = p.bLoaded;
+        c.aLoaded = p.aLoaded; c.bLoaded = p.bLoaded; c.monoAmp = p.monoAmp;
         c.eq = p.eq; c.tube = p.tube; c.slotA = p.slot[0]; c.slotB = p.slot[1];
         c.eq.bassDb = qDb (c.eq.bassDb); c.eq.midDb = qDb (c.eq.midDb);
         c.eq.trebleDb = qDb (c.eq.trebleDb); c.eq.presenceDb = qDb (c.eq.presenceDb);
