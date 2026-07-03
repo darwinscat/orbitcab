@@ -22,9 +22,10 @@
 class SettingsPanel final : public juce::Component
 {
 public:
-    SettingsPanel (bool headOn, bool dryWetOn, bool spectrumOn, bool waveLogOn, int waveFloorDb,
+    SettingsPanel (bool headOn, int inputSource, bool dryWetOn, bool spectrumOn, bool waveLogOn, int waveFloorDb,
                    bool showTubes,
                    std::function<void (bool)> onHead,
+                   std::function<void (int)>  onInputSource,
                    std::function<void (bool)> onDryWet,
                    std::function<void (bool)> onSpectrum,
                    std::function<void (bool)> onWaveLog,
@@ -41,6 +42,22 @@ public:
         setUp (head,     "Trim leading silence", headOn,
                "Snap each IR to its onset — drops the baked-in cabinet pre-delay so dry/wet and A/B blends stay phase-aligned.",
                std::move (onHead));
+
+        // INPUT source — fold the stereo input to one channel copied to both, for a mono source
+        // (e.g. a guitar) on a single interface input. Stereo = unchanged. Audio-affecting +
+        // session-scoped, so it lives in this "SAVED WITH THE PROJECT" section.
+        setCaption (inputCap, "Input");
+        inputSrc.addItem ("Stereo (L/R)", 1);   // id 1 → mode 0
+        inputSrc.addItem ("Left (mono)",  2);   // id 2 → mode 1
+        inputSrc.addItem ("Right (mono)", 3);   // id 3 → mode 2
+        inputSrc.setSelectedId (juce::jlimit (0, 2, inputSource) + 1, juce::dontSendNotification);
+        inputSrc.setTooltip ("Take the input from one channel and send it to both outputs - for a mono source (a guitar) on a single interface input. Stereo = process left and right independently (unchanged).");
+        inputSrc.onChange = [this, fn = std::move (onInputSource)]
+        {
+            if (fn) fn (juce::jlimit (0, 2, inputSrc.getSelectedId() - 1));
+        };
+        addAndMakeVisible (inputSrc);
+
         setUp (dryWet,   "Dry/Wet sliders", dryWetOn,
                "Show a per-slot Dry/Wet mix slider under each checkbox row (blend the raw input back in).",
                std::move (onDryWet));
@@ -101,7 +118,7 @@ public:
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 372);
+        setSize (264, 402);
     }
 
     void resized() override
@@ -111,6 +128,10 @@ public:
         r.removeFromTop (6);
         sessionCap.setBounds (r.removeFromTop (14));
         head.setBounds       (r.removeFromTop (26));
+        r.removeFromTop (4);
+        auto inputRow = r.removeFromTop (26);
+        inputCap.setBounds (inputRow.removeFromLeft (58).withTrimmedTop (6));
+        inputSrc.setBounds (inputRow.removeFromLeft (118).reduced (0, 3));
         r.removeFromTop (7);
         dividerY = r.getY();                            // section divider, drawn in paint()
         r.removeFromTop (8);
@@ -162,10 +183,10 @@ private:
         addAndMakeVisible (l);
     }
 
-    juce::Label        title, sessionCap, globalCap, floorCap, ampCap;
+    juce::Label        title, sessionCap, globalCap, floorCap, ampCap, inputCap;
     juce::ToggleButton head, dryWet, spectrum, waveLog, showTubesBtn;
     juce::TextButton   manageBtn, managePreampBtn;
-    juce::ComboBox     waveFloor;
+    juce::ComboBox     waveFloor, inputSrc;
     int                dividerY = 0, ampDividerY = 0;   // section dividers (set in resized(), drawn in paint())
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)

@@ -191,6 +191,17 @@ public:
     bool getHeadTrim() const { return (bool) apvts.state.getProperty ("headTrim", true); }
     void setHeadTrim (bool on);
 
+    // INPUT source — fold the stereo input down to ONE channel copied to both channels, so a
+    // mono source on a single interface input (e.g. a guitar in the left in) is processed
+    // identically L/R and lands centred in both outputs. 0 = Stereo (unchanged), 1 = Left→mono,
+    // 2 = Right→mono. A session setting stored as the "inputSource" state property (rides
+    // session save/load, snapshots, undo) — NOT a host param. Toggled from the gear settings
+    // panel on the message thread; the audio thread reads a cheap atomic mirror in processBlock.
+    // Default (and any old session missing the property) = 0, so behaviour is unchanged out of
+    // the box. See setInputSource.
+    int  getInputSource() const { return juce::jlimit (0, 2, (int) apvts.state.getProperty ("inputSource", 0)); }
+    void setInputSource (int mode);
+
     // Slot IR reference for persistence + editor sync. `bundled` => `ref` is a
     // BinaryData filename; otherwise `ref` is an absolute file path. Empty ref = none.
     // The slot's full IR identity (v4 single source of truth) + thin back-compat wrappers.
@@ -385,6 +396,11 @@ private:
     bool  softStartArmed = true;
     float softStart      = 1.0f;
     float softStartStep  = 0.0f;
+
+    // RT mirror of the "inputSource" state property (0 Stereo / 1 Left / 2 Right). Written on the
+    // message thread by setInputSource + on any state restore (applyLive), read lock-free in
+    // processBlock — a plain ValueTree read there would violate the RT rule.
+    std::atomic<int> inputSourceMode { 0 };
 
     juce::StringArray userIRPaths;             // recent user-opened IRs (GLOBAL, per-machine — see AppPreferences)
     static constexpr int kMaxUserIRs = 50;

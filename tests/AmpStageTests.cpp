@@ -105,6 +105,43 @@ struct AmpStageTest : juce::UnitTest
             expect (L == L0 && R == R0);          // no model loaded → signal untouched
             expect (amp.latencySamples() == 0);
         }
+
+        // The MONO-CPU contract that CabEngine's frontCh path relies on: with a real model loaded,
+        // process(numChannels=1) must run EXACTLY ONE nam::DSP instance and NEVER touch ch1 — that is
+        // the whole ½-CPU win (fatal-on-old-laptop if it silently runs both). A distinct ch1 sentinel
+        // that stays bit-exact proves the 2nd instance did not run; ch1 changing = the mono lane count
+        // regressed (e.g. someone passed numCh instead of frontCh). numChannels=2 must run both.
+        beginTest ("NAM lane contract: mono runs one instance (ch1 untouched); stereo runs both");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
+            expect (nf.existsAsFile(), "test resource .nam must exist: " + nf.getFullPathName());
+            juce::MemoryBlock mb; if (nf.existsAsFile()) nf.loadFileAsData (mb);
+            if (mb.getSize() > 0)
+            {
+                AmpStage amp; amp.prepare (48000.0, 512);
+                expect (amp.loadModelFromMemory (mb.getData(), mb.getSize()), "48k factory .nam loads (live synchronously)");
+
+                {   // MONO: numChannels=1 → one instance, ch1 must be left exactly as-is
+                    auto a = sine (512, 48000.0, 220.0, 0.3f);
+                    auto b = sine (512, 48000.0, 330.0, 0.4f);   // ch1 SENTINEL (a NAM would visibly alter it)
+                    const auto a0 = a, b0 = b;
+                    float* io[2] = { a.data(), b.data() };
+                    amp.process (io, 1, 512, /*normalize*/ true);
+                    expect (b == b0, "mono (numChannels=1) wrote ch1 — a 2nd NAM ran; the ½-CPU contract is broken");
+                    expect (a != a0, "mono lane did not process ch0 — the model is not running");
+                }
+                {   // STEREO: numChannels=2 → both instances run, ch1 processed
+                    auto a = sine (512, 48000.0, 220.0, 0.3f);
+                    auto b = sine (512, 48000.0, 330.0, 0.4f);
+                    const auto b0 = b;
+                    float* io[2] = { a.data(), b.data() };
+                    amp.process (io, 2, 512, /*normalize*/ true);
+                    expect (b != b0, "stereo (numChannels=2) must process ch1 via the 2nd instance");
+                }
+            }
+           #endif
+        }
     }
 };
 

@@ -93,6 +93,9 @@ struct Params
     bool  autoLevel    = true;
     bool  aLoaded      = true;   // slot A has an IR; false = empty (no cab → dry passthrough on A)
     bool  bLoaded      = false;  // slot B currently has an IR (gates B + MIX)
+    bool  monoAmp      = false;  // input folded to one channel (Input = Left/Right) → run the amp
+                                 // section (preamp/EQ/poweramp) on ONE lane + duplicate before the
+                                 // cab (½ the NAM cost). false = true-stereo (v1). Set by the adapter.
 
     EqParams   eq;               // amp tone EQ, between the preamp and poweramp NAM stages
     TubeParams tube;             // white-box tube poweramp controls (Tube mode only)

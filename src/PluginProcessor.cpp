@@ -94,6 +94,10 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     // property (not a host param) so it rides save/load + snapshots + undo. See setHeadTrim.
     apvts.state.setProperty ("headTrim", true, nullptr);
 
+    // INPUT source default: Stereo (0) — unchanged behaviour. Session property + RT atomic
+    // mirror, like headTrim; see setInputSource / processBlock.
+    apvts.state.setProperty ("inputSource", 0, nullptr);
+
     inputGainParam = apvts.getRawParameterValue ("inputGain");
     bypassParam    = apvts.getRawParameterValue ("bypass");
     mixABParam     = apvts.getRawParameterValue ("mixAB");
@@ -332,6 +336,17 @@ void OrbitCabAudioProcessor::setHeadTrim (bool on)
     apvts.state.setProperty ("headTrim", on, nullptr);
     pendingTrimReloadA.store (true, std::memory_order_relaxed);
     pendingTrimReloadB.store (true, std::memory_order_relaxed);
+}
+
+void OrbitCabAudioProcessor::setInputSource (int mode)
+{
+    // Message thread (gear settings). Persist on the state tree (rides save/load + snapshots +
+    // undo) and update the RT mirror the audio thread reads in processBlock. No audio work here
+    // (RT rule) — the fold itself is a memcpy in processBlock, so the change takes effect on the
+    // next block with no reload.
+    mode = juce::jlimit (0, 2, mode);
+    apvts.state.setProperty ("inputSource", mode, nullptr);
+    inputSourceMode.store (mode, std::memory_order_relaxed);
 }
 
 void OrbitCabAudioProcessor::loadBundledIR()
@@ -868,6 +883,11 @@ void OrbitCabAudioProcessor::applyLive (const orbitcab::state::SoundState& s)
     resolveSlot (0, s.slots[0]);
     resolveSlot (1, s.slots[1]);
 
+    // replaceState swaps in the restored "inputSource" property silently (no parameterChanged for
+    // a tree property) — refresh the RT mirror the audio thread reads. An old session missing the
+    // property reads back as 0 (Stereo) → unchanged, so no separate back-compat block is needed.
+    inputSourceMode.store (getInputSource(), std::memory_order_relaxed);
+
     // replaceState restores "ampSel"/"preampSel" silently (no parameterChanged for a tree
     // property), so a snapshot switch / undo / redo to a sound with a DIFFERENT amp must re-resolve
     // both models — else the old ones keep running. The 30 Hz poll picks this up off the audio thread.
@@ -1028,10 +1048,30 @@ void OrbitCabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (int ch = numCh; ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, numSamples);
 
-    // The whole signal path lives in the headless core (cab::CabEngine). Pack the
-    // current parameters (RT-safe atomic loads) and hand it the planar channels in
-    // place; `isNonRealtime()` lets it skip the spectrum capture during a bounce.
-    engine.process (buffer.getArrayOfWritePointers(), numCh, numSamples, packParams(), isNonRealtime());
+    // INPUT source fold (routing after the host/standalone device selector): optionally copy ONE
+    // input channel over both, so a mono source on a single input is processed identically L/R and
+    // lands centred in both outputs. The core runs each channel as an independent guitar, so folding
+    // here (before it) makes both cab paths carry the same signal. RT-safe: atomic read + one memcpy;
+    // Stereo (0) is a no-op, mono buses (numCh < 2) skip.
+    // ONE atomic load for the whole block — the fold below and the engine's mono-amp flag must
+    // agree (two separate loads could tear across a UI write → one inconsistent block).
+    const int srcMode = inputSourceMode.load (std::memory_order_relaxed);
+    if (numCh >= 2)
+    {
+        switch (srcMode)
+        {
+            case 1: buffer.copyFrom (1, 0, buffer, 0, 0, numSamples); break;   // Left  → both channels
+            case 2: buffer.copyFrom (0, 0, buffer, 1, 0, numSamples); break;   // Right → both channels
+            default: break;                                                     // Stereo — unchanged
+        }
+    }
+
+    // The whole signal path lives in the headless core (cab::CabEngine). Pack the current
+    // parameters (RT-safe atomic loads); a mono fold (Left/Right) tells the engine to run the amp
+    // section on a single lane (½ the NAM cost). `isNonRealtime()` skips spectrum capture on a bounce.
+    auto params = packParams();
+    params.monoAmp = (srcMode != 0);
+    engine.process (buffer.getArrayOfWritePointers(), numCh, numSamples, params, isNonRealtime());
 
     // One-shot soft-start: fade the output up from silence on the first non-silent block
     // after prepareToPlay / releaseResources, to mask the engine's auto-level + convolver
