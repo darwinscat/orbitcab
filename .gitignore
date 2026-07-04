@@ -47,11 +47,14 @@ notarize-credentials*
 CLAUDE.md
 .claude/
 
-# Preamp NAM captures — resources/preamps/ is the SHIPPED factory set (fully tracked). Drop private or
-# experimental captures into resources/preamps-local/ instead: CMake still embeds them on a local build,
-# but they're gitignored, so they're never committed / shipped.
+# Preamp NAM captures — resources/preamps/ is the SHIPPED factory set (fully tracked, as packed .namz).
+# Drop private or experimental captures into resources/preamps-local/ instead: CMake still embeds them on
+# a local build, but they're gitignored, so they're never committed / shipped. Poweramps are local-only.
+# Both raw .nam (masters) and packed .namz are ignored in these two dirs; the tracked set ships as .namz.
 resources/preamps-local/*.nam
+resources/preamps-local/*.namz
 resources/poweramps/*.nam
+resources/poweramps/*.namz
 
 # Stray build/tool logs
 *.log

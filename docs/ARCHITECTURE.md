@@ -177,6 +177,14 @@ A/B/C/D register's, a portable preset only the live one. On restore `applyPowera
 pool, else resolves from the library, so a project is **reproducible** even on a machine without
 that capture (or a public build with no factory amps).
 
+**v6** adds `<PreampPool>` (+ the `preampSel` property) — the same, for the second/preamp NAM stage.
+**v7** stores each pooled NAM as **`.namz`** (packed float32, ~2.5× smaller than the old deflated raw
+JSON) rather than `deflate(raw .nam)`; the reader magic-sniffs the embedded blob and accepts **both**,
+so old v5/v6 sessions still restore (their gzip pool entries are inflated then re-packed to `.namz`),
+and an older build reading a v7 pool just fails to inflate the `.namz` and falls back to the library —
+the same graceful degradation as v4↔v5. The `.namz` codec is the single embedded/library currency for
+NAM captures; see **[`NAMZ-FORMAT.md`](NAMZ-FORMAT.md)**.
+
 Two non-param settings ride alongside the APVTS params:
 
 - **`headTrim`** — a property on the APVTS state tree (default on). Audio-affecting (it

@@ -7,6 +7,7 @@
 #include <NAM/get_dsp.h>    // nam::get_dsp(path|json)
 
 #include "StreamResampler.h"   // cab::StreamResampler (header-only, unit-tested separately)
+#include "NamCodec.h"          // namz:: — load path accepts BOTH raw .nam JSON and packed .namz
 
 #include <algorithm>
 #include <atomic>
@@ -245,11 +246,27 @@ namespace
 
 bool AmpStage::loadModelFromMemory (const void* data, std::size_t size, float trimDb)
 {
+    // Accept BOTH the raw .nam JSON and our packed .namz (weights as float32 + deflate). A packed
+    // blob is unpacked to the equivalent JSON first, then the existing parse→get_dsp path runs
+    // unchanged — .namz is bit-exact to the float32 the engine computes, so the model is identical.
+    // Off the audio thread (message-thread reload poll); the alloc/parse cost is fine here.
+    constexpr std::size_t kMaxUnpackedNamBytes = 64u * 1024u * 1024u;   // zip-bomb guard on unpack
+
     std::unique_ptr<ModelSet> set;
     try
     {
-        auto j = nlohmann::json::parse (static_cast<const char*> (data),
-                                        static_cast<const char*> (data) + size);
+        juce::MemoryBlock unpacked;                    // owns the reconstructed JSON iff input was packed
+        const char* begin = static_cast<const char*> (data);
+        const char* end   = begin + size;
+        if (namz::isNamz (data, size))
+        {
+            unpacked = namz::unpack (data, size, kMaxUnpackedNamBytes);
+            if (unpacked.getSize() == 0)
+                return false;
+            begin = static_cast<const char*> (unpacked.getData());
+            end   = begin + unpacked.getSize();
+        }
+        auto j = nlohmann::json::parse (begin, end);
         set = buildSetFromJson (j);
     }
     catch (...) { return false; }

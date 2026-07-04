@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 2.1.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 2.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -271,6 +271,7 @@ target_sources(OrbitCab PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
     src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
+    src/core/NamCodec.cpp      # .nam <-> .namz packer (weights as float32 + deflate) — the .namz load/pack path
     src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
     src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
@@ -293,10 +294,11 @@ set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${OR
 # CONFIGURE_DEPENDS re-globs on build, so dropping a new preset in that folder ships it.
 file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/presets/*.orbitcab")
 
-# Bundled factory power-amp NAM models (prototype): every .nam in resources/poweramps/ is
-# embedded + exposed via BinaryData, selectable from the editor's poweramp radio buttons.
-# CONFIGURE_DEPENDS re-globs on build, so dropping in the trained .nam files ships them.
-file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.nam")
+# Bundled factory power-amp NAM models (prototype): every .namz (packed .nam — weights as float32 +
+# deflate, ~6x smaller; see src/core/NamCodec.h) in resources/poweramps/ is embedded + exposed via
+# BinaryData, selectable from the editor's poweramp radio buttons. CONFIGURE_DEPENDS re-globs on build,
+# so dropping in packed .namz files ships them. (Pack a raw capture with the `orbitcab_namz` tool.)
+file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.namz")
 
 # Bundled factory PRE-amp NAM models — the SECOND neural stage (input → preamp → poweramp → cab). Two
 # sources, both globbed: resources/preamps/ is the tracked, shipped factory set; resources/preamps-local/
@@ -304,8 +306,8 @@ file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}
 # These go into a SEPARATE binary-data target + namespace (PreampBinaryData), so they never bleed into the
 # poweramp's BinaryData enumeration.
 file(GLOB ORBITCAB_PREAMP_FILES CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps/*.nam"
-     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps-local/*.nam")
+     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps/*.namz"
+     "${CMAKE_CURRENT_SOURCE_DIR}/resources/preamps-local/*.namz")
 
 juce_add_binary_data(OrbitCabData
     SOURCES
@@ -344,8 +346,8 @@ juce_add_binary_data(OrbitCabData
 
 # Factory PRE-amp NAM models — a SEPARATE binary-data lib + namespace (PreampBinaryData) so the
 # preamp factory set is enumerated independently of the poweramp's BinaryData. The README.md is
-# the always-present placeholder source (juce_add_binary_data needs ≥1 file, and a public build
-# ships no .nam); the runtime only reads ".nam" entries, so it's ignored by the selector.
+# the always-present placeholder source (juce_add_binary_data needs ≥1 file); the runtime only reads
+# ".namz" entries (packed .nam), so the README is ignored by the selector.
 juce_add_binary_data(OrbitCabPreampData
     NAMESPACE   PreampBinaryData
     HEADER_NAME PreampBinaryData.h
@@ -402,6 +404,7 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -447,6 +450,7 @@ target_sources(orbitcab_fade_measure PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -493,6 +497,7 @@ target_sources(orbitcab_tube_audition PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -538,6 +543,7 @@ target_sources(orbitcab_poweramp_toggle_probe PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -577,6 +583,7 @@ target_sources(orbitcab_switch_probe PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -595,6 +602,46 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
     felitronics::eq
     juce::juce_audio_utils
     juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# namz codec — offline CLI packer + a focused unit-test gate. Both link ONLY nam_core
+# (for the vendored nlohmann/json include) + juce_core, so they build the `.nam`<->`.namz`
+# codec in isolation — independent of the cab DSP / felitronics-core.
+#   orbitcab_namz            : the CLI (tools/namz) — pack/unpack/pack-dir/verify a library
+#   orbitcab_namz_test       : NamCodecTests round-trip (fast CI gate for the codec)
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_namz PRODUCT_NAME "orbitcab-namz")
+target_sources(orbitcab_namz PRIVATE
+    tools/namz/namzpack.cpp
+    src/core/NamCodec.cpp
+)
+target_include_directories(orbitcab_namz PRIVATE src)
+target_compile_definitions(orbitcab_namz PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+target_link_libraries(orbitcab_namz PRIVATE
+    nam_core                       # vendored nlohmann/json include (header-only use)
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+juce_add_console_app(orbitcab_namz_test PRODUCT_NAME "orbitcab-namz-test")
+target_sources(orbitcab_namz_test PRIVATE
+    tests/TestMain.cpp
+    tests/NamCodecTests.cpp
+    src/core/NamCodec.cpp
+)
+target_include_directories(orbitcab_namz_test PRIVATE src)
+target_compile_definitions(orbitcab_namz_test PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+target_link_libraries(orbitcab_namz_test PRIVATE
+    nam_core                       # vendored nlohmann/json include
+    juce::juce_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
@@ -621,6 +668,7 @@ target_sources(orbitcab_latency_pdc_test PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )
@@ -671,10 +719,12 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
+    tests/NamCodecTests.cpp     # namz:: — .nam <-> .namz lossless codec round-trip (juce_core + nlohmann)
     tests/IrNormalizationTests.cpp # load-time IR reference-unity normalization — factory-cab acceptance gate
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
     src/core/AmpStage.cpp
+    src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
 )

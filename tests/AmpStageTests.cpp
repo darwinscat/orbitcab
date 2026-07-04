@@ -114,7 +114,7 @@ struct AmpStageTest : juce::UnitTest
         beginTest ("NAM lane contract: mono runs one instance (ch1 untouched); stereo runs both");
         {
            #ifdef ORBITCAB_RES_DIR
-            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.namz");
             expect (nf.existsAsFile(), "test resource .nam must exist: " + nf.getFullPathName());
             juce::MemoryBlock mb; if (nf.existsAsFile()) nf.loadFileAsData (mb);
             if (mb.getSize() > 0)
