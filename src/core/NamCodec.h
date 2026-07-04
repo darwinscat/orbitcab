@@ -14,9 +14,15 @@
 // full-precision DECIMAL STRINGS (~20 chars/number). The NAM engine loads those
 // weights into `std::vector<float>` (float32) — so the decimals are truncated to
 // float32 on load ANYWAY. `.namz` stores each weight as a 4-byte float32 instead
-// of ~20 bytes of text, then deflates: ~6x smaller than the raw JSON and BIT-EXACT
-// to what the engine computes (zero quality loss). Everything except the weight
-// arrays (architecture/config/metadata) is preserved verbatim in a JSON skeleton.
+// of ~20 bytes of text: ~5.5x smaller than the raw JSON and BIT-EXACT to what the
+// engine computes (zero quality loss). Everything except the weight arrays
+// (architecture/config/metadata) is preserved verbatim in a JSON skeleton.
+//
+// The float bytes are byte-plane SHUFFLED but NOT otherwise compressed (codec = store). The shuffle
+// is free and helps whatever OUTER compressor sees the file (the installer's LZMA, git's packing);
+// an inner deflate is redundant there — and it made the bytes non-deterministic and platform-
+// dependent (JUCE's gzip header). Storing raw keeps `.namz` DETERMINISTIC + identical across
+// platforms (they're committed to git), zlib-free, and faster to load (no inflate).
 //
 // Used in two places, one currency: the bundled factory library (shipped `.namz`)
 // and the embedded-in-preset/session pool (a self-contained saved sound). The
@@ -26,13 +32,13 @@
 // Wire format (all multi-byte ints little-endian; targets are all LE):
 //   [0..3]  magic  'N','A','M','Z'
 //   [4]     formatVersion (2; readers accept 1 = no meta block)
-//   [5]     codec   (0 = deflate/zlib via JUCE; 1 = zstd reserved)
-//   [6]     dtype   (0 = float32;               1 = float16 reserved, lossy)
+//   [5]     codec   (0 = store/uncompressed; 1 = deflate reserved, 2 = zstd reserved)
+//   [6]     dtype   (0 = float32;             1 = float16 reserved, lossy)
 //   [7]     flags   (bit0 = weight bytes shuffled into 4 byte-planes)
-//   [8..9]  metaLen (u16; v2 only) — bytes of an UNCOMPRESSED display-metadata JSON that follows,
-//           readable via readMeta() WITHOUT inflating the weights (tone_type/boost/gear/…). 0 = none.
+//   [8..9]  metaLen (u16; v2 only) — bytes of a display-metadata JSON that follows,
+//           readable via readMeta() (tone_type/boost/gear/…). 0 = none.
 //   [meta]  metaLen bytes of that JSON (v2 only)
-//   [..]    deflate stream; inflates to:
+//   [..]    body (codec 0 = stored verbatim):
 //             u32 skeletonLen
 //             u8  skeleton[skeletonLen]   (minified JSON; each numeric "weights"
 //                                          array replaced by its ordinal index)
@@ -46,13 +52,14 @@ namespace namz
 
 inline constexpr juce::uint8 kFormatVersion = 2;
 
-enum Codec : juce::uint8 { CodecDeflate = 0 /*, CodecZstd = 1 (reserved) */ };
+enum Codec : juce::uint8 { CodecStore = 0 /*, CodecDeflate = 1, CodecZstd = 2 (reserved) */ };
 enum Dtype : juce::uint8 { DtypeF32     = 0 /*, DtypeF16 = 1 (reserved)   */ };
 enum Flags : juce::uint8 { FlagShuffle  = 1u << 0 };
 
 struct PackOptions
 {
-    bool shuffle = true;   // split float bytes into 4 planes before deflate (+~6%, lossless)
+    bool shuffle = true;   // split float bytes into 4 planes (lossless) — free, and helps the OUTER
+                           // compressor (installer LZMA / git packing) squeeze the stored `.namz`
 
     // Optional string fields to set/overwrite in the top-level `metadata` object before packing
     // (provenance: modeled_by / name / gear_type / tone_type …). Purely descriptive — the DSP
@@ -74,7 +81,7 @@ juce::StringPairArray readMeta (const void* namz, std::size_t n);
 juce::MemoryBlock pack (const void* namJson, std::size_t n, PackOptions opts = {});
 
 // Inverse: `.namz` bytes → reconstructed `.nam` JSON bytes (weights rehydrated as
-// float32 numbers). `maxJsonBytes` caps the inflated output (zip-bomb guard).
+// float32 numbers). `maxJsonBytes` caps the reconstructed output (zip-bomb guard).
 // Returns an EMPTY block on failure / over-cap / unknown codec|dtype.
 juce::MemoryBlock unpack (const void* namz, std::size_t n, std::size_t maxJsonBytes);
 

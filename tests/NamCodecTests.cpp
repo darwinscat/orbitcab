@@ -11,7 +11,8 @@
 // CONTRACTS under test:
 //   • Lossless to float32: for every weight, unpack(pack(x)) == (float)x, bit-exact — at any nesting.
 //   • Non-weight metadata/config preserved (nested, null, unicode, big doubles, special chars).
-//   • Deterministic: pack(x) == pack(x), byte-identical. Idempotent: pack(unpack(pack(x))) == pack(x).
+//   • Deterministic: pack(x) == pack(x), byte-identical (codec = store, so also cross-platform — there is
+//     no compressor whose header could vary). Idempotent: pack(unpack(pack(x))) == pack(x).
 //   • shuffle on vs off round-trip to identical float32 weights.
 //   • isNamz true ONLY on the magic; unpack rejects (empty, no crash/hang/OOM) every malformed input.
 //   • v1 (no meta block) still unpacks; readMeta empty for v1/non-namz, typed fields for v2.
@@ -171,22 +172,32 @@ struct NamCodecTest : juce::UnitTest
 
         beginTest ("determinism: pack(x)==pack(x) byte-identical; idempotent pack(unpack(pack(x)))==pack(x)");
         {
+            // codec = store means pack() is a pure byte-serialization (no compressor, no mtime/OS byte),
+            // so the output is byte-identical run-to-run AND platform-to-platform — the property the
+            // git-committed factory `.namz` rely on.
             const auto s = defaultNam().dump();
             auto a = namz::pack (s.data(), s.size(), {});
             auto b = namz::pack (s.data(), s.size(), {});
-            expect (a.matches (b.getData(), b.getSize()), "two packs identical");
+            expect (a.getSize() == b.getSize() && a.matches (b.getData(), b.getSize()), "two packs byte-identical");
             auto rebuilt = namz::unpack (a.getData(), a.getSize(), kCap);
             auto c = namz::pack (rebuilt.getData(), rebuilt.getSize(), {});
             expect (a.matches (c.getData(), c.getSize()), "pack∘unpack∘pack is a fixed point");
         }
 
-        beginTest ("shuffle on vs off: identical float32 weights, both smaller than raw");
+        beginTest ("shuffle on vs off: identical float32 weights, size-neutral, both smaller than raw");
         {
-            const auto s = defaultNam().dump();
+            std::vector<double> big (2000);
+            for (size_t i = 0; i < big.size(); ++i) big[i] = std::sin ((double) i * 0.37) * 1.3;
+            const auto s = makeFlatNam (big).dump();               // big enough that packing is definitively smaller
             auto on  = namz::pack (s.data(), s.size(), { true });
             auto off = namz::pack (s.data(), s.size(), { false });
             expect (weightsBitExact (parseBlock (namz::unpack (on.getData(),  on.getSize(),  kCap)),
-                                     parseBlock (namz::unpack (off.getData(), off.getSize(), kCap))), "same weights");
+                                     parseBlock (namz::unpack (off.getData(), off.getSize(), kCap))),
+                    "same weights either way");
+            // Under codec = store the shuffle only PERMUTES the payload bytes — it doesn't compress — so
+            // the two blobs are byte-for-byte the same length (the shuffle's payoff is downstream, in the
+            // installer/git compressor, not here).
+            expectEquals ((int) on.getSize(), (int) off.getSize(), "shuffle is size-neutral without a compressor");
             expect (on.getSize() < s.size() && off.getSize() < s.size(), "both smaller than raw JSON");
         }
 
@@ -250,23 +261,21 @@ struct NamCodecTest : juce::UnitTest
             expect (namz::unpack (good.getData(), good.getSize(), kCap).getSize() > 0, "the untouched control still unpacks");
         }
 
-        beginTest ("corruption: truncation at every byte never crashes and returns empty");
+        beginTest ("corruption: truncation at every byte, and trailing junk, are rejected (empty, no crash)");
         {
             const auto tiny = makeFlatNam ({ 0.5, -0.5, 0.25 }).dump();   // small blob → cheap to fuzz every prefix
             auto good = namz::pack (tiny.data(), tiny.size(), { true });
-            // Contract: NEVER crash/garbage. A prefix is either rejected (empty) OR — if it lost only the
-            // trailing gzip checksum — decodes to the EXACT original. It must never yield partial/corrupt data.
-            bool safe = true;
+            // Contract (codec = store): the float payload must be EXACTLY the rest of the buffer, so there
+            // is no redundancy to self-heal from — ANY short prefix fails the length check and is rejected.
+            // Never a crash, never partial/garbage data.
+            bool allEmpty = true;
             for (size_t len = 0; len < good.getSize(); ++len)
-            {
-                const auto r = namz::unpack (good.getData(), len, kCap);
-                safe &= (r.getSize() == 0 || weightsBitExact (parseBlock (r), makeFlatNam ({ 0.5, -0.5, 0.25 })));
-            }
-            expect (safe, "every truncated prefix → empty or the exact original (never partial/garbage/crash)");
-            // trailing garbage after a valid blob: decodes the valid stream, ignores the junk — never corrupt.
+                allEmpty &= (namz::unpack (good.getData(), len, kCap).getSize() == 0);
+            expect (allEmpty, "every truncated prefix → empty (never partial/garbage/crash)");
+            // Trailing garbage after a valid blob lengthens the body past sum(lengths)*4, so the exact-length
+            // check rejects it too — store never silently ignores extra bytes.
             juce::MemoryBlock plus (good); plus.append ("junkjunk", 8);
-            const auto r = namz::unpack (plus.getData(), plus.getSize(), kCap);
-            expect (r.getSize() == 0 || weightsBitExact (parseBlock (r), makeFlatNam ({ 0.5, -0.5, 0.25 })), "trailing junk never corrupts");
+            expect (namz::unpack (plus.getData(), plus.getSize(), kCap).getSize() == 0, "trailing junk rejected");
         }
 
         beginTest ("corruption: metaLen that lies (larger than buffer) is rejected");
@@ -278,8 +287,10 @@ struct NamCodecTest : juce::UnitTest
             expect (namz::unpack (m.getData(), m.getSize(), kCap).getSize() == 0, "metaLen > buffer rejected");
         }
 
-        beginTest ("zip-bomb guard: reconstruction over maxJsonBytes is rejected");
+        beginTest ("output-cap guard: reconstruction over maxJsonBytes is rejected");
         {
+            // Even without a compressor the reconstructed JSON expands (float32 → ~15-char decimals), so the
+            // maxJsonBytes cap still matters: a small stored blob can rehydrate into a much larger `.nam`.
             const auto s = defaultNam().dump();
             auto good = namz::pack (s.data(), s.size(), {});
             expect (namz::unpack (good.getData(), good.getSize(), 8).getSize() == 0, "tiny cap rejects");
@@ -287,7 +298,7 @@ struct NamCodecTest : juce::UnitTest
         }
 
         //====================================================================== metadata / readMeta
-        beginTest ("v2 metadata: typed --set, header readable without inflate, skeleton mirrors it");
+        beginTest ("v2 metadata: typed --set, header readable without unpacking weights, skeleton mirrors it");
         {
             const auto s = defaultNam().dump();
             namz::PackOptions o;

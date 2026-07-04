@@ -6,9 +6,12 @@ A `.nam` file is JSON whose bulk is one or more flat `"weights"` arrays written 
 `NAM_SAMPLE_FLOAT`) loads those weights into `std::vector<float>` — so the decimals are truncated to
 **float32 on load anyway**.
 
-`.namz` stores each weight as a 4-byte **float32** instead of ~20 bytes of text, then deflates:
-**≈6× smaller** than the raw JSON, and **bit-exact** to what the engine computes (zero quality loss).
-Everything except the weight arrays (architecture / config / metadata) is preserved verbatim.
+`.namz` stores each weight as a 4-byte **float32** instead of ~20 bytes of text: **≈5.5× smaller** than
+the raw JSON, and **bit-exact** to what the engine computes (zero quality loss). Everything except the
+weight arrays (architecture / config / metadata) is preserved verbatim. The float bytes are byte-plane
+**shuffled** but **not compressed** (`codec = store`) — that keeps the bytes deterministic and identical
+across platforms (they're committed to git) and zlib-free, while the shuffle still helps whatever OUTER
+compressor sees the file (the installer's LZMA, git's packing).
 
 Used in two places, one currency:
 - the bundled **factory library** (shipped as `.namz` under `resources/preamps/` etc.), and
@@ -24,12 +27,13 @@ All multi-byte integers are **little-endian** (every shipping target is LE).
 ```
 [0..3]   magic          'N','A','M','Z'
 [4]      formatVersion  2   (readers still accept 1 = no meta block)
-[5]      codec          0 = deflate/zlib (via JUCE);  1 = zstd (reserved)
+[5]      codec          0 = store/uncompressed;       1 = deflate (reserved), 2 = zstd (reserved)
 [6]      dtype          0 = float32;                  1 = float16 (reserved, lossy)
-[7]      flags          bit0 = weight bytes shuffled into 4 byte-planes (lossless, ~+6%)
-[8..9]   metaLen        u16 — bytes of the UNCOMPRESSED display-metadata JSON that follows (v2 only)
-[meta]   metaLen bytes  small JSON of display fields — read via readMeta() WITHOUT inflating the weights
-[..]     deflate stream — inflates to:
+[7]      flags          bit0 = weight bytes shuffled into 4 byte-planes (lossless; groups the
+                               structured bytes so the OUTER compressor squeezes ~6% more)
+[8..9]   metaLen        u16 — bytes of the display-metadata JSON that follows (v2 only)
+[meta]   metaLen bytes  small JSON of display fields — read via readMeta() WITHOUT touching the weights
+[..]     body (codec 0 = stored verbatim):
              u32  skeletonLen
              u8   skeleton[skeletonLen]   minified JSON; each numeric "weights" array is replaced by
                                           its ordinal integer index
@@ -38,8 +42,8 @@ All multi-byte integers are **little-endian** (every shipping target is LE).
              u8   payload[]               sum(lengths) * 4 bytes of float32 (byte-shuffled iff flags bit0)
 ```
 
-`unpack` rebuilds the JSON (weights re-inserted as float32 numbers) and hands it to the existing
-`nlohmann::json::parse → nam::get_dsp` path, so the loaded model is identical.
+`unpack` un-shuffles the payload, rebuilds the JSON (weights re-inserted as float32 numbers) and hands it
+to the existing `nlohmann::json::parse → nam::get_dsp` path, so the loaded model is identical.
 
 ## Contracts (enforced by tests)
 
@@ -47,11 +51,12 @@ All multi-byte integers are **little-endian** (every shipping target is LE).
   depth (incl. `SlimmableContainer` submodels). Verified across `-0.0`, subnormals, `FLT_MAX`, and
   precision/tie cases.
 - **Metadata/config preserved** verbatim — nested objects, `null`, unicode, big doubles, escapes.
-- **Deterministic** — `pack(x)` is byte-identical across runs (outputs are committed to git); the codec
-  is idempotent (`pack(unpack(pack(x))) == pack(x)`).
+- **Deterministic** — `pack(x)` is byte-identical across runs **and across platforms** (no compressor,
+  so no zlib/gzip header variation); outputs are committed to git. The codec is idempotent
+  (`pack(unpack(pack(x))) == pack(x)`).
 - **Robust** — `unpack` never crashes/hangs/OOMs; every malformed input (bad magic, unknown
-  version/codec/dtype, truncation at any byte, a lying `metaLen`, a huge `numArrays`, a zip-bomb over
-  the output cap) is rejected cleanly and returns empty.
+  version/codec/dtype, truncation at any byte, a lying `metaLen`, a huge `numArrays`, an oversized body
+  over the output cap) is rejected cleanly and returns empty.
 - **Compatible** — `formatVersion 1` blobs (no meta block) still unpack; `readMeta` returns empty for
   v1 / non-`.namz`, and the typed display fields for v2.
 

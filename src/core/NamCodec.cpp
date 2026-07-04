@@ -19,38 +19,14 @@ namespace
 
     using json = nlohmann::json;
 
-    //== deflate/inflate (zlib via JUCE — same primitives the state pool uses) ==
-    juce::MemoryBlock deflate (const void* data, size_t n)
-    {
-        juce::MemoryBlock out;
-        {
-            juce::MemoryOutputStream mos (out, false);
-            juce::GZIPCompressorOutputStream gz (mos, 9);   // level 9; finalises on scope exit
-            gz.write (data, n);
-        }
-        return out;
-    }
+    // codec = store: the body is written verbatim (float bytes byte-plane shuffled, but NOT compressed).
+    // That keeps `.namz` DETERMINISTIC and byte-identical across platforms — they're committed to git —
+    // and zlib-free. The shuffle is free and helps whatever OUTER compressor sees the file (the installer's
+    // LZMA, git's packing); an inner deflate there is redundant. Corruption is caught by the length checks
+    // in unpack(), and the raw-body size is capped against the reconstructed-JSON cap (zip-bomb guard).
 
-    // Stream-inflate with a HARD output cap (a crafted tiny→huge "zip bomb" must not OOM the host).
-    juce::MemoryBlock inflate (const void* data, size_t n, size_t maxBytes)
-    {
-        juce::MemoryInputStream in (data, n, false);
-        juce::GZIPDecompressorInputStream gz (in);
-        juce::MemoryBlock out;
-        char buf[16384];
-        for (;;)
-        {
-            const int got = gz.read (buf, (int) sizeof (buf));
-            if (got <= 0)
-                break;
-            if (out.getSize() + (size_t) got > maxBytes) { out.setSize (0); break; }
-            out.append (buf, (size_t) got);
-        }
-        return out;
-    }
-
-    //== byte-plane shuffle: AoS float bytes -> SoA planes (helps deflate model the
-    //== structured sign/exponent bytes apart from the noisy mantissa). Reversible. ==
+    //== byte-plane shuffle: AoS float bytes -> SoA planes (groups the structured sign/exponent
+    //== bytes apart from the noisy mantissa, so the OUTER compressor models them better). Reversible. ==
     void shuffleInto (const float* src, size_t count, juce::uint8* dst)
     {
         const auto* s = reinterpret_cast<const juce::uint8*> (src);
@@ -201,7 +177,7 @@ juce::MemoryBlock pack (const void* namJson, std::size_t n, PackOptions opts)
     }
     catch (...) { return {}; }
 
-    // Assemble the plain (pre-deflate) payload.
+    // Assemble the stored body (skeleton + lengths + float payload; shuffled but not compressed).
     size_t totalFloats = 0;
     for (const auto& a : arrays)
         totalFloats += a.size();
@@ -233,19 +209,24 @@ juce::MemoryBlock pack (const void* namJson, std::size_t n, PackOptions opts)
         }
     }
 
-    const auto comp = deflate (plain.getData(), plain.getSize());
-
     juce::MemoryBlock out;
-    juce::MemoryOutputStream hdr (out, false);
-    hdr.write (kMagic, sizeof (kMagic));
-    hdr.writeByte ((char) kFormatVersion);
-    hdr.writeByte ((char) CodecDeflate);
-    hdr.writeByte ((char) DtypeF32);
-    hdr.writeByte ((char) (opts.shuffle ? FlagShuffle : 0));
-    hdr.writeShort ((short) (juce::uint16) headerMeta.size());   // metaLen (v2), little-endian
-    if (! headerMeta.empty())
-        hdr.write (headerMeta.data(), headerMeta.size());
-    hdr.write (comp.getData(), comp.getSize());
+    {
+        juce::MemoryOutputStream hdr (out, false);
+        hdr.write (kMagic, sizeof (kMagic));
+        hdr.writeByte ((char) kFormatVersion);
+        hdr.writeByte ((char) CodecStore);
+        hdr.writeByte ((char) DtypeF32);
+        hdr.writeByte ((char) (opts.shuffle ? FlagShuffle : 0));
+        hdr.writeShort ((short) (juce::uint16) headerMeta.size());   // metaLen (v2), little-endian
+        if (! headerMeta.empty())
+            hdr.write (headerMeta.data(), headerMeta.size());
+        hdr.write (plain.getData(), plain.getSize());                // body stored verbatim (no compression)
+    }
+    // The MemoryOutputStream MUST be destroyed (flushed) before we return `out`: it over-allocates the
+    // block and only trims it to the exact byte count on flush. Returning `out` while it's still open
+    // leaks that trailing slack — harmless to the old inflate path (it stopped at the stream end) but the
+    // store reader's exact-length check rejects it, so unpack() returned empty. It only surfaced on MSVC,
+    // where the return copies `out` before the stream's destructor trims it (clang's NRVO hid the bug).
     return out;
 }
 
@@ -260,10 +241,10 @@ juce::MemoryBlock unpack (const void* namz, std::size_t n, std::size_t maxJsonBy
     const juce::uint8 codec = bytes[5];
     const juce::uint8 dtype = bytes[6];
     const juce::uint8 flags = bytes[7];
-    if (fmt > kFormatVersion || codec != CodecDeflate || dtype != DtypeF32)
+    if (fmt > kFormatVersion || codec != CodecStore || dtype != DtypeF32)
         return {};                                  // unknown/future variant — refuse cleanly
 
-    // v2 carries a [u16 metaLen][meta] block before the deflate stream; v1 starts at byte 8.
+    // v2 carries a [u16 metaLen][meta] block before the stored body; v1 starts at byte 8.
     std::size_t off = 8;
     if (fmt >= 2)
     {
@@ -272,8 +253,11 @@ juce::MemoryBlock unpack (const void* namz, std::size_t n, std::size_t maxJsonBy
         if (off > n) return {};
     }
 
-    // Inflate the body, capped generously against the reconstructed-JSON cap.
-    const auto plain = inflate (bytes + off, n - off, maxJsonBytes + 4096);
+    // Body is stored verbatim (codec = store). Cap the raw size against the reconstructed-JSON cap so a
+    // crafted oversized blob can't force a huge allocation before the per-field checks below catch it.
+    if (n - off > maxJsonBytes + 4096)
+        return {};
+    juce::MemoryBlock plain (bytes + off, n - off);
     if (plain.getSize() == 0)
         return {};
 

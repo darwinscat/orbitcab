@@ -7,6 +7,7 @@
 #include "../../src/PluginProcessor.h"
 #include "../../src/IRLibrary.h"
 #include "../../src/FactoryPresets.h"   // kDefaultPresetName (the bundled first-start default)
+#include "../../src/core/NamCodec.h"    // the embedded pool currency is .namz (v7); decode via the codec
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <cstdio>
 #include <cmath>
@@ -705,10 +706,10 @@ int main()
                                         : "FACTORY PRESETS BROKEN");
     }
 
-    // ---- POWERAMP embed (v5): the selected .nam rides the save, deflated + lossless ----
+    // ---- POWERAMP embed (v5): the selected .nam rides the save, packed as .namz + lossless ----
     // The amp is a library SELECTION (ampSel), but for a REPRODUCIBLE project its bytes are
     // embedded in a <PowerampPool> (like an external IR). Prove: (1) a saved session/preset
-    // embeds the model, (2) the deflated blob decodes back to a valid .nam (lossless), (3) ampSel
+    // embeds the model, (2) the packed .namz blob unpacks back to a valid .nam (lossless), (3) ampSel
     // rides into a fresh instance and the amp re-arms from the pool there.
     {
         auto powerPoolN = [] (const juce::MemoryBlock& mb)
@@ -734,21 +735,20 @@ int main()
             juce::MemoryBlock pres; a.getStateForPreset  (pres);
             const int sPool = powerPoolN (sess), pPool = powerPoolN (pres);
 
-            // base64 -> inflate -> must parse as a real .nam (proves deflate/inflate is lossless)
+            // base64 -> the embedded .namz -> unpack must yield a real .nam (proves the packed embed is lossless)
             bool decodesToNam = false; int rawSz = 0, deflSz = 0;
             if (auto x = juce::AudioProcessor::getXmlFromBinary (sess.getData(), (int) sess.getSize()))
                 if (auto* pool = x->getChildByName ("PowerampPool"))
                     if (auto* e = pool->getFirstChildElement())
                     {
-                        juce::MemoryOutputStream defl;
-                        if (juce::Base64::convertFromBase64 (defl, e->getStringAttribute ("nam")))
+                        juce::MemoryOutputStream packed;
+                        if (juce::Base64::convertFromBase64 (packed, e->getStringAttribute ("nam"))
+                            && namz::isNamz (packed.getData(), packed.getDataSize()))
                         {
-                            deflSz = (int) defl.getDataSize();
-                            juce::MemoryInputStream in (defl.getData(), defl.getDataSize(), false);
-                            juce::GZIPDecompressorInputStream gz (in);
-                            juce::MemoryBlock raw; gz.readIntoMemoryBlock (raw);
-                            rawSz = (int) raw.getSize();
-                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) raw.getData(), (int) raw.getSize()));
+                            deflSz = (int) packed.getDataSize();                    // the stored .namz blob
+                            auto nam = namz::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
+                            rawSz = (int) nam.getSize();                            // the rehydrated .nam JSON
+                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) nam.getData(), (int) nam.getSize()));
                             decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
                         }
                     }
@@ -758,7 +758,7 @@ int main()
             pump (250);
             const bool selRides = b.selectedPowerampId() == ampId;   // ampSel rode the save
             const bool bEmbeds  = b.exportEmbedsAmp();                // re-armed from the pool on the fresh instance
-            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;   // deflate actually compressed
+            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;   // the .namz packing shrank it vs raw JSON
 
             // the loaded amp renders cleanly in the full chain (finite — no NaN/Inf from the model
             // or the rate-matcher). Proves the embedded model actually runs, not just deserialises.
@@ -793,14 +793,14 @@ int main()
             const bool ampOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam
                                && selRides && bEmbeds && shrank && rendersClean && v4Compat;
             allPass &= ampOk;
-            std::printf ("POWERAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v4compat=%d zip(%d->%d)\n",
+            std::printf ("POWERAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v4compat=%d pack(%d->%d)\n",
                          srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rendersClean, v4Compat, rawSz, deflSz);
-            std::printf ("RESULT: %s\n", ampOk ? "POWERAMP RIDES STATE (embedded, deflated, lossless, reproducible, v4-compatible)"
+            std::printf ("RESULT: %s\n", ampOk ? "POWERAMP RIDES STATE (embedded as .namz, lossless, reproducible, v4-compatible)"
                                                : "POWERAMP EMBED BROKEN");
         }
     }
 
-    // ---- PREAMP embed (v6): the selected preamp .nam rides the save, deflated + lossless ----
+    // ---- PREAMP embed (v6): the selected preamp .nam rides the save, packed as .namz + lossless ----
     // Exact mirror of the POWERAMP embed test, against the second NAM stage (preampOn / preampSel /
     // <PreampPool> / exportEmbedsPreamp). Proves the preamp embeds, decodes back losslessly, rides
     // into a fresh instance, re-arms there, renders cleanly, and stays v5-compatible (no pool).
@@ -833,15 +833,14 @@ int main()
                 if (auto* pool = x->getChildByName ("PreampPool"))
                     if (auto* e = pool->getFirstChildElement())
                     {
-                        juce::MemoryOutputStream defl;
-                        if (juce::Base64::convertFromBase64 (defl, e->getStringAttribute ("nam")))
+                        juce::MemoryOutputStream packed;
+                        if (juce::Base64::convertFromBase64 (packed, e->getStringAttribute ("nam"))
+                            && namz::isNamz (packed.getData(), packed.getDataSize()))
                         {
-                            deflSz = (int) defl.getDataSize();
-                            juce::MemoryInputStream in (defl.getData(), defl.getDataSize(), false);
-                            juce::GZIPDecompressorInputStream gz (in);
-                            juce::MemoryBlock raw; gz.readIntoMemoryBlock (raw);
-                            rawSz = (int) raw.getSize();
-                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) raw.getData(), (int) raw.getSize()));
+                            deflSz = (int) packed.getDataSize();                    // the stored .namz blob
+                            auto nam = namz::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
+                            rawSz = (int) nam.getSize();                            // the rehydrated .nam JSON
+                            auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) nam.getData(), (int) nam.getSize()));
                             decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
                         }
                     }
@@ -851,7 +850,7 @@ int main()
             pump (250);
             const bool selRides = b.selectedPreampId() == preId;
             const bool bEmbeds  = b.exportEmbedsPreamp();
-            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;
+            const bool shrank   = deflSz > 0 && rawSz > 0 && deflSz < rawSz;   // the .namz packing shrank it vs raw JSON
 
             bool rendersClean = true;
             {
@@ -883,9 +882,9 @@ int main()
             const bool preOk = srcEmbeds && sPool == 1 && pPool == 1 && decodesToNam
                                && selRides && bEmbeds && shrank && rendersClean && v5Compat;
             allPass &= preOk;
-            std::printf ("PREAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v5compat=%d zip(%d->%d)\n",
+            std::printf ("PREAMP EMBED TEST: src=%d sess=%d pres=%d nam=%d sel=%d reload=%d render=%d v5compat=%d pack(%d->%d)\n",
                          srcEmbeds, sPool, pPool, decodesToNam, selRides, bEmbeds, rendersClean, v5Compat, rawSz, deflSz);
-            std::printf ("RESULT: %s\n", preOk ? "PREAMP RIDES STATE (embedded, deflated, lossless, reproducible, v5-compatible)"
+            std::printf ("RESULT: %s\n", preOk ? "PREAMP RIDES STATE (embedded as .namz, lossless, reproducible, v5-compatible)"
                                                 : "PREAMP EMBED BROKEN");
         }
     }
