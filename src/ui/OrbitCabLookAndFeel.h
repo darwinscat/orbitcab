@@ -9,7 +9,7 @@
 // OrbitCab look — dark panels + gold accent, Genome-style. Rotary knobs draw
 // their value in the centre. First cut; refine toward the reference over time.
 //==============================================================================
-class OrbitCabLookAndFeel final : public juce::LookAndFeel_V4
+class OrbitCabLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     // Brand palette from darwinscat.com: violet accent, not the old gold.

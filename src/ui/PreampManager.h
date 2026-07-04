@@ -113,7 +113,7 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray& files) override
     {
         for (const auto& f : files)
-            if (f.endsWithIgnoreCase (".nam"))
+            if (f.endsWithIgnoreCase (".nam") || f.endsWithIgnoreCase (".namz"))
                 return true;
         return false;
     }
@@ -287,7 +287,7 @@ private:
     void addClicked()
     {
         chooser = std::make_unique<juce::FileChooser> ("Add preamp captures",
-                                                       proc.appPreferences().preampDir(), "*.nam");
+                                                       proc.appPreferences().preampDir(), "*.nam;*.namz");
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles
                                   | juce::FileBrowserComponent::canSelectMultipleItems,
@@ -306,7 +306,7 @@ private:
         for (const auto& p : paths)
         {
             const juce::File f (p);
-            if (f.existsAsFile() && f.hasFileExtension ("nam") && proc.importPreamp (f) != juce::File())
+            if (f.existsAsFile() && f.hasFileExtension ("nam;namz") && proc.importPreamp (f) != juce::File())
                 any = true;
         }
         if (any)

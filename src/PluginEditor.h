@@ -15,6 +15,8 @@
 #include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
 #include "ui/TubeDisplay.h"
+#include "ui/DeviceGlyph.h"   // schematic tube / PNP / FET glyphs for the preamp device strip
+#include "ui/PreampMenuLNF.h" // draws those glyphs inside the preamp combo's dropdown items
 #include "ui/PowerampManager.h"
 #include "ui/PreampManager.h"
 #include "ui/EqCurve.h"
@@ -198,7 +200,11 @@ private:
     std::unique_ptr<BAtt> preampPowerAtt;
     TubeDisplay           preampTubeDisplay;
     orbitcab::PreampSelector                       preampSel;          // pure resolve/view-model (owns the merged library snapshot)
+    orbitcab::ui::PreampMenuLNF preampMenuLnf;   // draws device glyphs in the combo popup (declared BEFORE preampBox → outlives it)
+    juce::Label           preampGearLabel;       // ABOVE the combo — "what gear is this" (from metadata gear_make/model)
     juce::ComboBox        preampBox;             // unified NAME picker: families + singletons, grouped Factory / User
+    orbitcab::ui::DeviceStrip preampDeviceStrip; // BELOW the combo — N tube / PNP / FET schematic glyphs (from metadata)
+    std::map<juce::String, orbitcab::ui::DeviceSpec> preampItemDevice;   // combo item text → device spec (may be hybrid)
     // What each preampBox item id selects: {true,name} = a model family (→ resolveName); {false,id} = a singleton entry.
     std::vector<std::pair<bool, juce::String>> preampBoxTargets;   // index = item id - 1
     juce::TextButton      preampChannelBtn[4];   // contextual channel switch (up to 4; chN or colour-tinted; shown when ≥2 exist) — stacked vertically as radios

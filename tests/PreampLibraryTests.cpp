@@ -71,14 +71,19 @@ struct PreampLibraryTest : juce::UnitTest
             parseFull ("Mesa ch1");      expect (ch == 1 && lbl == "Ch 1" && col == 0);
 
             parseFull ("V4KRAK red 9h");                                                                    // colour → channel index + tint
-            expect (n == "V4KRAK" && ch == 1 && h == 9 && lbl == "Red" && col == 0xffe0524e);
+            expect (n == "V4KRAK" && ch == 4 && h == 9 && lbl == "Red" && col == 0xffe0524e);
             parseFull ("V4KRAK GREEN 12h");                                                                 // case-insensitive; label Title-cased
-            expect (n == "V4KRAK" && ch == 2 && h == 12 && lbl == "Green" && col == 0xff57c06a);
+            expect (n == "V4KRAK" && ch == 1 && h == 12 && lbl == "Green" && col == 0xff57c06a);
             parseFull ("V4KRAK-blue-17h");                                                                  // dash separators + colour
             expect (n == "V4KRAK" && ch == 3 && h == 17 && lbl == "Blue");
 
+            // GtrVolt (Two Notes ReVolt) production naming: GtrVolt-<colour>-<Nh>[-boost].
+            parseFull ("GtrVolt-green-07h");        expect (n == "GtrVolt" && ch == 1 && h == 7  && ! boost && lbl == "Green");
+            parseFull ("GtrVolt-orange-12h");       expect (n == "GtrVolt" && ch == 2 && h == 12 && ! boost && lbl == "Orange");
+            parseFull ("GtrVolt-blue-16h-boost");   expect (n == "GtrVolt" && ch == 3 && h == 16 &&   boost && lbl == "Blue");
+
             parseFull ("Studio Pre");    expect (ch == 0 && lbl.isEmpty() && col == 0);                   // no channel → empty label, no tint
-            parseFull ("Red Llama 12h"); expect (ch == 1 && n == "Llama" && lbl == "Red");               // a colour word IS taken as the channel (documented: use chN to avoid)
+            parseFull ("Red Llama 12h"); expect (ch == 4 && n == "Llama" && lbl == "Red");               // a colour word IS taken as the channel (documented: use chN to avoid)
         }
 
         beginTest ("tokens are the whole name → keep something to show");

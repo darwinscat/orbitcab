@@ -60,12 +60,15 @@ struct PreampEntry
 struct PreampChannelColour { const char* word; int index; juce::uint32 argb; };
 inline const PreampChannelColour* findPreampChannelColour (const juce::String& wordLower)
 {
+    // index doubles as the channel-switch ORDER (channelsForName sorts ascending, defaultChannel =
+    // the lowest). Ordered green → orange → blue → red so a family reads clean → crunch → hi-gain
+    // left-to-right (GtrVolt: green/orange/blue; V4: green then red).
     static const PreampChannelColour table[] = {
-        { "red",    1, 0xffe0524e },
-        { "green",  2, 0xff57c06a },
+        { "green",  1, 0xff57c06a },
+        { "orange", 2, 0xffe08a4e },
         { "blue",   3, 0xff4e8fe0 },
-        { "yellow", 4, 0xffe0c64e },
-        { "orange", 5, 0xffe08a4e },
+        { "red",    4, 0xffe0524e },
+        { "yellow", 5, 0xffe0c64e },
         { "purple", 6, 0xff9a6ae0 },
         { "white",  7, 0xffd8d8e0 },
     };
@@ -165,7 +168,9 @@ inline std::vector<PreampEntry> scanPreampLibrary (const juce::File& dir)
     if (! dir.isDirectory())
         return out;
 
-    for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.nam"))
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.nam");      // raw captures
+    files.addArray (dir.findChildFiles (juce::File::findFiles, false, "*.namz")); // + packed captures
+    for (const auto& f : files)
     {
         PreampEntry e;
         e.factory = false;
