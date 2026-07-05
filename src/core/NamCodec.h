@@ -8,7 +8,11 @@
 #include <cstddef>
 
 //==============================================================================
-// namz — a tiny lossless codec for NeuralAmpModeler `.nam` files.
+// NamCodec — OrbitCab's juce-typed adapter over the `namz` library (github.com/darwinscat/namz v1.0.0,
+// MIT). The codec itself is the library's single header `namz.h`; this thin wrapper only converts at the
+// juce boundary (juce::MemoryBlock <-> std::vector, juce::StringPairArray <-> std::map) so the rest of
+// OrbitCab keeps its juce-only surface and nlohmann never leaks out. The `namz` lib was extracted from
+// this very codec, so the bytes are identical — the shipped factory `.namz` are unchanged.
 //
 // A `.nam` is JSON whose bulk is one or more flat `"weights"` arrays written as
 // full-precision DECIMAL STRINGS (~20 chars/number). The NAM engine loads those
@@ -47,7 +51,7 @@
 //             u8  payload[]               (sum(lengths) * sizeof(dtype) bytes,
 //                                          byte-shuffled iff flags bit0)
 //==============================================================================
-namespace namz
+namespace ocnam   // OrbitCab's juce adapter over the namz library (namespace kept distinct from `namz`)
 {
 
 inline constexpr juce::uint8 kFormatVersion = 2;
@@ -85,4 +89,4 @@ juce::MemoryBlock pack (const void* namJson, std::size_t n, PackOptions opts = {
 // Returns an EMPTY block on failure / over-cap / unknown codec|dtype.
 juce::MemoryBlock unpack (const void* namz, std::size_t n, std::size_t maxJsonBytes);
 
-} // namespace namz
+} // namespace ocnam

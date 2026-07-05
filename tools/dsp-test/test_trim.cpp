@@ -743,10 +743,10 @@ int main()
                     {
                         juce::MemoryOutputStream packed;
                         if (juce::Base64::convertFromBase64 (packed, e->getStringAttribute ("nam"))
-                            && namz::isNamz (packed.getData(), packed.getDataSize()))
+                            && ocnam::isNamz (packed.getData(), packed.getDataSize()))
                         {
                             deflSz = (int) packed.getDataSize();                    // the stored .namz blob
-                            auto nam = namz::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
+                            auto nam = ocnam::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
                             rawSz = (int) nam.getSize();                            // the rehydrated .nam JSON
                             auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) nam.getData(), (int) nam.getSize()));
                             decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");
@@ -835,10 +835,10 @@ int main()
                     {
                         juce::MemoryOutputStream packed;
                         if (juce::Base64::convertFromBase64 (packed, e->getStringAttribute ("nam"))
-                            && namz::isNamz (packed.getData(), packed.getDataSize()))
+                            && ocnam::isNamz (packed.getData(), packed.getDataSize()))
                         {
                             deflSz = (int) packed.getDataSize();                    // the stored .namz blob
-                            auto nam = namz::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
+                            auto nam = ocnam::unpack (packed.getData(), packed.getDataSize(), 64u * 1024u * 1024u);
                             rawSz = (int) nam.getSize();                            // the rehydrated .nam JSON
                             auto j = juce::JSON::parse (juce::String::fromUTF8 ((const char*) nam.getData(), (int) nam.getSize()));
                             decodesToNam = j.isObject() && j.hasProperty ("architecture") && j.hasProperty ("weights");

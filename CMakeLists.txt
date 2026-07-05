@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 2.2.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 2.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,6 +84,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nam_core_src)
 
+# namz — the lossless .nam<->.namz codec (github.com/darwinscat/namz, MIT), extracted from OrbitCab's own
+# NamCodec so the bytes are identical. Header-only; SOURCE_SUBDIR points at include/ (no CMakeLists there)
+# so we populate the header WITHOUT building namz's project (which would fetch a second nlohmann). OrbitCab's
+# src/core/NamCodec is now a thin juce adapter over it; nlohmann comes from nam_core's vendored copy.
+FetchContent_Declare(
+    namz_src
+    GIT_REPOSITORY https://github.com/darwinscat/namz.git
+    GIT_TAG        v1.0.0
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  include        # no CMakeLists there → populate the header WITHOUT building namz's project
+)
+FetchContent_MakeAvailable(namz_src)
+
 add_library(nam_core STATIC
     ${nam_core_src_SOURCE_DIR}/NAM/activations.cpp
     ${nam_core_src_SOURCE_DIR}/NAM/container.cpp
@@ -109,6 +122,8 @@ target_include_directories(nam_core SYSTEM PUBLIC
     ${nam_core_src_SOURCE_DIR}/NAM/wavenet
     ${nam_core_src_SOURCE_DIR}/Dependencies/eigen
     ${nam_core_src_SOURCE_DIR}/Dependencies/nlohmann
+    ${nam_core_src_SOURCE_DIR}/Dependencies         # parent → lets namz.h resolve <nlohmann/json.hpp>
+    ${namz_src_SOURCE_DIR}/include                  # namz.h — the codec behind src/core/NamCodec (juce adapter)
 )
 
 # ----------------------------------------------------------------------------
@@ -271,7 +286,7 @@ target_sources(OrbitCab PRIVATE
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
     src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
-    src/core/NamCodec.cpp      # .nam <-> .namz packer (weights as float32 + deflate) — the .namz load/pack path
+    src/core/NamCodec.cpp      # .nam <-> .namz — juce adapter over the namz lib (weights as float32, store)
     src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
     src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
 )
@@ -294,8 +309,8 @@ set_source_files_properties(src/PluginEditor.cpp PROPERTIES OBJECT_DEPENDS "${OR
 # CONFIGURE_DEPENDS re-globs on build, so dropping a new preset in that folder ships it.
 file(GLOB ORBITCAB_PRESET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/presets/*.orbitcab")
 
-# Bundled factory power-amp NAM models (prototype): every .namz (packed .nam — weights as float32 +
-# deflate, ~6x smaller; see src/core/NamCodec.h) in resources/poweramps/ is embedded + exposed via
+# Bundled factory power-amp NAM models (prototype): every .namz (packed .nam — weights as float32,
+# store; ~5.5x smaller; see src/core/NamCodec.h) in resources/poweramps/ is embedded + exposed via
 # BinaryData, selectable from the editor's poweramp radio buttons. CONFIGURE_DEPENDS re-globs on build,
 # so dropping in packed .namz files ships them. (Pack a raw capture with the `orbitcab_namz` tool.)
 file(GLOB ORBITCAB_POWERAMP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/poweramps/*.namz")

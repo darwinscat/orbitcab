@@ -52,10 +52,10 @@ namespace
         const auto raw = readFile (in);
         if (raw.getSize() == 0) { print ("  MISS " + in.getFileName()); return false; }
 
-        auto packed = namz::pack (raw.getData(), raw.getSize());
+        auto packed = ocnam::pack (raw.getData(), raw.getSize());
         if (packed.getSize() == 0) { print ("  FAIL pack   " + in.getFileName()); return false; }
 
-        auto back = namz::unpack (packed.getData(), packed.getSize(), kMaxJson);
+        auto back = ocnam::unpack (packed.getData(), packed.getSize(), kMaxJson);
         if (back.getSize() == 0) { print ("  FAIL unpack " + in.getFileName()); return false; }
 
         // Cheap structural check: the reconstruction must be valid JSON of similar shape. We don't
@@ -95,7 +95,7 @@ int main (int argc, char** argv)
     }
 
     const juce::String cmd = args[0];
-    namz::PackOptions opts;
+    ocnam::PackOptions opts;
     opts.shuffle  = shuffle;
     opts.metadata = meta;
 
@@ -107,8 +107,8 @@ int main (int argc, char** argv)
         if (raw.getSize() == 0) { print ("cannot read " + args[1]); return 1; }
 
         const auto result = (cmd == "pack")
-            ? namz::pack   (raw.getData(), raw.getSize(), opts)
-            : namz::unpack (raw.getData(), raw.getSize(), kMaxJson);
+            ? ocnam::pack   (raw.getData(), raw.getSize(), opts)
+            : ocnam::unpack (raw.getData(), raw.getSize(), kMaxJson);
         if (result.getSize() == 0) { print (cmd + " failed for " + args[1]); return 1; }
         if (! writeFile (out, result)) { print ("cannot write " + args[2]); return 1; }
         print (args[1] + " -> " + args[2] + "  (" + juce::String (raw.getSize()) + " -> "
@@ -134,8 +134,8 @@ int main (int argc, char** argv)
         {
             const auto raw = readFile (f);
             const auto result = packing
-                ? namz::pack   (raw.getData(), raw.getSize(), opts)
-                : namz::unpack (raw.getData(), raw.getSize(), kMaxJson);
+                ? ocnam::pack   (raw.getData(), raw.getSize(), opts)
+                : ocnam::unpack (raw.getData(), raw.getSize(), kMaxJson);
             const auto outFile = dst.getChildFile (f.getFileNameWithoutExtension() + outExt);
             if (result.getSize() == 0 || ! writeFile (outFile, result)) { print ("  FAIL " + f.getFileName()); ++failed; continue; }
             totIn += (juce::int64) raw.getSize(); totOut += (juce::int64) result.getSize(); ++done;
@@ -153,10 +153,10 @@ int main (int argc, char** argv)
         const juce::File out (juce::File::getCurrentWorkingDirectory().getChildFile (args[2]));
         const auto raw = readFile (in);
         if (raw.getSize() == 0) { print ("cannot read " + args[1]); return 1; }
-        juce::MemoryBlock nam = namz::isNamz (raw.getData(), raw.getSize())
-            ? namz::unpack (raw.getData(), raw.getSize(), kMaxJson) : raw;
+        juce::MemoryBlock nam = ocnam::isNamz (raw.getData(), raw.getSize())
+            ? ocnam::unpack (raw.getData(), raw.getSize(), kMaxJson) : raw;
         if (nam.getSize() == 0) { print ("unpack failed for " + args[1]); return 1; }
-        const auto result = namz::pack (nam.getData(), nam.getSize(), opts);
+        const auto result = ocnam::pack (nam.getData(), nam.getSize(), opts);
         if (result.getSize() == 0 || ! writeFile (out, result)) { print ("restamp failed for " + args[1]); return 1; }
         print (args[1] + " restamped (" + juce::String (meta.size()) + " field(s)) -> " + args[2]);
         return 0;
@@ -168,7 +168,7 @@ int main (int argc, char** argv)
         const juce::File in (juce::File::getCurrentWorkingDirectory().getChildFile (args[1]));
         const auto raw = readFile (in);
         if (raw.getSize() == 0) { print ("cannot read " + args[1]); return 1; }
-        const auto m = namz::readMeta (raw.getData(), raw.getSize());
+        const auto m = ocnam::readMeta (raw.getData(), raw.getSize());
         if (m.size() == 0) { print ("(no display metadata)"); return 0; }
         for (const auto& k : m.getAllKeys())
             print ("  " + k + " = " + m[k]);
