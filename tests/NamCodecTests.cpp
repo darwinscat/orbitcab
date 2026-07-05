@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
-// Comprehensive, CONTRACT-first tests for namz:: — the lossless `.nam` (JSON) <-> `.namz` (packed
+// Comprehensive, CONTRACT-first tests for ocnam:: — the lossless `.nam` (JSON) <-> `.namz` (packed
 // float32) codec — plus the device-spec parser. These try to BREAK the codec, not mirror it:
 // numeric edge weights (subnormal / -0 / FLT_MAX / precision), malformed structure (no/empty/non-array
 // weights, nested, non-object JSON), a corrupted/truncated/oversized container at every boundary,
@@ -130,10 +130,10 @@ struct NamCodecTest : juce::UnitTest
     json roundTrip (const json& nam, bool shuffle)
     {
         const auto s = nam.dump();
-        auto packed = namz::pack (s.data(), s.size(), { shuffle });
+        auto packed = ocnam::pack (s.data(), s.size(), { shuffle });
         expect (packed.getSize() > 0, "pack ok");
-        expect (namz::isNamz (packed.getData(), packed.getSize()), "packed has magic");
-        auto back = parseBlock (namz::unpack (packed.getData(), packed.getSize(), kCap));
+        expect (ocnam::isNamz (packed.getData(), packed.getSize()), "packed has magic");
+        auto back = parseBlock (ocnam::unpack (packed.getData(), packed.getSize(), kCap));
         expect (! back.is_null(), "unpack+parse ok");
         expect (weightsBitExact (nam, back), "weights bit-exact float32");
         return back;
@@ -176,11 +176,11 @@ struct NamCodecTest : juce::UnitTest
             // so the output is byte-identical run-to-run AND platform-to-platform — the property the
             // git-committed factory `.namz` rely on.
             const auto s = defaultNam().dump();
-            auto a = namz::pack (s.data(), s.size(), {});
-            auto b = namz::pack (s.data(), s.size(), {});
+            auto a = ocnam::pack (s.data(), s.size(), {});
+            auto b = ocnam::pack (s.data(), s.size(), {});
             expect (a.getSize() == b.getSize() && a.matches (b.getData(), b.getSize()), "two packs byte-identical");
-            auto rebuilt = namz::unpack (a.getData(), a.getSize(), kCap);
-            auto c = namz::pack (rebuilt.getData(), rebuilt.getSize(), {});
+            auto rebuilt = ocnam::unpack (a.getData(), a.getSize(), kCap);
+            auto c = ocnam::pack (rebuilt.getData(), rebuilt.getSize(), {});
             expect (a.matches (c.getData(), c.getSize()), "pack∘unpack∘pack is a fixed point");
         }
 
@@ -189,10 +189,10 @@ struct NamCodecTest : juce::UnitTest
             std::vector<double> big (2000);
             for (size_t i = 0; i < big.size(); ++i) big[i] = std::sin ((double) i * 0.37) * 1.3;
             const auto s = makeFlatNam (big).dump();               // big enough that packing is definitively smaller
-            auto on  = namz::pack (s.data(), s.size(), { true });
-            auto off = namz::pack (s.data(), s.size(), { false });
-            expect (weightsBitExact (parseBlock (namz::unpack (on.getData(),  on.getSize(),  kCap)),
-                                     parseBlock (namz::unpack (off.getData(), off.getSize(), kCap))),
+            auto on  = ocnam::pack (s.data(), s.size(), { true });
+            auto off = ocnam::pack (s.data(), s.size(), { false });
+            expect (weightsBitExact (parseBlock (ocnam::unpack (on.getData(),  on.getSize(),  kCap)),
+                                     parseBlock (ocnam::unpack (off.getData(), off.getSize(), kCap))),
                     "same weights either way");
             // Under codec = store the shuffle only PERMUTES the payload bytes — it doesn't compress — so
             // the two blobs are byte-for-byte the same length (the shuffle's payoff is downstream, in the
@@ -207,12 +207,12 @@ struct NamCodecTest : juce::UnitTest
             expect (! roundTrip (makeNam ({}, {}), true).is_null(), "empty weight arrays round-trip");
 
             json noW; noW["architecture"] = "LSTM"; noW["metadata"] = { { "loudness", -18.0 } }; noW["sample_rate"] = 44100;
-            auto s = noW.dump(); auto p = namz::pack (s.data(), s.size(), {});
-            expect (p.getSize() > 0 && parseBlock (namz::unpack (p.getData(), p.getSize(), kCap)) == noW, "a .nam with NO weights round-trips verbatim");
+            auto s = noW.dump(); auto p = ocnam::pack (s.data(), s.size(), {});
+            expect (p.getSize() > 0 && parseBlock (ocnam::unpack (p.getData(), p.getSize(), kCap)) == noW, "a .nam with NO weights round-trips verbatim");
 
             json odd; odd["weights"] = "not-an-array"; odd["also"] = json::object({ { "weights", json::object() } });
-            s = odd.dump(); p = namz::pack (s.data(), s.size(), {});
-            expect (p.getSize() > 0 && parseBlock (namz::unpack (p.getData(), p.getSize(), kCap)) == odd, "non-numeric \"weights\" values are not extracted, survive verbatim");
+            s = odd.dump(); p = ocnam::pack (s.data(), s.size(), {});
+            expect (p.getSize() > 0 && parseBlock (ocnam::unpack (p.getData(), p.getSize(), kCap)) == odd, "non-numeric \"weights\" values are not extracted, survive verbatim");
         }
 
         beginTest ("structural: deep nesting, many arrays, large array, empty object, non-object top-level");
@@ -230,9 +230,9 @@ struct NamCodecTest : juce::UnitTest
             // degenerate top-level JSON — must not crash, must round-trip
             for (const char* lit : { "{}", "[]", "[1,2,3]", "\"hi\"", "42", "null", "true" })
             {
-                auto p = namz::pack (lit, std::strlen (lit), {});
+                auto p = ocnam::pack (lit, std::strlen (lit), {});
                 expect (p.getSize() > 0, juce::String ("packs ") + lit);
-                expect (parseBlock (namz::unpack (p.getData(), p.getSize(), kCap)) == json::parse (lit), juce::String ("round-trips ") + lit);
+                expect (parseBlock (ocnam::unpack (p.getData(), p.getSize(), kCap)) == json::parse (lit), juce::String ("round-trips ") + lit);
             }
         }
 
@@ -240,51 +240,51 @@ struct NamCodecTest : juce::UnitTest
         beginTest ("isNamz: true only on magic; false on JSON/gzip/random/short/null");
         {
             const char* jsonB = "{\"weights\":[]}";
-            expect (! namz::isNamz (jsonB, std::strlen (jsonB)), "raw JSON not namz");
-            const unsigned char gz[] = { 0x1f, 0x8b, 0x08, 0x00 };  expect (! namz::isNamz (gz, 4), "gzip not namz");
-            const unsigned char rnd[] = { 0x00, 0xff, 0x4e, 0x41 }; expect (! namz::isNamz (rnd, 4), "random not namz");
-            expect (! namz::isNamz ("NAM", 3), "3 bytes not namz");
-            expect (! namz::isNamz (nullptr, 0), "null not namz");
-            const char* nmz = "NAMZ...."; expect (namz::isNamz (nmz, 8), "magic is namz");
+            expect (! ocnam::isNamz (jsonB, std::strlen (jsonB)), "raw JSON not namz");
+            const unsigned char gz[] = { 0x1f, 0x8b, 0x08, 0x00 };  expect (! ocnam::isNamz (gz, 4), "gzip not namz");
+            const unsigned char rnd[] = { 0x00, 0xff, 0x4e, 0x41 }; expect (! ocnam::isNamz (rnd, 4), "random not namz");
+            expect (! ocnam::isNamz ("NAM", 3), "3 bytes not namz");
+            expect (! ocnam::isNamz (nullptr, 0), "null not namz");
+            const char* nmz = "NAMZ...."; expect (ocnam::isNamz (nmz, 8), "magic is namz");
         }
 
         beginTest ("corruption: flipped header bytes + unknown version/codec/dtype rejected (empty, no crash)");
         {
             const auto s = defaultNam().dump();
-            auto good = namz::pack (s.data(), s.size(), {});
-            auto bad = [&] (int idx, juce::uint8 v) { juce::MemoryBlock m (good); ((juce::uint8*) m.getData())[idx] = v; return namz::unpack (m.getData(), m.getSize(), kCap).getSize(); };
+            auto good = ocnam::pack (s.data(), s.size(), {});
+            auto bad = [&] (int idx, juce::uint8 v) { juce::MemoryBlock m (good); ((juce::uint8*) m.getData())[idx] = v; return ocnam::unpack (m.getData(), m.getSize(), kCap).getSize(); };
             expect (bad (0, 'X') == 0, "flipped magic rejected");
             expect (bad (4, 3) == 0,   "formatVersion 3 (>2) rejected");
             expect (bad (4, 255) == 0, "formatVersion 255 rejected");
             expect (bad (5, 1) == 0,   "codec 1 rejected");
             expect (bad (6, 1) == 0,   "dtype 1 (f16) rejected");
-            expect (namz::unpack (good.getData(), good.getSize(), kCap).getSize() > 0, "the untouched control still unpacks");
+            expect (ocnam::unpack (good.getData(), good.getSize(), kCap).getSize() > 0, "the untouched control still unpacks");
         }
 
         beginTest ("corruption: truncation at every byte, and trailing junk, are rejected (empty, no crash)");
         {
             const auto tiny = makeFlatNam ({ 0.5, -0.5, 0.25 }).dump();   // small blob → cheap to fuzz every prefix
-            auto good = namz::pack (tiny.data(), tiny.size(), { true });
+            auto good = ocnam::pack (tiny.data(), tiny.size(), { true });
             // Contract (codec = store): the float payload must be EXACTLY the rest of the buffer, so there
             // is no redundancy to self-heal from — ANY short prefix fails the length check and is rejected.
             // Never a crash, never partial/garbage data.
             bool allEmpty = true;
             for (size_t len = 0; len < good.getSize(); ++len)
-                allEmpty &= (namz::unpack (good.getData(), len, kCap).getSize() == 0);
+                allEmpty &= (ocnam::unpack (good.getData(), len, kCap).getSize() == 0);
             expect (allEmpty, "every truncated prefix → empty (never partial/garbage/crash)");
             // Trailing garbage after a valid blob lengthens the body past sum(lengths)*4, so the exact-length
             // check rejects it too — store never silently ignores extra bytes.
             juce::MemoryBlock plus (good); plus.append ("junkjunk", 8);
-            expect (namz::unpack (plus.getData(), plus.getSize(), kCap).getSize() == 0, "trailing junk rejected");
+            expect (ocnam::unpack (plus.getData(), plus.getSize(), kCap).getSize() == 0, "trailing junk rejected");
         }
 
         beginTest ("corruption: metaLen that lies (larger than buffer) is rejected");
         {
             const auto s = defaultNam().dump();
-            auto good = namz::pack (s.data(), s.size(), { true });   // v2 → has metaLen at bytes 8..9
+            auto good = ocnam::pack (s.data(), s.size(), { true });   // v2 → has metaLen at bytes 8..9
             juce::MemoryBlock m (good);
             ((juce::uint8*) m.getData())[8] = 0xff; ((juce::uint8*) m.getData())[9] = 0xff;   // metaLen = 65535
-            expect (namz::unpack (m.getData(), m.getSize(), kCap).getSize() == 0, "metaLen > buffer rejected");
+            expect (ocnam::unpack (m.getData(), m.getSize(), kCap).getSize() == 0, "metaLen > buffer rejected");
         }
 
         beginTest ("output-cap guard: reconstruction over maxJsonBytes is rejected");
@@ -292,29 +292,29 @@ struct NamCodecTest : juce::UnitTest
             // Even without a compressor the reconstructed JSON expands (float32 → ~15-char decimals), so the
             // maxJsonBytes cap still matters: a small stored blob can rehydrate into a much larger `.nam`.
             const auto s = defaultNam().dump();
-            auto good = namz::pack (s.data(), s.size(), {});
-            expect (namz::unpack (good.getData(), good.getSize(), 8).getSize() == 0, "tiny cap rejects");
-            expect (namz::unpack (good.getData(), good.getSize(), kCap).getSize() > 0, "generous cap accepts");
+            auto good = ocnam::pack (s.data(), s.size(), {});
+            expect (ocnam::unpack (good.getData(), good.getSize(), 8).getSize() == 0, "tiny cap rejects");
+            expect (ocnam::unpack (good.getData(), good.getSize(), kCap).getSize() > 0, "generous cap accepts");
         }
 
         //====================================================================== metadata / readMeta
         beginTest ("v2 metadata: typed --set, header readable without unpacking weights, skeleton mirrors it");
         {
             const auto s = defaultNam().dump();
-            namz::PackOptions o;
+            ocnam::PackOptions o;
             o.metadata.set ("tone_type", "hi-gain"); o.metadata.set ("boost", "true");
             o.metadata.set ("stages", "16"); o.metadata.set ("modeled_by", "Darwin's Cat");
             o.metadata.set ("device", "tube:1,pnp:1");
-            auto p = namz::pack (s.data(), s.size(), o);
-            auto m = namz::readMeta (p.getData(), p.getSize());
+            auto p = ocnam::pack (s.data(), s.size(), o);
+            auto m = ocnam::readMeta (p.getData(), p.getSize());
             expectEquals (m["tone_type"], juce::String ("hi-gain"));
             expectEquals (m["boost"], juce::String ("true"));    // bool → text
             expectEquals (m["stages"], juce::String ("16"));     // number → text
             expectEquals (m["device"], juce::String ("tube:1,pnp:1"));
-            auto j = parseBlock (namz::unpack (p.getData(), p.getSize(), kCap));
+            auto j = parseBlock (ocnam::unpack (p.getData(), p.getSize(), kCap));
             expect (j["metadata"]["boost"].is_boolean() && j["metadata"]["boost"].get<bool>(), "boost typed bool in model metadata");
             expectEquals (j["metadata"]["stages"].get<int>(), 16);
-            expect (namz::readMeta (s.data(), s.size()).size() == 0, "readMeta on raw JSON = empty");
+            expect (ocnam::readMeta (s.data(), s.size()).size() == 0, "readMeta on raw JSON = empty");
         }
 
         beginTest ("metadata: special chars / a field literally named \"weights\" survive; empty --set = no header");
@@ -327,19 +327,19 @@ struct NamCodecTest : juce::UnitTest
             expectEquals (back["metadata"]["weird=key,with:chars"].get<std::string>(), std::string ("v=a,b:c\n\"q\""));
 
             auto s = defaultNam().dump();
-            auto plain = namz::pack (s.data(), s.size(), {});
-            expect (namz::readMeta (plain.getData(), plain.getSize()).size() == 0, "no --set → empty header meta");
+            auto plain = ocnam::pack (s.data(), s.size(), {});
+            expect (ocnam::readMeta (plain.getData(), plain.getSize()).size() == 0, "no --set → empty header meta");
         }
 
         beginTest ("metadata: >64KB header is dropped (not overflowed); the model still round-trips");
         {
             const auto s = defaultNam().dump();
-            namz::PackOptions o;
+            ocnam::PackOptions o;
             o.metadata.set ("blob", juce::String::repeatedString ("x", 70000));   // > u16
-            auto p = namz::pack (s.data(), s.size(), o);
+            auto p = ocnam::pack (s.data(), s.size(), o);
             expect (p.getSize() > 0, "packs despite huge metadata");
-            expect (namz::readMeta (p.getData(), p.getSize()).size() == 0, "oversized header meta dropped, not corrupt");
-            auto j = parseBlock (namz::unpack (p.getData(), p.getSize(), kCap));
+            expect (ocnam::readMeta (p.getData(), p.getSize()).size() == 0, "oversized header meta dropped, not corrupt");
+            auto j = parseBlock (ocnam::unpack (p.getData(), p.getSize(), kCap));
             expectEquals (j["metadata"]["blob"].get<std::string>().size(), (size_t) 70000);   // still in the skeleton
         }
 
@@ -348,11 +348,11 @@ struct NamCodecTest : juce::UnitTest
         {
             const auto raw = defaultNam().dump();
             auto gz = gzip (raw);
-            expect (! namz::isNamz (gz.getData(), gz.getSize()), "a v5/v6 gzip blob is not mistaken for .namz");
+            expect (! ocnam::isNamz (gz.getData(), gz.getSize()), "a v5/v6 gzip blob is not mistaken for .namz");
             auto inflated = gunzip (gz);                                   // what the restore path does for old states
-            auto packed = namz::pack (inflated.getData(), inflated.getSize(), {});   // → toNamz upgrade
-            expect (namz::isNamz (packed.getData(), packed.getSize()), "upgraded to .namz");
-            expect (weightsBitExact (defaultNam(), parseBlock (namz::unpack (packed.getData(), packed.getSize(), kCap))), "weights survive the v6→v7 upgrade");
+            auto packed = ocnam::pack (inflated.getData(), inflated.getSize(), {});   // → toNamz upgrade
+            expect (ocnam::isNamz (packed.getData(), packed.getSize()), "upgraded to .namz");
+            expect (weightsBitExact (defaultNam(), parseBlock (ocnam::unpack (packed.getData(), packed.getSize(), kCap))), "weights survive the v6→v7 upgrade");
         }
 
         //====================================================================== device spec (DeviceSpec.h)

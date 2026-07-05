@@ -7,7 +7,7 @@
 #include <NAM/get_dsp.h>    // nam::get_dsp(path|json)
 
 #include "StreamResampler.h"   // cab::StreamResampler (header-only, unit-tested separately)
-#include "NamCodec.h"          // namz:: — load path accepts BOTH raw .nam JSON and packed .namz
+#include "NamCodec.h"          // ocnam:: — load path accepts BOTH raw .nam JSON and packed .namz
 
 #include <algorithm>
 #include <atomic>
@@ -258,9 +258,9 @@ bool AmpStage::loadModelFromMemory (const void* data, std::size_t size, float tr
         juce::MemoryBlock unpacked;                    // owns the reconstructed JSON iff input was packed
         const char* begin = static_cast<const char*> (data);
         const char* end   = begin + size;
-        if (namz::isNamz (data, size))
+        if (ocnam::isNamz (data, size))
         {
-            unpacked = namz::unpack (data, size, kMaxUnpackedNamBytes);
+            unpacked = ocnam::unpack (data, size, kMaxUnpackedNamBytes);
             if (unpacked.getSize() == 0)
                 return false;
             begin = static_cast<const char*> (unpacked.getData());
