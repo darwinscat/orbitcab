@@ -60,8 +60,20 @@ The bundled content (IRs, font) is ledgered in
 - **Source:** https://github.com/darwinscat/felitronics-core — fetched via CMake `FetchContent`
   at a pinned release tag (`ORBITCAB_FCORE_TAG` in [`CMakeLists.txt`](CMakeLists.txt)), or a local
   sibling checkout for core co-development. Header-only, JUCE-free. Linked as `teq::core` (the
-  matched-EQ engine via the `<teq/*.h>` compat shim; used by `cab::AmpEq`) and `felitronics::analysis`
-  (the lock-free `SpectrumTap` used by `cab::CabEngine`).
+  matched-EQ engine via the `<teq/*.h>` compat shim; used by `cab::AmpEq`), `felitronics::analysis`
+  (the lock-free `SpectrumTap` used by `cab::CabEngine`), and `felitronics::convolution` (the JUCE-free cab
+  IR convolver `MatrixConvolverNupc`, backing `cab::Convolver`).
+
+### pffft (SIMD FFT backend for the cab convolution — vendored in felitronics-core)
+- **License:** BSD-style (FFTPACK5 / UCAR) — AGPL-compatible.
+- **Copyright:** © Julien Pommier (2013). Derived from FFTPACKv4 by Dr Paul Swarztrauber (NCAR, 1985).
+- **Source:** vendored **pristine** inside felitronics-core at `modules/fftpffft/pffft/{pffft.c,pffft.h}`,
+  upstream `https://bitbucket.org/jpommier/pffft` (commit `09796885cd5b9da5692242de2df0d81e5e1f3d21`).
+- **Why it's here:** OrbitCab enables the SIMD path (`FELITRONICS_WITH_PFFFT=ON`) so the cab IR convolution
+  (`cab::Convolver` → `MatrixConvolverNupc`) runs its audio FFT on `felitronics::fftpffft::PffftRealFft`.
+  The FFTPACK/UCAR licence requires the copyright notice be reproduced in the documentation of binary
+  distributions — this entry carries it. The two vendored files keep their upstream BSD/FFTPACK header
+  verbatim (no SPDX rewrite), so upstream diffs stay byte-clean.
 
 ---
 

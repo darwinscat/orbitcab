@@ -133,7 +133,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.3.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.5.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -145,6 +145,10 @@ else()
         GIT_TAG        ${ORBITCAB_FCORE_TAG}
         GIT_SHALLOW    TRUE)
 endif()
+# Opt into the compiled pffft SIMD FFT backend (felitronics::fftpffft, BSD) BEFORE the subproject is
+# configured — the cab convolver (cab::Convolver → MatrixConvolverNupc) runs its audio FFT on it. Must be
+# set before MakeAvailable so modules/fftpffft is actually built and the felitronics::fftpffft alias exists.
+set(FELITRONICS_WITH_PFFFT ON CACHE BOOL "OrbitCab uses the pffft SIMD FFT backend for the cab convolver" FORCE)
 FetchContent_MakeAvailable(felitronics_core)
 # Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
 # (same posture as nam_core / Eigen above).
@@ -376,6 +380,7 @@ target_compile_definitions(OrbitCab PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0   # JUCE 8 has no splash requirement on any tier, incl. AGPLv3
+    FELITRONICS_WITH_PFFFT=1       # cab::Convolver picks the pffft SIMD FFT backend (must match the link above)
 )
 
 target_link_libraries(OrbitCab PRIVATE
@@ -388,7 +393,8 @@ target_link_libraries(OrbitCab PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
-    felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver)
+    felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver → MatrixConvolverNupc)
+    felitronics::fftpffft       # SIMD (pffft/BSD) audio FFT backend for the cab convolver
     felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
     felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
     felitronics::eq             # min-phase presence/depth shelves (block 3)
@@ -773,10 +779,12 @@ target_link_libraries(OrbitCab_Tests PRIVATE
 add_executable(orbitcab_coreconv_golden tests/CoreConvolverGolden.cpp)
 target_include_directories(orbitcab_coreconv_golden PRIVATE src)
 target_compile_definitions(orbitcab_coreconv_golden PRIVATE
-    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    FELITRONICS_WITH_PFFFT=1)               # validate the SHIPPING backend (cab::Convolver → pffft), not the scalar fallback
 target_link_libraries(orbitcab_coreconv_golden PRIVATE
-    felitronics::convolution               # resample-on-load (message-thread one-shot)
-    juce::juce_dsp                          # cab::Convolver backend (juce::dsp::Convolution) + juce_core
+    felitronics::convolution               # cab::Convolver backend (MatrixConvolverNupc) + resample-on-load
+    felitronics::fftpffft                   # pffft SIMD audio FFT — the backend OrbitCab ships
+    juce::juce_dsp                          # juce_core (juce::Thread::sleep) for the reload poll
     juce::juce_recommended_config_flags)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
 
@@ -797,9 +805,11 @@ juce_add_console_app(orbitcab_realir PRODUCT_NAME "OrbitCabRealIr")
 target_sources(orbitcab_realir PRIVATE tests/CoreConvolverRealIr.cpp)
 target_include_directories(orbitcab_realir PRIVATE src)
 target_compile_definitions(orbitcab_realir PRIVATE
-    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    FELITRONICS_WITH_PFFFT=1)               # validate the SHIPPING backend (cab::Convolver → pffft)
 target_link_libraries(orbitcab_realir PRIVATE
     felitronics::convolution
+    felitronics::fftpffft                   # pffft SIMD audio FFT — the backend OrbitCab ships
     juce::juce_dsp
     juce::juce_audio_formats
     juce::juce_recommended_config_flags)
