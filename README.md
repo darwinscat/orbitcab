@@ -31,13 +31,16 @@ ships captures of hardware the author owns:
   that doesn't slide into fizz. Two channels, full gain sweep.
 - **V4COPP** — Victory V4 **The Copper**: lower-gain vintage voice — edge-of-breakup and pushed cleans.
   Two channels, full gain sweep.
+- **GtrVolt** — Two Notes **ReVolt Guitar**: a versatile 3-channel **hybrid** (12AX7 tube + solid-state) —
+  **Green** (clean), **Orange** (crunch), and **Blue** (high-gain), each with a footswitchable **Boost**,
+  captured across the full gain range (7h–17h).
 - **ISA Studio Pre** — Focusrite **ISA Two**: a transformer-coupled studio preamp — clean, balanced, and
   close to invisible when you want the rest of the chain to speak. The default front end.
 - **Bypass** — no preamp: tone, poweramp, and cab only.
 
 The captures are electrical — no mic, no room, no baked-in speaker: the amp's cab-sim is off and the
 cabinet comes from your IR. You get the gain structure and feel of the hardware, then choose the tone
-stack, power stage, and cab yourself. Drop in your own `.nam` preamp captures too.
+stack, power stage, and cab yourself. Drop in your own captures too — raw **`.nam`** or packed **`.namz`**.
 
 ## Poweramp — tube captures or a tube sim
 

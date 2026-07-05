@@ -38,7 +38,11 @@ namespace orbitcab::state
 // self-contained for the amp too — older builds ignore the pool and resolve from the library.
 // v6 adds <PreampPool> (the same, for the second/preamp NAM stage) + the "preampSel" property;
 // older builds ignore both, so it stays compatible in BOTH directions.
-inline constexpr int kStateVersion = 6;
+// v7 stores each pooled NAM as `.namz` (weights as float32 + deflate, ~2.5x smaller than the old
+// deflated raw JSON) instead of deflate(raw .nam). The reader accepts BOTH (magic-sniffed on load),
+// so old v5/v6 sessions still restore; an older build reading a v7 pool just fails to inflate the
+// .namz and falls back to resolving from the library — the same graceful degradation as v4→v5.
+inline constexpr int kStateVersion = 7;
 
 //============================================================ one slot's IR ====
 struct SlotIR

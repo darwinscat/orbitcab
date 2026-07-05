@@ -100,7 +100,9 @@ inline std::vector<PowerampEntry> scanPowerampLibrary (const juce::File& dir)
     if (! dir.isDirectory())
         return out;
 
-    for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.nam"))
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.nam");      // raw captures
+    files.addArray (dir.findChildFiles (juce::File::findFiles, false, "*.namz")); // + packed captures
+    for (const auto& f : files)
     {
         PowerampEntry e;
         e.factory = false;

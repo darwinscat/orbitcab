@@ -113,7 +113,7 @@ namespace
     {
         juce::MemoryBlock mb;
        #ifdef ORBITCAB_RES_DIR
-        juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam").loadFileAsData (mb);
+        juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.namz").loadFileAsData (mb);
        #endif
         return mb;
     }
@@ -188,7 +188,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
         beginTest ("capture-mode OFF with a real 48k model at 96k delays by the reported rate-match latency");
         {
            #ifdef ORBITCAB_RES_DIR
-            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.nam");
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.namz");
             expect (nf.existsAsFile(), "test resource .nam must exist: " + nf.getFullPathName());
             if (nf.existsAsFile())
             {

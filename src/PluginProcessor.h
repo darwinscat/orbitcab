@@ -379,6 +379,14 @@ private:
     juce::MemoryBlock powerampBytesFor (const juce::String& id) const;
     juce::MemoryBlock preampBytesFor   (const juce::String& id) const;
 
+public:
+    // Cheap display-metadata for a preamp id (tone_type / boost / gear_* / modeled_by …), read from
+    // the .namz header WITHOUT inflating the weights. Empty for a user import / model without metadata.
+    // Message-thread only (editor tooltip / badge). Mirrors preampBytesFor's factory→embedded lookup.
+    juce::StringPairArray preampMetaFor (const juce::String& id) const;
+
+private:
+
     // Resolve "ampSel" against the merged library + load that .nam into the amp stage off the
     // audio thread (BinaryData or file read + atomic swap). Off / empty / unresolved => clears it.
     void applyPoweramp();

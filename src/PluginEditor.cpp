@@ -337,7 +337,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     // Contextual boost toggle — shown only when the current name+channel+gain has BOTH an on- and an
     // off-capture. Param-free (it switches between two captures, like the channel switch).
     preampBoostBtn.setClickingTogglesState (false);
-    preampBoostBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+    // Boost reads as an aggressive control: hot red — faint when idle, vivid when engaged.
+    {
+        const juce::Colour boostRed (0xffe23b3b);
+        preampBoostBtn.setColour (juce::TextButton::buttonColourId,   boostRed.withMultipliedSaturation (0.6f).withMultipliedBrightness (0.4f));
+        preampBoostBtn.setColour (juce::TextButton::buttonOnColourId, boostRed);
+    }
     preampBoostBtn.setTooltip ("Boost — switch to the boosted (or clean) capture of this preamp.");
     preampBoostBtn.onClick = [this]
     {
@@ -361,6 +366,23 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         else { processorRef.selectPreamp (t.second); syncPreampSelector(); }   // a singleton's entry id
     };
     addChildComponent (preampBox);
+
+    // Gear caption ABOVE the combo + device glyph strip BELOW it — both driven by the model metadata.
+    preampGearLabel.setJustificationType (juce::Justification::centred);
+    preampGearLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    preampGearLabel.setColour (juce::Label::textColourId, juce::Colour (0xffc4bbaa));
+    preampGearLabel.setInterceptsMouseClicks (false, false);
+    preampGearLabel.setMinimumHorizontalScale (0.7f);
+    addChildComponent (preampGearLabel);
+    addChildComponent (preampDeviceStrip);
+
+    // Device glyphs inside the combo dropdown — the popup L&F looks each item up in preampItemDevice.
+    preampMenuLnf.deviceFor = [this] (const juce::String& itemText) -> orbitcab::ui::DeviceSpec
+    {
+        const auto it = preampItemDevice.find (itemText);
+        return it != preampItemDevice.end() ? it->second : orbitcab::ui::DeviceSpec {};
+    };
+    preampBox.setLookAndFeel (&preampMenuLnf);
 
     rebuildPreampSelector();           // scan the merged preamp library → name buttons + combo + hasPreamps + power-btn visibility
 
@@ -531,6 +553,7 @@ OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
 {
     stopTimer();
     processorRef.setSpectrumActive (false);   // editor gone → stop feeding the analyser
+    preampBox.setLookAndFeel (nullptr);        // detach the custom popup L&F before it is destroyed
     setLookAndFeel (nullptr);
 }
 
@@ -577,7 +600,10 @@ void OrbitCabAudioProcessorEditor::timerCallback()
         else if (processorRef.selectedPreampId() != preampSyncedId)
             syncPreampSelector();                  // selection changed externally (automation / restore) → re-sync
         if (preampPowerBtn.getToggleState())
+        {
             preampTubeDisplay.tick();              // advance the warm heater flicker (~30 Hz)
+            preampDeviceStrip.tick();              // device glyph glow flicker (tube / BJT / FET)
+        }
     }
     // AMP EQ has no library — always available; just mirror eqOn (host automation / state restore,
     // which don't fire the button's onClick) to reveal/hide + resize the row.
@@ -1079,6 +1105,19 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     //   {false, id}   → a singleton entry (selected directly)
     preampBox.clear (juce::dontSendNotification);
     preampBoxTargets.clear();
+    preampItemDevice.clear();
+    // Per-item device glyphs for the popup: read a representative capture's metadata (device + stages).
+    auto storeDevice = [this] (const juce::String& itemText, const juce::String& id)
+    {
+        auto spec = orbitcab::ui::parseDeviceSpec (processorRef.preampMetaFor (id).getValue ("device", {}));
+        if (! spec.empty())
+            preampItemDevice[itemText] = std::move (spec);
+    };
+    auto repIdForName = [this] (const juce::String& nm) -> juce::String
+    {
+        for (const auto& e : preampSel.lib) if (e.name == nm) return e.id;
+        return {};
+    };
     const auto groups = preampSel.groupNames();   // family names, first-seen order
 
     auto familyIsFactory = [this] (const juce::String& nm)
@@ -1091,7 +1130,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     // ISA Two studio pre — essentially flat. Prefix-matched so any ISA* label lands here. Singletons.
     auto isCleanName = [] (const juce::String& nm) { return preampNameIsClean (nm); };
 
-    auto addSection = [this, &groups, &familyIsFactory, &isCleanName] (bool factory, const char* header)
+    auto addSection = [this, &groups, &familyIsFactory, &isCleanName, &storeDevice, &repIdForName] (bool factory, const char* header)
     {
         bool wroteHeader = false;
         auto ensureHeader = [&] { if (! wroteHeader) { preampBox.addSectionHeading (header); wroteHeader = true; } };
@@ -1101,6 +1140,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
                 ensureHeader();
                 preampBoxTargets.push_back ({ true, nm });
                 preampBox.addItem (nm, (int) preampBoxTargets.size());
+                storeDevice (nm, repIdForName (nm));
             }
         for (const auto& e : preampSel.lib)
             if (e.factory == factory && ! preampSel.isGroupName (e.name) && ! isCleanName (e.name))
@@ -1108,6 +1148,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
                 ensureHeader();
                 preampBoxTargets.push_back ({ false, e.id });
                 preampBox.addItem (e.name, (int) preampBoxTargets.size());
+                storeDevice (e.name, e.id);
             }
     };
     addSection (true,  "Factory");
@@ -1124,6 +1165,7 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
         {
             preampBoxTargets.push_back ({ false, e.id });
             preampBox.addItem (e.name, (int) preampBoxTargets.size());
+            storeDevice (e.name, e.id);
         }
     preampBoxTargets.push_back ({ false, "bypass" });
     preampBox.addItem (juce::String::fromUTF8 ("BYPASS \xe2\x80\x94 EQ only"), (int) preampBoxTargets.size());
@@ -1180,6 +1222,33 @@ void OrbitCabAudioProcessorEditor::syncPreampSelector()
     }
     preampBox.setSelectedId (selItem, juce::dontSendNotification);
 
+    // Rich tooltip from the model's metadata (gear · tone · boost · author), read cheaply from the
+    // .namz header — no weight inflate. Falls back to the plain hint when a model carries no metadata.
+    {
+        juce::String tip = "Preamp — pick a neural capture (or Bypass).";
+        juce::String gear;
+        orbitcab::ui::DeviceSpec spec;
+        if (cur != nullptr)
+        {
+            const auto meta = processorRef.preampMetaFor (preampSyncedId);
+            gear = (meta.getValue ("gear_make", {}) + " " + meta.getValue ("gear_model", {})).trim();
+            spec = orbitcab::ui::parseDeviceSpec (meta.getValue ("device", {}));
+            juce::StringArray bits;
+            if (gear.isNotEmpty())                              bits.add (gear);
+            if (meta.getValue ("tone_type", {}).isNotEmpty())   bits.add (meta["tone_type"]);
+            if (meta.getValue ("boost", "false") == "true")     bits.add ("+boost");
+            if (meta.getValue ("modeled_by", {}).isNotEmpty())  bits.add ("modeled by " + meta["modeled_by"]);
+            if (! bits.isEmpty()) tip = cur->name + "  —  " + bits.joinIntoString ("  ·  ");
+        }
+        preampBox.setTooltip (tip);
+
+        // Gear caption above + device glyphs below the combo (amber tube / steel transistor·FET).
+        preampGearLabel.setText (gear, juce::dontSendNotification);
+        preampGearLabel.setVisible (on && gear.isNotEmpty());
+        preampDeviceStrip.set (spec);            // colours + flicker come from the device family (per glyph)
+        preampDeviceStrip.setVisible (on && ! spec.empty());
+    }
+
     // contextual channel switch — one button per REAL channel the name has (channel 0 = "none" gets no
     // button), shown only when ≥2 exist. Each slot is captioned + tinted from that channel's entry, so a
     // colour channel (e.g. a red/green amp) reads and glows in its own colour; chN stays accent.
@@ -1195,13 +1264,23 @@ void OrbitCabAudioProcessorEditor::syncPreampSelector()
             const int channel = chans[(size_t) m];
             preampChannelBtnCh[m] = channel;
             const auto* e = cur != nullptr ? preampSel.anyEntryFor (cur->name, channel) : nullptr;
-            const juce::String label = (e != nullptr && e->channelLabel.isNotEmpty())
-                                           ? e->channelLabel : ("Ch " + juce::String (channel));
+
+            // Caption = the channel's TONE from the model metadata (CLEAN / CRUNCH / HI-GAIN), read
+            // cheaply from the .namz header; fall back to the colour word, then "Ch N".
+            const juce::String tone = (e != nullptr) ? processorRef.preampMetaFor (e->id).getValue ("tone_type", {})
+                                                     : juce::String();
+            const juce::String label = tone.isNotEmpty()                             ? tone
+                                     : (e != nullptr && e->channelLabel.isNotEmpty()) ? e->channelLabel
+                                     :                                                  ("Ch " + juce::String (channel));
             btn.setButtonText (label.toUpperCase());
-            btn.setColour (juce::TextButton::buttonOnColourId,
-                           (e != nullptr && e->channelColour != 0) ? juce::Colour (e->channelColour)
-                                                                   : juce::Colour (OrbitCabLookAndFeel::kAccent));
-            btn.setTooltip ("Preamp channel: " + label);
+
+            // Tint by the channel colour: faint when idle, vivid when active (green / orange / blue / red).
+            const juce::Colour chCol = (e != nullptr && e->channelColour != 0) ? juce::Colour (e->channelColour)
+                                                                               : juce::Colour (OrbitCabLookAndFeel::kAccent);
+            btn.setColour (juce::TextButton::buttonColourId,   chCol.withMultipliedSaturation (0.78f).withMultipliedBrightness (0.62f));
+            btn.setColour (juce::TextButton::buttonOnColourId, chCol);
+            btn.setTooltip ((e != nullptr && e->channelLabel.isNotEmpty() ? e->channelLabel + " channel" : juce::String ("Channel"))
+                            + (tone.isNotEmpty() ? juce::String (" — ") + tone : juce::String()));
             btn.setToggleState (v.currentChannel == channel, juce::dontSendNotification);
         }
         btn.setVisible (showChannels && used);
@@ -1906,7 +1985,16 @@ void OrbitCabAudioProcessorEditor::resized()
             preampTubeDisplay.setBounds (inner.removeFromLeft (showTubesPref ? 92 : 44));
             inner.removeFromLeft (12);
 
-            preampBox.setBounds (inner.removeFromLeft (150).withSizeKeepingCentre (150, 28));
+            {   // gear caption (top) · NAME combo (middle) · device glyph strip (bottom)
+                auto col = inner.removeFromLeft (150);
+                const int labH = 14, boxH = 28, stripH = 34, gap = 4;   // taller strip → bigger glyphs + glow room
+                auto stk = col.withSizeKeepingCentre (150, labH + boxH + stripH + 2 * gap);
+                preampGearLabel.setBounds   (stk.removeFromTop (labH));
+                stk.removeFromTop (gap);
+                preampBox.setBounds         (stk.removeFromTop (boxH));
+                stk.removeFromTop (gap);
+                preampDeviceStrip.setBounds (stk.removeFromTop (stripH));
+            }
             inner.removeFromLeft (12);
 
             if (preampGainSlider.isVisible())   // orange rotary GAIN — a bit bigger; square cell keeps the dial round
@@ -1919,16 +2007,16 @@ void OrbitCabAudioProcessorEditor::resized()
             int nc = 0; for (auto& b : preampChannelBtn) if (b.isVisible()) ++nc;
             if (nc > 0)
             {
-                auto colArea = inner.removeFromLeft (56);
+                auto colArea = inner.removeFromLeft (66);   // fits the tone captions (CLEAN / CRUNCH / HI-GAIN)
                 const int bh = juce::jlimit (18, 28, (colArea.getHeight() - (nc - 1) * 4) / nc);
-                auto stack = colArea.withSizeKeepingCentre (56, nc * bh + (nc - 1) * 4);
+                auto stack = colArea.withSizeKeepingCentre (66, nc * bh + (nc - 1) * 4);
                 for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (stack.removeFromTop (bh)); stack.removeFromTop (4); }
                 inner.removeFromLeft (10);
             }
 
             if (preampBoostBtn.isVisible())
             {
-                preampBoostBtn.setBounds (inner.removeFromLeft (56).withSizeKeepingCentre (56, 26));
+                preampBoostBtn.setBounds (inner.removeFromLeft (60).withSizeKeepingCentre (60, 26));
                 inner.removeFromLeft (12);
             }
         }
