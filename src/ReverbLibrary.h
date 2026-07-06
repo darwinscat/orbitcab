@@ -24,13 +24,13 @@ namespace orbitcab
 
 struct ReverbIR
 {
-    juce::String name;      // display name parsed from the filename ("01-vintage.wav" → "Vintage")
+    juce::String name;      // display name parsed from the filename ("01-tube.wav" → "Tube")
     juce::String file;      // original filename
     const char*  data = nullptr;
     int          size = 0;
 };
 
-// Strip the "NN-" ordering prefix + extension, capitalize → a display name ("01-vintage.wav" → "Vintage").
+// Strip the "NN-" ordering prefix + extension, capitalize → a display name ("01-tube.wav" → "Tube").
 inline juce::String reverbDisplayName (const juce::String& filename)
 {
     juce::String stem = filename.upToLastOccurrenceOf (".", false, false);   // drop extension

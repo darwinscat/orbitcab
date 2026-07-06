@@ -480,6 +480,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
                juce::String::fromUTF8 ("Preamp Volume \xe2\x80\x94 post-preamp output level, drives the EQ / poweramp / cab harder"), false, "dB");
     preampVolKnob.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));   // orange (like GAIN)
     preampVolKnob.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    preampOutMeter.setRange (-24.0f, 6.0f);   // hot internal tap — zoom in so it reads as movement, not a pinned bar
     addAndMakeVisible (preampOutMeter);   // preamp-OUT meter (right of VOL) — shown/hidden with the front strip
 
     // ---- POWERAMP SIMULATOR (white-box tube, blocks 2+3): the third stage tab (radio with CAPTURES) ----
