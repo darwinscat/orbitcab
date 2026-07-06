@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "SlotComponent.h"
 #include "OrbitCabLookAndFeel.h"
@@ -49,6 +49,7 @@ SlotComponent::SlotComponent (OrbitCabAudioProcessor& processor, int slotIndex)
     // badge doubles as the MUTE toggle: bright when playing, dim when muted
     badge.setButtonText (disp);
     badge.setClickingTogglesState (true);
+    badge.getProperties().set ("orbitStockToggle", true);   // inverted toggle (off = playing/bright) — keep the stock fill look, not the border style
     badge.setColour (juce::TextButton::buttonColourId,   juce::Colour (isA() ? OrbitCabLookAndFeel::kAccent : OrbitCabLookAndFeel::kAccentB));
     badge.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2a2a2e));
     badge.setColour (juce::TextButton::textColourOffId,  juce::Colours::black);

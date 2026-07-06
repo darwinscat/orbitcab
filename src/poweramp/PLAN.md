@@ -1,9 +1,10 @@
 # OrbitCab — Tube Power-Amp stage (white-box) — BUILD PLAN
 
-> Status: **prototype / isolated**. Branch `feat/tube-poweramp` (worktree).
-> Everything new lives under `src/poweramp/` (namespace `cab::poweramp`). The branch
-> stays releasable: the stage is wired into `CabEngine` **behind an off-by-default flag**,
-> minimal diff to existing files, until a working version exists.
+> Status: **v1 SHIPPED** — blocks 1–4 are merged to `main` (PRs #94/#95); the as-built record lives in
+> `STATUS.md`. The v1 task checklist below is DONE (task 9 "extract to felitronics-core" is ON HOLD, Oleh
+> 2026-07-02); the v2 **"parametric neural power amp (HYPOTHESIS)"** section further down is a still-open
+> decision gate, not yet built. (Historical note: this began on a `feat/tube-poweramp` worktree branch,
+> now merged.) Everything lives under `src/poweramp/` (namespace `cab::poweramp`), wired into `CabEngine`.
 >
 > This is a technical build-spec. Strategic/backlog framing belongs in the **private**
 > planning repo (`landings-darwinscat/.../orbitcab/_planning/`), not here.

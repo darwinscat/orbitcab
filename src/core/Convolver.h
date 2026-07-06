@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -78,11 +78,16 @@ public:
 
     // maxIrSeconds sizes the NUPC partition schedule (the fixed IR-length cap — see IR-LENGTH CAP above).
     // The default matches the historical value; cab IRs are far shorter, so the cap is generous headroom.
-    void prepare (double sampleRate, int maxBlock, int numChannels, double maxIrSeconds = 4.0)
+    // normalize=false skips the reference-unity RMS normalization (LOUDNESS above) — a REVERB IR is a
+    // decay tail, not a tone-shaping cab bandpass, so RMS-normalizing its mostly-decayed length would
+    // blow up the wet gain. The spring IRs are peak-normalized at bundle time; the Reverb Mix sets level.
+    void prepare (double sampleRate, int maxBlock, int numChannels, double maxIrSeconds = 4.0,
+                  bool normalize = true)
     {
-        hostSr_   = sampleRate > 0.0 ? sampleRate : 48000.0;
-        channels_ = std::clamp (numChannels, 1, 2);
-        maxBlock_ = std::max (1, maxBlock);                 // retained for API parity — NUPC is block-independent
+        hostSr_    = sampleRate > 0.0 ? sampleRate : 48000.0;
+        channels_  = std::clamp (numChannels, 1, 2);
+        maxBlock_  = std::max (1, maxBlock);                // retained for API parity — NUPC is block-independent
+        normalize_ = normalize;
 
         // Fixed schedule: head kNupcHeadPartition + doubling + one uniform tail covering maxIrSamples.
         const long long maxIr = (long long) std::ceil (std::max (0.0, maxIrSeconds) * hostSr_);
@@ -149,7 +154,8 @@ private:
         if (outLen <= 0) return;
 
         // Reference-unity normalization of the FINAL (resampled) IR — one common gain, all channels.
-        const float g = normalizationGain (outLen);
+        // Skipped for a reverb IR (normalize_=false): the taps go in verbatim at their peak-normalized level.
+        const float g = normalize_ ? normalizationGain (outLen) : 1.0f;
         normGain_   = g;
         normGainDb_ = 20.0f * std::log10 (std::max (1.0e-6f, g));
         for (auto& ch : ir_) for (float& v : ch) v *= g;
@@ -234,6 +240,7 @@ private:
     int    maxBlock_ = 512;
     float  normGain_ = 1.0f;
     float  normGainDb_ = 0.0f;
+    bool   normalize_ = true;              // false = reverb IR (skip reference-unity RMS normalization)
     bool   prepared_ = false;
     Conv   convolution_;                   // non-uniform (Gardner), block-independent, zero-latency
 

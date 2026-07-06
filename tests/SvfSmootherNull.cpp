@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 // The acceptance gate for the IRSlot de-JUCE (juce::dsp::StateVariableTPTFilter → felitronics::eq::Svf,
 // juce::SmoothedValue → felitronics::core::LinearSmoother). "Sound-preserving" means "nulls against what

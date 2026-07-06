@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -82,6 +82,17 @@ public:
             g.drawText (centreText, bounds.toNearestInt(), juce::Justification::centred, false);
         }
 
+        // Centre GLYPH: a big bold letter drawn in the dial centre when the slider carries a "glyph"
+        // property (the reverb TYPE knob → "R"). Larger than the unit text (fills the dial as a mark).
+        const auto glyph = s.getProperties().getWithDefault ("glyph", juce::var()).toString();
+        if (glyph.isNotEmpty())
+        {
+            g.setColour (on ? juce::Colour (kText) : juce::Colour (0xff70707a));
+            const float gf = radius * (glyph.length() <= 1 ? 0.98f : 0.52f);   // single letter fills; a word ("REV") shrinks to fit
+            g.setFont (juce::FontOptions (juce::jmax (10.0f, gf), juce::Font::bold));
+            g.drawText (glyph, bounds.toNearestInt(), juce::Justification::centred, false);
+        }
+
         // Clock-style ticks around the dial — one per discrete stop (the gain dial's 7h…17h positions),
         // lit up to the current value in the dial's own colour, the rest dim. Gated by the "clockTicks" prop.
         if (clockTicks)
@@ -126,7 +137,39 @@ public:
     void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& bg,
                                bool highlighted, bool down) override
     {
-        juce::LookAndFeel_V4::drawButtonBackground (g, b, bg, highlighted, down);
+        // Coloured radio / mode buttons (CLEAN / CRUNCH / HI-GAIN / BOOST / tube types / PP-SE …) carry their
+        // accent in buttonOnColourId. SELECTED = filled with that accent; UNSELECTED = NO background, just a
+        // coloured border (a touch thicker) — per Oleh, replacing the old dim-fill-when-unselected style.
+        // Plain buttons (no on-colour) keep the stock look.
+        //
+        // Opt-out ("orbitStockToggle"): two-fill toggles whose OFF state is the bright/active one — the I/II
+        // mute badge (off = playing/accent, on = muted/dark) and the A/B/C/D snapshots — must keep the stock
+        // fill-in-both-states look; the border style would blank the active button (its border would be drawn
+        // in the *dark* buttonOnColourId). Those buttons set this flag so they fall through to the stock path.
+        const bool stockToggle = (bool) b.getProperties().getWithDefault ("orbitStockToggle", false);
+        if (b.isColourSpecified (juce::TextButton::buttonOnColourId) && ! stockToggle)
+        {
+            const auto  bounds = b.getLocalBounds().toFloat().reduced (1.0f);
+            const auto  accent = b.findColour (juce::TextButton::buttonOnColourId);
+            const bool  on     = b.getToggleState();
+            const float a      = b.isEnabled() ? 1.0f : 0.4f;
+            if (on)
+            {
+                g.setColour (accent.withAlpha (a * (down ? 0.85f : 1.0f)));
+                g.fillRoundedRectangle (bounds, 4.0f);
+            }
+            else
+            {
+                if (highlighted) { g.setColour (accent.withAlpha (a * 0.14f)); g.fillRoundedRectangle (bounds, 4.0f); }   // faint hover
+                g.setColour (accent.withAlpha (a * (highlighted ? 1.0f : 0.75f)));
+                g.drawRoundedRectangle (bounds, 4.0f, 2.0f);   // coloured border, a bit thicker
+            }
+        }
+        else
+        {
+            juce::LookAndFeel_V4::drawButtonBackground (g, b, bg, highlighted, down);
+        }
+
         if (b.isColourSpecified (accentBorderColourId))
         {
             g.setColour (b.findColour (accentBorderColourId).withAlpha (b.isEnabled() ? 0.85f : 0.4f));

@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 2.2.1 LANGUAGES C CXX)
+project(OrbitCab VERSION 2.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -375,6 +375,17 @@ juce_add_binary_data(OrbitCabPreampData
         ${ORBITCAB_PREAMP_FILES}
 )
 
+# Factory spring-reverb IRs (CC0, mono, 48k/24) — a SEPARATE binary-data lib + namespace
+# (ReverbBinaryData) so they never bleed into the cab's BinaryData IR enumeration
+# (orbitcab::bundledIRs walks EVERY .wav in BinaryData). reverbType index 1..N maps to these
+# natural-sorted by filename. See resources/reverb-ir/README.md + docs/ASSET-LICENSES.md.
+juce_add_binary_data(OrbitCabReverbData
+    NAMESPACE   ReverbBinaryData
+    HEADER_NAME ReverbBinaryData.h
+    SOURCES
+        resources/reverb-ir/01-tube.wav
+)
+
 target_compile_definitions(OrbitCab PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -386,6 +397,7 @@ target_compile_definitions(OrbitCab PUBLIC
 target_link_libraries(OrbitCab PRIVATE
     OrbitCabData                # the embedded IR(s) + factory poweramps — BinaryData::* symbols
     OrbitCabPreampData          # the embedded factory preamps — PreampBinaryData::* symbols
+    OrbitCabReverbData          # the embedded spring-reverb IRs — ReverbBinaryData::* symbols
     # NAM (prototype amp stage). WHOLE_ARCHIVE keeps NAM's architecture self-registration:
     # wavenet/lstm/convnet register via static initializers, and a plain static-lib link drops
     # those (unreferenced) objects, so get_dsp() finds no architecture and every load fails.
@@ -438,6 +450,7 @@ target_compile_definitions(orbitcab_dsp_test PRIVATE
 target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
     OrbitCabPreampData                          # factory preamps (PreampBinaryData) — preamp-embed test
+    OrbitCabReverbData                          # embedded spring-reverb IRs (ReverbBinaryData)
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
     felitronics::analysis
@@ -484,6 +497,7 @@ target_compile_definitions(orbitcab_fade_measure PRIVATE
 target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabData
     OrbitCabPreampData
+    OrbitCabReverbData
     nam_core
     teq::core
     felitronics::analysis
@@ -531,6 +545,7 @@ target_compile_definitions(orbitcab_tube_audition PRIVATE
 target_link_libraries(orbitcab_tube_audition PRIVATE
     OrbitCabData
     OrbitCabPreampData
+    OrbitCabReverbData
     nam_core
     teq::core
     felitronics::analysis
@@ -577,6 +592,7 @@ target_compile_definitions(orbitcab_poweramp_toggle_probe PRIVATE
 target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     OrbitCabData
     OrbitCabPreampData
+    OrbitCabReverbData
     nam_core
     teq::core
     felitronics::analysis
@@ -702,6 +718,7 @@ target_compile_definitions(orbitcab_latency_pdc_test PRIVATE
 target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     OrbitCabData
     OrbitCabPreampData
+    OrbitCabReverbData
     nam_core
     teq::core
     felitronics::analysis

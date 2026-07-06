@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -16,6 +16,15 @@ class LevelMeter final : public juce::Component
 {
 public:
     LevelMeter() = default;
+
+    // Zoom the dBFS window (floor .. ceiling). Default −60..+6 is a wide bus meter;
+    // a hot internal tap (preamp-OUT) reads better on a tighter range like −24..+6.
+    void setRange (float floorDb, float ceilDb)
+    {
+        minDb_ = floorDb;
+        maxDb_ = ceilDb;
+        repaint();
+    }
 
     // Called from the editor timer with the latest linear peak (0..~1+).
     void setLevel (float linearPeak)
@@ -39,11 +48,11 @@ public:
 
         auto dbToY = [&] (float db)
         {
-            return juce::jmap (juce::jlimit (kMinDb, kMaxDb, db), kMinDb, kMaxDb, r.getBottom(), r.getY());
+            return juce::jmap (juce::jlimit (minDb_, maxDb_, db), minDb_, maxDb_, r.getBottom(), r.getY());
         };
 
         const float db = level > 0.0f ? juce::Decibels::gainToDecibels (level) : -120.0f;
-        if (db > kMinDb)
+        if (db > minDb_)
         {
             const float y = dbToY (db);
             juce::ColourGradient grad (juce::Colour (0xff7be29a), r.getCentreX(), r.getBottom(),
@@ -55,7 +64,7 @@ public:
 
         // peak-hold tick
         const float pdb = peakHold > 0.0f ? juce::Decibels::gainToDecibels (peakHold) : -120.0f;
-        if (pdb > kMinDb)
+        if (pdb > minDb_)
         {
             const float py = dbToY (pdb);
             g.setColour (colourForDb (pdb));
@@ -66,6 +75,7 @@ public:
         g.setFont (juce::FontOptions (8.0f));
         for (const int mark : { 0, -6, -12, -24, -48 })
         {
+            if ((float) mark < minDb_ || (float) mark > maxDb_) continue;   // outside the zoom window
             const float y = dbToY ((float) mark);
             g.setColour (mark == 0 ? juce::Colour (0x44ffffff) : juce::Colour (0x1effffff));
             g.drawHorizontalLine ((int) y, r.getX(), r.getRight());
@@ -86,11 +96,14 @@ private:
         return juce::Colour (0xff7be29a);                     // green
     }
 
-    static constexpr float kMinDb         = -60.0f;
-    static constexpr float kMaxDb         =   6.0f;
     static constexpr float kRelease       = 0.25f;   // per timer tick
     static constexpr float kPeakDecay     = 0.92f;
     static constexpr int   kPeakHoldTicks = 24;      // ~0.8 s at 30 Hz
+
+    // dBFS window (per-instance so a hot tap — e.g. the preamp-OUT — can zoom in
+    // via setRange; the shared IN/OUT meters keep the wide default).
+    float minDb_ = -60.0f;
+    float maxDb_ =   6.0f;
 
     float level         = 0.0f;
     float peakHold      = 0.0f;

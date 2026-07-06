@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -114,6 +114,7 @@ public:
     // the engine (written on the audio thread, read on the message thread, atomic).
     float getInputLevel()  const { return engine.inputLevel();  }
     float getOutputLevel() const { return engine.outputLevel(); }
+    float getPreampOutLevel() const { return engine.preampOutLevel(); }   // level feeding the poweramp
 
     // DSP load meter (smoothed % of the real-time budget) for the perf badge + its breakdown popup.
     float getCpuTotal()    const { return engine.cpuTotal();    }
@@ -121,6 +122,7 @@ public:
     float getCpuEq()       const { return engine.cpuEq();       }
     float getCpuPoweramp() const { return engine.cpuPoweramp(); }
     float getCpuCab()      const { return engine.cpuCab();      }
+    float getCpuReverb()   const { return engine.cpuReverb();   }
 
     // Spectrum capture (for the editor's pre/post analyser). The audio thread fills a
     // fixed window in the engine; the editor pulls the latest ready frame on its timer
@@ -309,6 +311,7 @@ private:
     std::atomic<float>* tubeBiasParam     = nullptr;   // block-4: dynamic bias-shift / bloom (0..100 %)
     std::atomic<float>* tubeOsParam       = nullptr;   // OS quality: 0 = 4x, 1 = 8x HQ (live switch)
     std::atomic<float>* preampOnParam  = nullptr;   // NAM preamp stage master gate / bypass
+    std::atomic<float>* preampVolParam = nullptr;   // post-preamp output VOLUME (dB) → p.preampVolumeDb
 
     // Amp EQ pointers (packed into cab::Params.eq each block) — tone stack + presence + HPF/LPF.
     std::atomic<float>* eqOnParam       = nullptr;
@@ -320,6 +323,12 @@ private:
     std::atomic<float>* eqHpfFreqParam  = nullptr;
     std::atomic<float>* eqLpfOnParam    = nullptr;
     std::atomic<float>* eqLpfFreqParam  = nullptr;
+
+    // Reverb pointers (packed into cab::Params.reverb each block). reverbType is the discrete spring
+    // selector (0 = Off, 1..N = bundled spring — a change reloads the IR off-thread via applyReverb);
+    // reverbMix is the return amount (read every block, RT-safe).
+    std::atomic<float>* reverbTypeParam = nullptr;
+    std::atomic<float>* reverbMixParam  = nullptr;
 
     // Cached raw parameter pointers — RT-safe atomic reads in processBlock. Per-slot
     // params are [0]=A, [1]=B.
@@ -362,6 +371,7 @@ private:
     std::atomic<bool> pendingTrimReloadB { false };
     std::atomic<bool> pendingPowerampReload { false };   // ampOn toggled / selection changed → reload the .nam
     std::atomic<bool> pendingPreampReload   { false };   // preampOn toggled / selection changed → reload the .nam
+    std::atomic<bool> pendingReverbReload   { false };   // reverbType changed → load the matching bundled spring IR
     std::atomic<bool> pendingLatencyRefresh { false };   // ampMode (capture<->tube) changed → recompute PDC only (no reload)
     std::atomic<bool> enginePrepared     { false };
 
@@ -393,6 +403,9 @@ private:
     // Same for the preamp: resolve "preampSel" + load into the preamp stage (PreampBinaryData /
     // file / embedded pool). Off / empty / unresolved => clears it.
     void applyPreamp();
+    // Read "reverbType" and load the matching bundled spring IR (ReverbBinaryData) into the reverb
+    // convolver off the audio thread. Off (index 0) loads nothing — the engine gates the stage off.
+    void applyReverb();
     // Report the rate-match latency to the host (PDC). 0 unless a NAM stage is on AND resampling
     // (host SR != model 48k) — so it's 0 in the common 48k case. The two stages' latencies sum.
     void updateLatency();

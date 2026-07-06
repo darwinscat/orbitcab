@@ -26,6 +26,24 @@ courtesy in `THIRD_PARTY_NOTICES.md`.
 convolver resamples the IR to the host rate anyway (`loadImpulseResponse`), so one
 rate is enough and halves the binary cost.
 
+## Reverb impulse response (bundled in the plugin)
+
+One spring-reverb IR drives the in-amp reverb (post-EQ, pre-poweramp + cab). Sourced from
+[Freesound](https://freesound.org) — see `resources/reverb-ir/README.md`.
+
+| Pack | License | Source / proof | Status |
+|------|---------|----------------|--------|
+| **Tube spring** (1 IR) | **CC0** (public domain) | Freesound upload by *derickgtwk* (528139, "Fisher K10 Stereo"). *"copy, modify, distribute and perform … even for commercial purposes, all without the need of asking permission."* | ✅ cleared to bundle + redistribute (commercial OK) |
+
+**Embedded in the binary (`juce_add_binary_data`), mono, 48 kHz / 24-bit:**
+
+| Files | UI name | License | Source unit |
+|------|---------|---------|-------------|
+| `resources/reverb-ir/01-tube.wav` | Tube (`REV`) | CC0 | Fisher K-10 tube spring reverb (1960s) |
+
+The reverb wet level (a fixed 0.04) is calibrated **in code**, not baked into the IR. CC0 needs no
+attribution — credited as a courtesy in `resources/reverb-ir/README.md` + `THIRD_PARTY_NOTICES.md`.
+
 ## Fonts & brand (bundled in the plugin)
 
 | Asset | License | Source / proof | Status |

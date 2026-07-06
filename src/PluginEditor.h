@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -233,10 +233,10 @@ private:
     // so — unlike the NAM rows — the toggle is ALWAYS shown (even on a public build with no .nam).
     juce::ToggleButton    eqPowerBtn { "AMP EQ" };
     std::unique_ptr<BAtt> eqPowerAtt;
-    CentreUnitSlider      eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob, eqHpfKnob, eqLpfKnob;
+    CentreUnitSlider      eqBassKnob, eqMidKnob, eqTrebleKnob, eqPresenceKnob;   // (HPF/LPF freq knobs removed — curve edges drag)
     juce::Label           eqBassLabel, eqMidLabel, eqTrebleLabel, eqPresenceLabel;        // static tone captions
-    juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles, double as HPF/LPF captions
-    std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt, eqHpfFreqAtt, eqLpfFreqAtt;
+    juce::ToggleButton    eqHpfBtn { "HPF" }, eqLpfBtn { "LPF" };                         // enable toggles — now overlaid on the curve corners
+    std::unique_ptr<SAtt> eqBassAtt, eqMidAtt, eqTrebleAtt, eqPresenceAtt;
     std::unique_ptr<BAtt> eqHpfOnAtt, eqLpfOnAtt;
     EqCurve               eqCurve;                                                        // live frequency-response curve (teq::EqEngine::magnitudeDbFor)
     juce::Rectangle<int>  eqRowBounds;                                                    // painted panel region of the revealed EQ row
@@ -245,6 +245,20 @@ private:
     void updateEqRow();                                                                   // reveal/hide the row + resize
     int  eqRowH()    const { return 104; }   // (legacy, unused since the merge)
     int  frontRowH() const { return 112; }   // merged PREAMP+TONE strip: combo/gain/channel/boost (left) + tone knobs/curve/HPF-LPF (right)
+
+    // REVERB — in-amp spring tank (after EQ, before poweramp). Lives in the merged PREAMP+TONE strip
+    // (far right), so it shows whenever that strip is open (Preamp or EQ on). A guitar-style DISCRETE
+    // TYPE rotary (Off + the 4 springs; the "reverbType" choice attachment snaps it to whole steps and
+    // drives the text box BELOW from the param's getText → the active spring NAME is the caption under
+    // the knob), plus a MIX return knob. Off is a knob position (zero CPU) — no separate reveal toggle.
+    CentreUnitSlider reverbMixKnob;        // the reverb amount / on-off (0 = off), captioned "REV"
+    juce::Label      reverbMixLabel;       // "REV" caption (above the reverb knob)
+    std::unique_ptr<SAtt> reverbMixAtt;
+    // Preamp VOLUME — the rightmost knob in this row (a preamp param, placed here per Oleh's layout).
+    CentreUnitSlider preampVolKnob;
+    juce::Label      preampVolLabel;
+    std::unique_ptr<SAtt> preampVolAtt;
+    LevelMeter       preampOutMeter;   // thin vertical meter at the strip's right edge — preamp OUT (feeds the poweramp)
 
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without

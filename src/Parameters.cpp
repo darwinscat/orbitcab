@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "Parameters.h"
 
@@ -93,6 +93,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // "preampSel" library selection (not a host param), resolved off the audio thread in
     // PluginProcessor::applyPreamp(). Output loudness-normalisation is always on (no toggle).
     layout.add (std::make_unique<AudioParameterBool>   (ParameterID { "preampOn", kParamVersion }, "Preamp (NAM)", false));
+    // Preamp VOLUME — a post-preamp output gain (after the NAM loudness-normalization, before the EQ), i.e.
+    // the preamp's own "volume" driving the tone stack / poweramp / cab harder. ±12 dB, unity default.
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "preampVol", kParamVersion }, "Preamp Volume",
+                                                        NormalisableRange<float> (-12.0f, 12.0f, 0.1f), 0.0f,
+                                                        AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction (dbText)));
 
     // ---- AMP EQ: tone stack (Bass/Mid/Treble) + Presence + an HPF/LPF "tightening" pair ----
     // Runs BETWEEN the preamp and poweramp NAM stages (its cuts shape what the poweramp distorts
@@ -101,8 +106,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // whole stage (off by default → bit-exact passthrough, shapers-off policy like ampOn/preampOn).
     {
         NormalisableRange<float> eqDb (-12.0f, 12.0f, 0.1f);
-        NormalisableRange<float> eqHpfRange (20.0f, 300.0f);    eqHpfRange.setSkewForCentre (std::sqrt (20.0f * 300.0f));
-        NormalisableRange<float> eqLpfRange (4000.0f, 12000.0f); eqLpfRange.setSkewForCentre (std::sqrt (4000.0f * 12000.0f));
+        NormalisableRange<float> eqHpfRange (20.0f, 1000.0f);    eqHpfRange.setSkewForCentre (std::sqrt (20.0f * 1000.0f));      // wider (was 20–300)
+        NormalisableRange<float> eqLpfRange (1500.0f, 18000.0f); eqLpfRange.setSkewForCentre (std::sqrt (1500.0f * 18000.0f));  // wider (was 4k–12k)
 
         layout.add (std::make_unique<AudioParameterBool>  (ParameterID { "eqOn", kParamVersion }, "Amp EQ", false));
         layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqBass",     kParamVersion }, "EQ Bass",     eqDb, 0.0f,
@@ -120,6 +125,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "eqLpfFreq", kParamVersion }, "EQ LPF Freq", eqLpfRange, 10000.0f,
                                                             AudioParameterFloatAttributes().withLabel ("Hz").withStringFromValueFunction (kHzText)));
     }
+
+    // ---- REVERB: in-amp spring tank, AFTER the EQ and BEFORE the poweramp ----
+    // A MONO convolution spring reverb summed into the amped guitar so the poweramp + cab colour it —
+    // a real amp's built-in reverb, NOT a clean stereo studio reverb after the amp. `reverbType` is a
+    // guitar-style discrete rotary selector: Off (index 0) + the four bundled springs, in the SAME order
+    // as ReverbLibrary's natural-sorted files (index i → reverbIRs()[i-1]); the adapter loads the matching
+    // bundled IR off the audio thread on a change. `reverbMix` is the return amount (parallel add — the
+    // dry is kept). Off (or Mix 0) bypasses the stage entirely (zero CPU). New IDs at v1 — an old session
+    // with neither restores to Off / 25 %.
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "reverbType", kParamVersion }, "Reverb",
+                                                        StringArray { "Off", "Tube" }, 1));   // single spring (Tube), no UI selector — MIX is the on/off
+    layout.add (std::make_unique<AudioParameterFloat>  (ParameterID { "reverbMix",  kParamVersion }, "Reverb Mix",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,   // default 0 = reverb off (at 0 the stage is skipped)
+                                                        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (pctText)));
+    // (The former TEMP calibration knobs Reverb Scale / Reverb Trim are GONE — the Tube spring is now
+    // calibrated in code: wet level baked as a fixed 0.04 in packParams, full IR length (no trim).)
 
     // ---- per slot (A/B): HPF + LPF + Phase + Dry/Wet + Trim-enable ----
     // Cutoff ranges (widened per user): HPF 30–400 Hz (def 80), LPF 2–12 kHz (def 7k);
