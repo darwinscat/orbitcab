@@ -596,6 +596,7 @@ void OrbitCabAudioProcessorEditor::timerCallback()
         ps.total    = processorRef.getCpuTotal();
         ps.preamp   = processorRef.getCpuPreamp();
         ps.eq       = processorRef.getCpuEq();
+        ps.reverb   = processorRef.getCpuReverb();
         ps.poweramp = processorRef.getCpuPoweramp();
         ps.cab      = processorRef.getCpuCab();
         perfBadge.setStats (ps);

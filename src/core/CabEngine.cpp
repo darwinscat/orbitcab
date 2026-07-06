@@ -136,7 +136,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // alloc/lock, RT-safe). Published as a smoothed % of the block's real-time budget at the end.
     using PerfClock = std::chrono::steady_clock;
     const auto tStart = PerfClock::now();
-    double nsPre = 0.0, nsEq = 0.0, nsPwr = 0.0, nsCab = 0.0;
+    double nsPre = 0.0, nsEq = 0.0, nsPwr = 0.0, nsCab = 0.0, nsRev = 0.0;
     auto elapsedNs = [] (PerfClock::time_point a) noexcept
     { return std::chrono::duration<double, std::nano> (PerfClock::now() - a).count(); };
 
@@ -251,6 +251,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // skipped entirely (zero CPU); a turn-off fades via the ramp instead of cutting. Runs on the frontCh
     // lanes, before the mono fold — the fold then carries the reverbed ch0 across in mono mode. ---
     {
+        const auto aRev = PerfClock::now();
         const float revTarget = (p.reverb.type > 0) ? p.reverb.mix01 : 0.0f;
         reverbMixSm.setTargetValue (revTarget);
         if (reverbHasIR() && (revTarget > 0.0f || reverbMixSm.getCurrentValue() > 1.0e-4f))
@@ -287,6 +288,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             // decayed tail — inaudible in practice (the 30 ms mix ramp fades it in from silence).
             reverbMixSm.setCurrentAndTargetValue (reverbHasIR() ? revTarget : 0.0f);
         }
+        nsRev = elapsedNs (aRev);
     }
 
     // Preamp-OUT level: the magnitude leaving the preamp section (preamp → volume → EQ → reverb) that feeds
@@ -477,18 +479,19 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         const double budgetNs = currentSampleRate > 0.0 ? (double) numSamples / currentSampleRate * 1.0e9 : 0.0;
         if (budgetNs > 0.0)
         {
-            const double pct[5] = { totalNs / budgetNs * 100.0, nsPre / budgetNs * 100.0,
-                                    nsEq / budgetNs * 100.0, nsPwr / budgetNs * 100.0, nsCab / budgetNs * 100.0 };
+            const double pct[6] = { totalNs / budgetNs * 100.0, nsPre / budgetNs * 100.0,
+                                    nsEq / budgetNs * 100.0, nsPwr / budgetNs * 100.0, nsCab / budgetNs * 100.0,
+                                    nsRev / budgetNs * 100.0 };
             accumulateLoads (pct);
         }
     }
 }
 
-void CabEngine::accumulateLoads (const double pct[5]) noexcept
+void CabEngine::accumulateLoads (const double pct[6]) noexcept
 {
     // One-pole EMA — stable at the GUI's 30 Hz, quick enough to track a stage toggling on/off.
     constexpr double a = 0.08;
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 6; ++i)
     {
         cpuSm[i] += a * (pct[i] - cpuSm[i]);
         cpuPct[i].store ((float) cpuSm[i], std::memory_order_relaxed);

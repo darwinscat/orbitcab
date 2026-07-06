@@ -10,7 +10,7 @@
 // PerfBadge — a small clickable readout next to the version: "<latency> ms · <CPU>%". The editor
 // pushes a Stats snapshot each timer tick (it owns the processor handle); the badge just displays.
 // Click → a CallOutBox (same pattern as VersionBadge) with the per-stage DSP-load breakdown
-// (Preamp / EQ / Poweramp / Cab + Total), kept live by its own timer while open.
+// (Preamp / EQ / Reverb / Poweramp / Cab + Total), kept live by its own timer while open.
 //
 // The CPU figure is a wall-clock estimate (% of the block's real-time budget), smoothed in the
 // engine — noisy and machine-dependent by nature, so it's shown as an approximate gauge.
@@ -19,7 +19,7 @@ class PerfBadge final : public juce::Component,
                         public juce::SettableTooltipClient
 {
 public:
-    struct Stats { int latencySamples = 0; float latencyMs = 0.0f, total = 0.0f, preamp = 0.0f, eq = 0.0f, poweramp = 0.0f, cab = 0.0f; };
+    struct Stats { int latencySamples = 0; float latencyMs = 0.0f, total = 0.0f, preamp = 0.0f, eq = 0.0f, reverb = 0.0f, poweramp = 0.0f, cab = 0.0f; };
 
     PerfBadge()
     {
@@ -36,7 +36,7 @@ public:
         const juce::uint32 col = stats.total < 50.0f ? 0xff70707a
                                : stats.total < 80.0f ? 0xffe0b020 : 0xffe06060;
         g.setColour (juce::Colour (col));
-        g.drawText (juce::String (stats.latencySamples) + " smp  " + juce::String (juce::roundToInt (stats.total)) + "%",
+        g.drawText (juce::String (stats.latencySamples) + " smp  " + juce::String (stats.total, 1) + "%",
                     getLocalBounds().toFloat(), juce::Justification::centredRight, false);
     }
 
@@ -51,7 +51,7 @@ private:
 
     struct Panel final : public juce::Component, private juce::Timer
     {
-        explicit Panel (PerfBadge& b) : owner (&b) { setSize (236, 178); startTimerHz (20); }
+        explicit Panel (PerfBadge& b) : owner (&b) { setSize (236, 198); startTimerHz (20); }   // +1 row (Reverb)
         void timerCallback() override { repaint(); }
 
         void paint (juce::Graphics& g) override
@@ -74,6 +74,7 @@ private:
             const Row rows[] = {
                 { "Preamp",   s.preamp,   OrbitCabLookAndFeel::kAccent  },
                 { "EQ",       s.eq,       OrbitCabLookAndFeel::kNeutral },
+                { "Reverb",   s.reverb,   OrbitCabLookAndFeel::kAccent  },
                 { "Poweramp", s.poweramp, OrbitCabLookAndFeel::kAccent  },
                 { "Cab",      s.cab,      OrbitCabLookAndFeel::kAccentB },
             };
@@ -89,7 +90,7 @@ private:
             g.setFont (juce::FontOptions (11.0f, bold ? juce::Font::bold : juce::Font::plain));
             g.setColour (juce::Colour (OrbitCabLookAndFeel::kText));
             g.drawText (name, rr.removeFromLeft (60), juce::Justification::centredLeft, false);
-            g.drawText (juce::String (juce::roundToInt (pct)) + "%", rr.removeFromRight (38),
+            g.drawText (juce::String (pct, 1) + "%", rr.removeFromRight (44),
                         juce::Justification::centredRight, false);
             auto track = rr.reduced (4, 0).withSizeKeepingCentre (juce::jmax (1, rr.getWidth() - 8), 6).toFloat();
             g.setColour (juce::Colour (0x33ffffff));

@@ -138,6 +138,7 @@ public:
     float cpuEq()       const { return cpuPct[2].load (std::memory_order_relaxed); }
     float cpuPoweramp() const { return cpuPct[3].load (std::memory_order_relaxed); }
     float cpuCab()      const { return cpuPct[4].load (std::memory_order_relaxed); }
+    float cpuReverb()   const { return cpuPct[5].load (std::memory_order_relaxed); }
 
     void  setSpectrumActive (bool shouldFeed) { spectrumActive.store (shouldFeed, std::memory_order_relaxed); }
     bool  pullSpectrum (bool pre, float* destFftSize);
@@ -276,11 +277,11 @@ private:
     felitronics::analysis::SpectrumTap preTap, postTap;
     std::atomic<bool> spectrumActive { false };
 
-    // DSP load meter state. pct[5] = {total, preamp, eq, poweramp, cab}. accumulateLoads() EMA-
-    // smooths and publishes to cpuPct (the GUI reads those). cpuSm is the smoother's running state.
-    void accumulateLoads (const double pct[5]) noexcept;
-    std::atomic<float> cpuPct[5] { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } };
-    double cpuSm[5] { 0.0, 0.0, 0.0, 0.0, 0.0 };
+    // DSP load meter state. pct[6] = {total, preamp, eq, poweramp, cab, reverb}. accumulateLoads()
+    // EMA-smooths and publishes to cpuPct (the GUI reads those). cpuSm is the smoother's running state.
+    void accumulateLoads (const double pct[6]) noexcept;
+    std::atomic<float> cpuPct[6] { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } };
+    double cpuSm[6] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 };
 
 } // namespace cab

@@ -122,6 +122,7 @@ public:
     float getCpuEq()       const { return engine.cpuEq();       }
     float getCpuPoweramp() const { return engine.cpuPoweramp(); }
     float getCpuCab()      const { return engine.cpuCab();      }
+    float getCpuReverb()   const { return engine.cpuReverb();   }
 
     // Spectrum capture (for the editor's pre/post analyser). The audio thread fills a
     // fixed window in the engine; the editor pulls the latest ready frame on its timer
