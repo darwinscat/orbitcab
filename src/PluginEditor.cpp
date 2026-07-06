@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "PluginEditor.h"
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
@@ -295,7 +295,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     preampPowerAtt = std::make_unique<BAtt> (processorRef.apvts, "preampOn", preampPowerBtn);
     preampPowerBtn.onClick = [this] { updatePreampRow(); };       // reveal/hide the row + resize on toggle
 
-    addAndMakeVisible (preampTubeDisplay);   // symbolic amp + glowing tube in the revealed row
+    addChildComponent (preampTubeDisplay);   // device glyph removed from the preamp strip — kept as a hidden child
 
     // Contextual channel switch — shown only for the channels the selected NAME has (and only when ≥2
     // exist). Each slot's caption, colour tint and channel value are data-driven in syncPreampSelector
@@ -419,11 +419,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     setupKnob (eqMidKnob,      "eqMid",      eqMidAtt,      "Mid \xe2\x80\x94 bell ~600 Hz",            true,  "dB");
     setupKnob (eqTrebleKnob,   "eqTreble",   eqTrebleAtt,   "Treble \xe2\x80\x94 high shelf ~2.8 kHz",  true,  "dB");
     setupKnob (eqPresenceKnob, "eqPresence", eqPresenceAtt, "Presence \xe2\x80\x94 high shelf ~5 kHz",  true,  "dB");
-    setupKnob (eqHpfKnob,      "eqHpfFreq",  eqHpfFreqAtt,  "High-pass into the poweramp (tighten the lows)", false, "Hz");
-    setupKnob (eqLpfKnob,      "eqLpfFreq",  eqLpfFreqAtt,  "Low-pass into the poweramp (tame the fizz)",     false, "kHz");
-    eqLpfKnob.textFromValueFunction = [] (double v) { return juce::String (v / 1000.0, 1); };                  // number below in kHz
-    eqLpfKnob.valueFromTextFunction = [] (const juce::String& t) { return parseLooseNumber (t) * 1000.0; };    // editor kHz → Hz
-    eqLpfKnob.updateText();
+    // (EQ HPF/LPF freq knobs removed — the response curve's own left/right edges are the draggable corners.)
 
     // Caption above each tone knob = the model NAME (the unit lives inside the knob now).
     styleLabel (eqBassLabel,     "BASS");
@@ -448,7 +444,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         e.bassDb     = a.getRawParameterValue ("eqBass")->load();
         e.midDb      = a.getRawParameterValue ("eqMid")->load();
         e.trebleDb   = a.getRawParameterValue ("eqTreble")->load();
-        e.presenceDb = a.getRawParameterValue ("eqPresence")->load();
+        e.presenceDb = 0.0f;   // Presence removed — keep the curve flat there (no leftover-state shelf)
         e.hpfOn      = a.getRawParameterValue ("eqHpfOn")->load() > 0.5f;
         e.hpfHz      = a.getRawParameterValue ("eqHpfFreq")->load();
         e.lpfOn      = a.getRawParameterValue ("eqLpfOn")->load() > 0.5f;
@@ -457,6 +453,34 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         return cab::AmpEq::kNumBands;
     };
     addAndMakeVisible (eqCurve);
+    // Drag the curve's left/right edges → the HPF/LPF freq params (replacing the deleted knobs).
+    eqCurve.onHpfDragged = [this] (float hz) {
+        auto& ap = processorRef.apvts;
+        if (auto* q = ap.getParameter ("eqHpfFreq")) q->setValueNotifyingHost (ap.getParameterRange ("eqHpfFreq").convertTo0to1 (hz));
+    };
+    eqCurve.onLpfDragged = [this] (float hz) {
+        auto& ap = processorRef.apvts;
+        if (auto* q = ap.getParameter ("eqLpfFreq")) q->setValueNotifyingHost (ap.getParameterRange ("eqLpfFreq").convertTo0to1 (hz));
+    };
+    eqHpfBtn.toFront (false);   // HPF/LPF enable checkboxes sit on the curve's top corners → keep them clickable
+    eqLpfBtn.toFront (false);
+
+    // ---- REVERB: in-amp Tube spring (after EQ, before poweramp). ONE spring now — no selector knob.
+    // The reverb knob (captioned REV) is the amount + on/off (0 = off). SCALE/TRIM are TEMP calibration;
+    // VOL is the preamp volume (orange). ----
+    styleLabel (reverbMixLabel, "REV");   // caption above the reverb amount knob
+    setupKnob (reverbMixKnob, "reverbMix", reverbMixAtt,
+               juce::String::fromUTF8 ("Reverb \xe2\x80\x94 Tube spring return amount (0 = off)"), false, "MIX");
+    reverbMixKnob.setColour (juce::Slider::rotarySliderFillColourId, juce::Colours::white);   // white (per Oleh)
+    reverbMixKnob.setColour (juce::Slider::thumbColourId,            juce::Colours::white);
+    // (Reverb Scale / Trim calibration knobs removed — Tube is calibrated in code now.)
+    // Preamp VOLUME — the rightmost knob (a preamp param): post-preamp output level. Orange (like GAIN), ±12 dB.
+    styleLabel (preampVolLabel, "VOL");
+    setupKnob (preampVolKnob, "preampVol", preampVolAtt,
+               juce::String::fromUTF8 ("Preamp Volume \xe2\x80\x94 post-preamp output level, drives the EQ / poweramp / cab harder"), false, "dB");
+    preampVolKnob.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));   // orange (like GAIN)
+    preampVolKnob.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
+    addAndMakeVisible (preampOutMeter);   // preamp-OUT meter (right of VOL) — shown/hidden with the front strip
 
     // ---- POWERAMP SIMULATOR (white-box tube, blocks 2+3): the third stage tab (radio with CAPTURES) ----
     tubeSimBtn.setTooltip (juce::String::fromUTF8 ("White-box tube poweramp simulator \xe2\x80\x94 no capture needed. Shares the poweramp slot with POWER AMP CAPTURES (only one runs)."));
@@ -561,6 +585,7 @@ void OrbitCabAudioProcessorEditor::timerCallback()
 {
     inMeter.setLevel  (processorRef.getInputLevel());
     outMeter.setLevel (processorRef.getOutputLevel());
+    preampOutMeter.setLevel (processorRef.getPreampOutLevel());   // preamp OUT (pre-poweramp)
     {
         PerfBadge::Stats ps;
         const double sr = processorRef.getSampleRate();
@@ -613,6 +638,12 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     {
         const double sr = processorRef.getSampleRate();
         eqCurve.sampleRate = sr > 0.0 ? sr : 48000.0;
+        // Push the live HPF/LPF on-state + freq + ranges so the curve's draggable corners track the params.
+        auto& ap = processorRef.apvts;
+        const auto hR = ap.getParameterRange ("eqHpfFreq");
+        const auto lR = ap.getParameterRange ("eqLpfFreq");
+        eqCurve.setHpf (ap.getRawParameterValue ("eqHpfOn")->load() > 0.5f, ap.getRawParameterValue ("eqHpfFreq")->load(), hR.start, hR.end);
+        eqCurve.setLpf (ap.getRawParameterValue ("eqLpfOn")->load() > 0.5f, ap.getRawParameterValue ("eqLpfFreq")->load(), lR.start, lR.end);
         eqCurve.repaint();
     }
 
@@ -695,11 +726,15 @@ void OrbitCabAudioProcessorEditor::refreshDryWetVisibility()
 void OrbitCabAudioProcessorEditor::updateSpectrum()
 {
     if (! spectrumEnabled)                           // analyser off
+    {
+        eqCurve.setSpectrum ({});
         return;
+    }
 
     spectrum.update (processorRef);
     slots[0].setSpectrum (spectrum.pre(), spectrum.post());
     slots[1].setSpectrum (spectrum.pre(), spectrum.post());
+    eqCurve.setSpectrum (spectrum.post());           // faint output spectrum behind the EQ curve
 }
 
 void OrbitCabAudioProcessorEditor::applyWaveformScale()
@@ -1334,7 +1369,7 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     }
 
     preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
-    preampTubeDisplay.setVisible (on);
+    preampTubeDisplay.setVisible (false);             // device glyph removed from the preamp strip (Oleh) — freed for the reverb
 
     preampBox.setVisible (on && preampBox.getNumItems() > 0);                // the unified NAME combo
 
@@ -1348,10 +1383,12 @@ void OrbitCabAudioProcessorEditor::updateEqRow()
     eqOnCache = on;
 
     eqCurve.setVisible (on);
-    for (auto* k : { &eqBassKnob, &eqMidKnob, &eqTrebleKnob, &eqPresenceKnob, &eqHpfKnob, &eqLpfKnob })
+    for (auto* k : { &eqBassKnob, &eqMidKnob, &eqTrebleKnob })   // HPF/LPF freq knobs removed (curve edges drag)
         k->setVisible (on);
-    for (auto* l : { &eqBassLabel, &eqMidLabel, &eqTrebleLabel, &eqPresenceLabel })
+    for (auto* l : { &eqBassLabel, &eqMidLabel, &eqTrebleLabel })
         l->setVisible (on);
+    eqPresenceKnob.setVisible (false);    // Presence removed from the UI — redundant ~5 kHz HF shelf (near Treble),
+    eqPresenceLabel.setVisible (false);   // and NOT the real NFB amp presence (that's the Tube poweramp's own Presence)
     eqHpfBtn.setVisible (on);
     eqLpfBtn.setVisible (on);
 
@@ -1979,12 +2016,32 @@ void OrbitCabAudioProcessorEditor::resized()
         preampRowBounds = r.removeFromBottom (frontRowH());
         auto inner = preampRowBounds.reduced (16, 9);
 
-        // ---- preamp picks (left, signal order) ----
+        // ---- REVERB (always shown while the strip is open): TYPE (spring name in its box below) + MIX,
+        // carved from the far RIGHT first so it's present whether the preamp half, the tone half, or both. ----
+        {
+            // preamp-OUT meter — a thin vertical bar at the far right (where the signal leaves the preamp
+            // section for the poweramp), i.e. right AFTER the VOL knob.
+            inner.removeFromRight (3);
+            preampOutMeter.setBounds (inner.removeFromRight (8).reduced (0, 2));
+            inner.removeFromRight (6);
+
+            constexpr int rgap = 4, wKnob = 56;   // both knobs one size (matches the EQ tone knobs)
+            auto rev = inner.removeFromRight (wKnob * 2 + rgap);
+            auto place = [&] (juce::Label& lab, juce::Component& knob, int w)
+            {
+                auto cell = rev.removeFromLeft (w);
+                lab.setBounds (cell.removeFromTop (13));
+                knob.setBounds (cell);
+                rev.removeFromLeft (rgap);
+            };
+            place (reverbMixLabel, reverbMixKnob, wKnob);   // REV caption + "MIX" dial — reverb amount (0 = off)
+            place (preampVolLabel, preampVolKnob, wKnob);   // rightmost — preamp VOLUME
+            inner.removeFromRight (10);
+        }
+
+        // ---- preamp picks (left, signal order) — device glyph removed; BOOST stacked under GAIN ----
         if (preShown)
         {
-            preampTubeDisplay.setBounds (inner.removeFromLeft (showTubesPref ? 92 : 44));
-            inner.removeFromLeft (12);
-
             {   // gear caption (top) · NAME combo (middle) · device glyph strip (bottom)
                 auto col = inner.removeFromLeft (150);
                 const int labH = 14, boxH = 28, stripH = 34, gap = 4;   // taller strip → bigger glyphs + glow room
@@ -1997,9 +2054,18 @@ void OrbitCabAudioProcessorEditor::resized()
             }
             inner.removeFromLeft (12);
 
-            if (preampGainSlider.isVisible())   // orange rotary GAIN — a bit bigger; square cell keeps the dial round
+            // GAIN dial with BOOST stacked directly UNDER it (one column) — orange rotary; square cell keeps it round
+            if (preampGainSlider.isVisible())
             {
-                preampGainSlider.setBounds (inner.removeFromLeft (84).withSizeKeepingCentre (84, juce::jmin (inner.getHeight(), 84)));
+                auto gcol = inner.removeFromLeft (84);
+                if (preampBoostBtn.isVisible())
+                    preampBoostBtn.setBounds (gcol.removeFromBottom (24).withSizeKeepingCentre (74, 22));
+                preampGainSlider.setBounds (gcol.withSizeKeepingCentre (84, juce::jmin (gcol.getHeight(), 84)));
+                inner.removeFromLeft (10);
+            }
+            else if (preampBoostBtn.isVisible())   // no gain dial for this preamp → boost stands on its own
+            {
+                preampBoostBtn.setBounds (inner.removeFromLeft (74).withSizeKeepingCentre (74, 24));
                 inner.removeFromLeft (10);
             }
 
@@ -2013,12 +2079,6 @@ void OrbitCabAudioProcessorEditor::resized()
                 for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (stack.removeFromTop (bh)); stack.removeFromTop (4); }
                 inner.removeFromLeft (10);
             }
-
-            if (preampBoostBtn.isVisible())
-            {
-                preampBoostBtn.setBounds (inner.removeFromLeft (60).withSizeKeepingCentre (60, 26));
-                inner.removeFromLeft (12);
-            }
         }
 
         // ---- tone EQ (right) ----
@@ -2027,15 +2087,13 @@ void OrbitCabAudioProcessorEditor::resized()
             inner.removeFromLeft (preShown ? 8 : 0);   // small gap after the preamp half (panel paints a divider)
 
             struct Cell { juce::Slider* knob; juce::Label* label; juce::ToggleButton* toggle; };
-            const Cell tone[4] = {
-                { &eqBassKnob,     &eqBassLabel,     nullptr },
-                { &eqMidKnob,      &eqMidLabel,      nullptr },
-                { &eqTrebleKnob,   &eqTrebleLabel,   nullptr },
-                { &eqPresenceKnob, &eqPresenceLabel, nullptr },
+            // Presence removed — it was a ~5 kHz high shelf (near Treble's ~2.8 kHz shelf), redundant with
+            // Treble and NOT the real NFB amp presence (that lives in the Tube poweramp's own Presence).
+            const Cell tone[3] = {
+                { &eqBassKnob,   &eqBassLabel,   nullptr },
+                { &eqMidKnob,    &eqMidLabel,    nullptr },
+                { &eqTrebleKnob, &eqTrebleLabel, nullptr },
             };
-            const Cell hpf { &eqHpfKnob, nullptr, &eqHpfBtn };
-            const Cell lpf { &eqLpfKnob, nullptr, &eqLpfBtn };
-
             constexpr int kKnobW = 56, kKnobGap = 2;   // tighter spacing than before
             auto place = [&] (const Cell& c, juce::Rectangle<int> cell)
             {
@@ -2047,16 +2105,30 @@ void OrbitCabAudioProcessorEditor::resized()
 
             for (auto& c : tone) { place (c, inner.removeFromLeft (kKnobW)); inner.removeFromLeft (kKnobGap); }
 
-            // HPF/LPF AFTER the curve — peeled from the right so order reads … curve | HPF | LPF.
-            place (lpf, inner.removeFromRight (kKnobW)); inner.removeFromRight (kKnobGap);
-            place (hpf, inner.removeFromRight (kKnobW)); inner.removeFromRight (kKnobGap);
-
+            // The HPF/LPF freq knobs are gone — the curve fills the rest, and its own left/right edges are the
+            // draggable HPF/LPF corners; the enable checkboxes overlay the curve's top-left / top-right corners.
             inner.removeFromLeft (8);
-            eqCurve.setBounds (inner.reduced (0, 4));   // curve fills the middle
+            eqCurve.setBounds (inner.reduced (0, 4));
+            {
+                auto cb = eqCurve.getBounds();
+                eqHpfBtn.setBounds (cb.getX() + 4,      cb.getY() + 3, 54, 18);   // HPF — top-left
+                eqLpfBtn.setBounds (cb.getRight() - 58, cb.getY() + 3, 54, 18);   // LPF — top-right
+            }
         }
+
+        for (juce::Component* c : { (juce::Component*) &reverbMixLabel, (juce::Component*) &reverbMixKnob,
+                                    (juce::Component*) &preampVolLabel, (juce::Component*) &preampVolKnob,
+                                    (juce::Component*) &preampOutMeter })
+            c->setVisible (true);
     }
     else
+    {
         preampRowBounds = {};
+        for (juce::Component* c : { (juce::Component*) &reverbMixLabel, (juce::Component*) &reverbMixKnob,
+                                    (juce::Component*) &preampVolLabel, (juce::Component*) &preampVolKnob,
+                                    (juce::Component*) &preampOutMeter })
+            c->setVisible (false);   // reverb rides the strip — hidden when neither Preamp nor EQ is open
+    }
 
     auto strip = r.removeFromBottom (46);
     mixStripBounds = strip;                       // repaint region for the A→B gradient

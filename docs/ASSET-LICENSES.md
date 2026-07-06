@@ -26,6 +26,31 @@ courtesy in `THIRD_PARTY_NOTICES.md`.
 convolver resamples the IR to the host rate anyway (`loadImpulseResponse`), so one
 rate is enough and halves the binary cost.
 
+## Reverb impulse responses (bundled in the plugin)
+
+Reverb IRs driving the in-amp reverb (post-EQ, pre-cab). Sourced from
+[Freesound](https://freesound.org) — see `resources/reverb-ir/README.md` for per-file source
+URLs, authors, and the processing applied.
+
+| Pack | License | Source / proof | Status |
+|------|---------|----------------|--------|
+| **Spring reverbs** (4 IRs) | **CC0** (public domain) | Freesound uploads by *derickgtwk* (530378, 528139), *0e0* (131034), *KenMix* (643937). Each page: *"copy, modify, distribute and perform … even for commercial purposes, all without the need of asking permission."* | ✅ cleared to bundle + redistribute (commercial OK) |
+| **Small plate** (1 IR) | **CC-BY 4.0** (Attribution) | Freesound upload by *recordinghopkins* (175307). CC-BY 4.0: share + remix (incl. commercial) **with attribution**. | ✅ cleared — **attribution required** (credited below + `THIRD_PARTY_NOTICES.md`); IR **modified** (mono-fold, trim, resample) |
+
+**Embedded in the binary (`juce_add_binary_data`), all mono, 48 kHz / 24-bit:**
+
+| Files | UI name | License | Source unit |
+|------|---------|---------|-------------|
+| `resources/reverb-ir/01-vintage.wav` | Vintage | CC0   | 1960s spring tank |
+| `resources/reverb-ir/02-smooth.wav`  | Smooth  | CC0   | Roland RE-301 spring (via Mackie 8-bus) |
+| `resources/reverb-ir/03-tube.wav`    | Tube    | CC0   | Fisher K-10 tube spring |
+| `resources/reverb-ir/04-studio.wav`  | Studio  | CC0   | Fostex 3180 studio spring |
+| `resources/reverb-ir/05-small.wav`   | Small   | CC-BY | American stainless-steel plate — © recordinghopkins |
+
+Per-reverb **calibration is baked** (wet level in the IR amplitude, trimmed length + fade); the Reverb
+Scale knob is a global fine-tune on top. CC0 needs no attribution (credited as a courtesy); **CC-BY
+requires crediting *recordinghopkins* + noting the IR is modified** — both flow into `THIRD_PARTY_NOTICES.md`.
+
 ## Fonts & brand (bundled in the plugin)
 
 | Asset | License | Source / proof | Status |

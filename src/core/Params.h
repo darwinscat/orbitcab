@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -81,6 +81,23 @@ struct TubeParams
     bool operator== (const TubeParams&) const = default;   // context compare (leveler route memory)
 };
 
+// In-amp spring reverb — a mono convolution spring tank, inserted AFTER the tone stack (EQ) and
+// BEFORE the poweramp, exactly like a real amp's built-in reverb: the wet is summed with the amped
+// guitar and then coloured by the poweramp + cab. NOT a clean stereo studio reverb. The engine only
+// needs `type>0` (on) + `mix01` (return amount) here; WHICH spring is loaded into the reverb convolver
+// is chosen by the adapter (it loads the matching bundled IR). type is a plain index: 0 = Off, 1..N =
+// the Nth bundled spring — a change re-selects the IR off-thread (atomic swap), so the enum lives adapter-side.
+struct ReverbParams
+{
+    int   type  = 0;       // 0 = Off (bypassed, zero CPU); 1..N = bundled reverb index
+    float mix01 = 0.0f;    // reverb return amount [0,1] (the "Reverb Mix" param / 100) — parallel add, dry kept
+    float scale01 = 0.15f; // wet-level calibration multiplier [0,1] — TEMP calibration knob (a spring/plate IR
+                           // convolved with a sustained note accumulates a lot of tail energy, so the raw return
+                           // is hot). Baked per-reverb once dialled in, then this knob is removed.
+
+    bool operator== (const ReverbParams&) const = default;   // context compare (leveler route memory)
+};
+
 struct Params
 {
     float inputGainDb  = 0.0f;
@@ -88,6 +105,7 @@ struct Params
     float mixAB01      = 0.0f;   // 0 = slot A, 1 = slot B (the "mixAB" param / 100)
     bool  bypass       = false;
     bool  preampOn     = false;  // run the NAM preamp stage first (input → PREAMP → POWERAMP → cab)
+    float preampVolumeDb = 0.0f; // post-preamp output volume (dB) — drives the EQ/poweramp/cab; before the dry tap
     bool  ampOn        = false;  // run the NAM poweramp stage in front of the cab
     PowerAmpMode powerAmpMode = PowerAmpMode::capture;  // when ampOn: capture (NAM) vs tube (white-box)
     bool  autoLevel    = true;
@@ -97,9 +115,10 @@ struct Params
                                  // section (preamp/EQ/poweramp) on ONE lane + duplicate before the
                                  // cab (½ the NAM cost). false = true-stereo (v1). Set by the adapter.
 
-    EqParams   eq;               // amp tone EQ, between the preamp and poweramp NAM stages
-    TubeParams tube;             // white-box tube poweramp controls (Tube mode only)
-    SlotParams slot[2];          // [0] = A, [1] = B
+    EqParams    eq;              // amp tone EQ, between the preamp and poweramp NAM stages
+    ReverbParams reverb;         // in-amp spring reverb, between the EQ and poweramp (mono send/return)
+    TubeParams  tube;            // white-box tube poweramp controls (Tube mode only)
+    SlotParams  slot[2];         // [0] = A, [1] = B
 };
 
 } // namespace cab

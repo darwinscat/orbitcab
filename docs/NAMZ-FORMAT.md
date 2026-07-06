@@ -17,8 +17,11 @@ Used in two places, one currency:
 - the bundled **factory library** (shipped as `.namz` under `resources/preamps/` etc.), and
 - the **embedded-in-preset/session pool** (a self-contained saved sound — state `v7`).
 
-Codec: `src/core/NamCodec.{h,cpp}` (public surface is juce-only; nlohmann/json is hidden in the `.cpp`).
-Tests: `tests/NamCodecTests.cpp` (contract-first, adversarial). CLI: `tools/namz/namzpack.cpp`.
+Codec: the format is now implemented in the **extracted `darwinscat/namz` library** (MIT), pinned via CMake
+`FetchContent` (#104). `src/core/NamCodec.{h,cpp}` is a thin juce-boundary adapter that delegates to
+`namz::pack` / `namz::unpack` / `namz::readMeta` (its public surface stays juce-only). This spec and the
+namz library describe one **byte-identical** format — keep them in sync.
+Tests: `tests/NamCodecTests.cpp` (contract-first, adversarial — exercises the in-repo adapter). CLI: `tools/namz/namzpack.cpp`.
 
 ## Wire format
 

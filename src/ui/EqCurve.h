@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -9,23 +9,39 @@
 
 #include <cmath>
 #include <functional>
+#include <vector>
 
 //==============================================================================
-// EqCurve — a tiny read-only display of the amp-EQ frequency response. The owner sets `getBands`
-// (fills a teq::BandParams array, returns the count) and `sampleRate`; paint() evaluates the exact
-// composite magnitude via teq::EqEngine::magnitudeDbFor() (the same math the audio path uses, so the
-// curve never lies). Log frequency axis 20 Hz–20 kHz, ±kDbRange dB. Repainted ~30 Hz by the editor
-// so it tracks the knobs live.
+// EqCurve — the amp-EQ frequency-response display AND its HPF/LPF interaction surface. The owner sets
+// `getBands` (fills a teq::BandParams array — index 0 = HPF, last = LPF; returns the count) + `sampleRate`;
+// paint() evaluates the exact composite magnitude via teq::EqEngine::magnitudeDbFor() (the same math the
+// audio path uses, so the curve never lies). Log axis 20 Hz–20 kHz, ±kDbRange dB.
+//
+// INTERACTION (replaces the old HPF/LPF freq knobs): the LEFT edge is the HPF corner, the RIGHT edge the
+// LPF corner — drag them horizontally to set the frequency (like the IR-waveform filter edges). The owner
+// feeds the live HPF/LPF on-state + freq + ranges via setHpf/setLpf, and gets drag callbacks out.
+//
+// A faint SPECTRUM (the amp output) is drawn behind the curve on the same log axis.
 //==============================================================================
 class EqCurve : public juce::Component
 {
 public:
-    static constexpr double kDbRange = 18.0;   // ± vertical range
+    static constexpr double kDbRange = 18.0;     // ± vertical range
+    static constexpr float  kFLo = 20.0f, kFHi = 20000.0f;
+    static constexpr float  kGrabPx = 16.0f;     // hit-test radius around a corner's x
 
     std::function<int (teq::BandParams* out)> getBands;   // fill bands, return count; nullptr → nothing drawn
     double sampleRate = 48000.0;
 
-    EqCurve() { setInterceptsMouseClicks (false, false); }   // purely decorative; clicks fall through
+    // Drag callbacks — the owner writes the param (setValueNotifyingHost). hz is already clamped to range.
+    std::function<void (float hz)> onHpfDragged, onLpfDragged;
+
+    EqCurve() { setInterceptsMouseClicks (true, false); }   // draggable corners; children (checkboxes) still click
+
+    // Live HPF/LPF state pushed by the editor each timer tick (from the params).
+    void setHpf (bool on, float hz, float lo, float hi) { hpfOn = on; hpfHz = hz; hpfMin = lo; hpfMax = hi; }
+    void setLpf (bool on, float hz, float lo, float hi) { lpfOn = on; lpfHz = hz; lpfMin = lo; lpfMax = hi; }
+    void setSpectrum (const std::vector<float>& post) { postSpec = post; }
 
     void paint (juce::Graphics& g) override
     {
@@ -33,15 +49,30 @@ public:
         if (r.isEmpty() || ! getBands)
             return;
 
-        constexpr double fLo = 20.0, fHi = 20000.0;
-        const double logSpan = std::log (fHi / fLo);
+        const double logSpan = std::log ((double) kFHi / kFLo);
         auto yFor = [&] (double db) noexcept
         {
-            // Scale by the visible ±kDbRange window, but clamp far past it (±60 dB) so a roll-off
-            // (HPF/LPF) runs OFF the graph edge instead of flattening into a shelf along the floor.
             const double d = juce::jlimit (-60.0, 60.0, db);
             return r.getCentreY() - (float) (d / kDbRange) * (r.getHeight() * 0.5f);
         };
+
+        // --- spectrum (amp output) behind everything: faint filled area on the same log axis ---
+        if (! postSpec.empty())
+        {
+            const int nb = (int) postSpec.size();
+            juce::Path s;
+            s.startNewSubPath (r.getX(), r.getBottom());
+            for (int i = 0; i < nb; ++i)
+            {
+                const float x = r.getX() + r.getWidth() * (float) i / (float) (nb - 1);
+                const float h = juce::jlimit (0.0f, 1.0f, postSpec[(size_t) i]) * r.getHeight() * 0.9f;
+                s.lineTo (x, r.getBottom() - h);
+            }
+            s.lineTo (r.getRight(), r.getBottom());
+            s.closeSubPath();
+            g.setColour (juce::Colour (0x18ffffff));
+            g.fillPath (s);
+        }
 
         teq::BandParams bands[teq::EqEngine::kMaxBands];
         const int n = getBands (bands);
@@ -53,16 +84,13 @@ public:
         for (int i = 0; i <= steps; ++i)
         {
             const double frac = (double) i / (double) steps;
-            const double f    = fLo * std::exp (logSpan * frac);
+            const double f    = (double) kFLo * std::exp (logSpan * frac);
             const double db   = teq::EqEngine::magnitudeDbFor (bands, n, f, fs);
             const float  x    = r.getX() + (float) frac * r.getWidth();
-            const float  y    = yFor (db);
-            if (i == 0) p.startNewSubPath (x, y);
-            else        p.lineTo (x, y);
+            if (i == 0) p.startNewSubPath (x, yFor (db));
+            else        p.lineTo (x, yFor (db));
         }
 
-        // Fill between the curve and the 0 dB line — the response "rests" on a horizontal shelf at
-        // 0, the fill pinching to that line wherever the curve crosses 0 dB.
         juce::Path fill = p;
         fill.lineTo (r.getRight(), yZero);
         fill.lineTo (r.getX(),     yZero);
@@ -70,28 +98,76 @@ public:
         g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.14f));
         g.fillPath (fill);
 
-        // the 0 dB shelf line itself
         g.setColour (juce::Colour (0x33ffffff));
         g.drawHorizontalLine ((int) yZero, r.getX(), r.getRight());
-
-        // vertical dashed guide at each active band's frequency (where its knob acts) — the
-        // HPF/LPF guides sweep as their freq knobs move; the tone guides appear when boosted/cut.
-        {
-            const float dashes[] = { 2.5f, 3.0f };
-            g.setColour (juce::Colour (0x44ffffff));
-            for (int i = 0; i < n; ++i)
-            {
-                if (! bands[i].on) continue;
-                const double f = juce::jlimit (fLo, fHi, bands[i].lane (teq::Lane::Stereo).freq);
-                const float  x = r.getX() + (float) (std::log (f / fLo) / logSpan) * r.getWidth();
-                g.drawDashedLine (juce::Line<float> (x, r.getY(), x, r.getBottom()), dashes, 2, 1.0f);
-            }
-        }
 
         // the curve on top
         g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (0.95f));
         g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved));
+
+        // --- HPF / LPF draggable corner handles: a bright vertical grip + a grab dot, only when ON ---
+        auto drawHandle = [&] (bool on, float hz, bool hot)
+        {
+            if (! on) return;
+            const float x = xForFreq (hz, r);
+            g.setColour (juce::Colour (OrbitCabLookAndFeel::kAccent).withAlpha (hot ? 0.95f : 0.6f));
+            g.fillRect (juce::Rectangle<float> (x - 1.0f, r.getY(), 2.0f, r.getHeight()));
+            g.fillEllipse (x - 4.0f, r.getCentreY() - 4.0f, 8.0f, 8.0f);
+        };
+        drawHandle (hpfOn, juce::jlimit (kFLo, kFHi, hpfHz), drag == Drag::hpf || hover == Drag::hpf);
+        drawHandle (lpfOn, juce::jlimit (kFLo, kFHi, lpfHz), drag == Drag::lpf || hover == Drag::lpf);
     }
+
+    void mouseMove (const juce::MouseEvent& e) override { hover = pick (e.position.x); updateCursor(); repaint(); }
+    void mouseExit (const juce::MouseEvent&)     override { hover = Drag::none; setMouseCursor (juce::MouseCursor::NormalCursor); repaint(); }
+    void mouseDown (const juce::MouseEvent& e) override { drag = pick (e.position.x); apply (e.position.x); }
+    void mouseDrag (const juce::MouseEvent& e) override { if (drag != Drag::none) apply (e.position.x); }
+    void mouseUp   (const juce::MouseEvent& e) override { drag = Drag::none; hover = pick (e.position.x); updateCursor(); repaint(); }
+
+private:
+    enum class Drag { none, hpf, lpf };
+
+    float xForFreq (float f, juce::Rectangle<float> r) const
+    {
+        return r.getX() + r.getWidth() * std::log (juce::jlimit (kFLo, kFHi, f) / kFLo) / std::log (kFHi / kFLo);
+    }
+    float freqForX (float x, juce::Rectangle<float> r) const
+    {
+        const float t = juce::jlimit (0.0f, 1.0f, (x - r.getX()) / juce::jmax (1.0f, r.getWidth()));
+        return kFLo * std::pow (kFHi / kFLo, t);
+    }
+
+    Drag pick (float x) const
+    {
+        const auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const bool nearHpf = hpfOn && std::abs (x - xForFreq (hpfHz, r)) < kGrabPx;
+        const bool nearLpf = lpfOn && std::abs (x - xForFreq (lpfHz, r)) < kGrabPx;
+        // If both corners are within grab range, pick the closer one.
+        if (nearHpf && nearLpf)
+            return (std::abs (x - xForFreq (hpfHz, r)) <= std::abs (x - xForFreq (lpfHz, r))) ? Drag::hpf : Drag::lpf;
+        if (nearHpf) return Drag::hpf;
+        if (nearLpf) return Drag::lpf;
+        return Drag::none;
+    }
+
+    void apply (float x)
+    {
+        const auto r = getLocalBounds().toFloat().reduced (1.0f);
+        if (drag == Drag::hpf) { const float hz = juce::jlimit (hpfMin, hpfMax, freqForX (x, r)); hpfHz = hz; if (onHpfDragged) onHpfDragged (hz); repaint(); }
+        else if (drag == Drag::lpf) { const float hz = juce::jlimit (lpfMin, lpfMax, freqForX (x, r)); lpfHz = hz; if (onLpfDragged) onLpfDragged (hz); repaint(); }
+    }
+
+    void updateCursor()
+    {
+        setMouseCursor ((hover == Drag::none) ? juce::MouseCursor::NormalCursor
+                                              : juce::MouseCursor::LeftRightResizeCursor);
+    }
+
+    bool  hpfOn = false, lpfOn = false;
+    float hpfHz = 80.0f, hpfMin = 20.0f,  hpfMax = 300.0f;
+    float lpfHz = 10000.0f, lpfMin = 4000.0f, lpfMax = 12000.0f;
+    std::vector<float> postSpec;
+    Drag  drag = Drag::none, hover = Drag::none;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EqCurve)
 };

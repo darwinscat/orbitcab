@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #pragma once
 
@@ -76,7 +76,19 @@ public:
     double slotTrimmedSeconds   (int slot) const;
     const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
     double slotOriginalSampleRate (int slot) const;
-    void   pumpConvolverReloads() { slot[0].pumpReload(); slot[1].pumpReload(); }   // retry coalesced IR swaps (poll)
+    void   pumpConvolverReloads() { slot[0].pumpReload(); slot[1].pumpReload(); reverbConv.flushPending(); }   // retry coalesced IR swaps (poll)
+
+    //--- REVERB IR lifecycle (message thread) — the in-amp spring convolver -------
+    // Load the selected bundled spring IR (mono) into the reverb convolver. Un-normalized (the taps are
+    // peak-normalized at bundle time), resampled to host rate, atomic-swapped click-free like the cab. A
+    // load marks the stage runnable (reverbHasIR) and bumps the level context (the wet feeds the poweramp+cab).
+    void   loadReverbIR (const float* const* samples, int numChannels, int numSamples, double irSampleRate)
+    {
+        reverbConv.loadIR (samples, numChannels, numSamples, irSampleRate);
+        reverbIrLoaded.store (true, std::memory_order_release);
+        bumpLevelContext();
+    }
+    bool   reverbHasIR() const { return reverbIrLoaded.load (std::memory_order_acquire); }
 
     //--- AMP (NAM) lifecycle — forwarded to the front-of-chain AmpStages ----------
     // Load/clear run on the message thread (off-thread build + atomic swap); collectAmpGarbage
@@ -116,6 +128,7 @@ public:
     //--- cross-thread reads for the GUI ------------------------------------------
     float inputLevel()  const { return inLevel.load  (std::memory_order_relaxed); }
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
+    float preampOutLevel() const { return preampLevel.load (std::memory_order_relaxed); }   // level feeding the poweramp
     float autoLevelGain() const { return autoLeveler.currentGain(); }   // current wet->dry makeup (tests/diagnostics)
 
     // DSP load meter — each stage's wall-clock as a smoothed % of the block's real-time budget.
@@ -156,6 +169,16 @@ private:
     juce::AudioBuffer<float> wet[2];       // per-slot convolution scratch
     juce::AudioBuffer<float> dryBuffer;    // copy of the raw input for the dry/wet blend
 
+    // In-amp spring reverb: a MONO convolution tank between the EQ and the poweramp. NUPC's process()
+    // no-ops when handed fewer planes than prepared (channels_), so a single fixed-width convolver can't
+    // serve both the mono-fold (frontCh=1) and true-stereo (frontCh=2) lanes — instead the reverb is a
+    // mono SEND/RETURN: sum the front lanes to one mono send, convolve once, add the one wet tail back to
+    // every front lane. One convolution in either mode (½ CPU), and no false stereo width ("not a stereo
+    // reverb"). Un-normalized (see loadReverbIR); reverbScratch is the prepared mono send buffer.
+    Convolver reverbConv;
+    juce::AudioBuffer<float>  reverbScratch;                  // mono send/return scratch (prepared; audio: in-place)
+    std::atomic<bool>         reverbIrLoaded { false };       // message→audio: a spring IR is loaded → stage may run
+
     // Smoothed so live tweaks / automation don't zipper. Phase is a sign (+1/-1) ramped
     // through 0 — a brief dip rather than a hard polarity click. (LinearSm alias: the ctor is
     // explicit in felitronics-core v0.1.3, so array members need direct-init, not copy-init —
@@ -166,10 +189,12 @@ private:
     felitronics::core::LinearSmoother mixABSmoothed { 0.0f };
     felitronics::core::LinearSmoother gainSmoothed  { 1.0f };
     felitronics::core::LinearSmoother muteGateSmoothed { 1.0f };
+    felitronics::core::LinearSmoother reverbMixSm { 0.0f };   // reverb return amount ramp (zipper-free)
 
     double currentSampleRate = 44100.0;
 
     float inputGainPrev = 1.0f;            // block-ramp start for zipper-free input trim
+    float preampVolPrev = 1.0f;            // block-ramp start for the post-preamp VOLUME gain
 
     // Poweramp/preamp signal ROUTE (encoded {preampOn, ampOn, mode}), seeded in prepare(). A change
     // marks a discrete switch used by the tube<->capture loudness match; the makeup slew-limit
@@ -187,8 +212,10 @@ private:
     struct LevelContext                        // the structural params the ratio depends on
     {
         float inputGainDb = 0.0f; float mixAB01 = 0.0f;
+        float preampVolumeDb = 0.0f;           // post-preamp volume: shapes the level into the poweramp+cab
         bool  aLoaded = false, bLoaded = false;
         bool  monoAmp = false;                 // amp-lane fold: changes the levelled signal → route makeup depends on it
+        int   reverbType = 0; float reverbMix01 = 0.0f;   // in-amp reverb shapes the signal into the poweramp+cab
         EqParams   eq;
         TubeParams tube;
         SlotParams slotA, slotB;               // incl. filters / dryWet / phase / mute
@@ -205,7 +232,9 @@ private:
         auto qHz = [] (float v) { return std::round (v); };                   // 1 Hz grid
         LevelContext c;
         c.inputGainDb = qDb (p.inputGainDb); c.mixAB01 = q01 (p.mixAB01);
+        c.preampVolumeDb = qDb (p.preampVolumeDb);
         c.aLoaded = p.aLoaded; c.bLoaded = p.bLoaded; c.monoAmp = p.monoAmp;
+        c.reverbType = p.reverb.type; c.reverbMix01 = q01 (p.reverb.mix01);
         c.eq = p.eq; c.tube = p.tube; c.slotA = p.slot[0]; c.slotB = p.slot[1];
         c.eq.bassDb = qDb (c.eq.bassDb); c.eq.midDb = qDb (c.eq.midDb);
         c.eq.trebleDb = qDb (c.eq.trebleDb); c.eq.presenceDb = qDb (c.eq.presenceDb);
@@ -242,6 +271,7 @@ private:
 
     std::atomic<float> inLevel  { 0.0f };
     std::atomic<float> outLevel { 0.0f };
+    std::atomic<float> preampLevel { 0.0f };   // magnitude leaving the preamp section (pre-poweramp)
 
     felitronics::analysis::SpectrumTap preTap, postTap;
     std::atomic<bool> spectrumActive { false };

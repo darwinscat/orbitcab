@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "CabEngine.h"
 
@@ -54,6 +54,8 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     mixABSmoothed.setCurrentAndTargetValue (initial.bLoaded ? initial.mixAB01 : 0.0f);
     muteGateSmoothed.reset (sampleRate, kRampSeconds);
     muteGateSmoothed.setCurrentAndTargetValue (1.0f);
+    reverbMixSm.reset (sampleRate, kRampSeconds);
+    reverbMixSm.setCurrentAndTargetValue (initial.reverb.type > 0 ? initial.reverb.mix01 : 0.0f);
 
     autoLeveler.prepare (sampleRate);
     prevRoute = routeCode (initial);   // seed so a session booting in any route isn't seen as a switch on block 1
@@ -66,12 +68,19 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     for (auto& row : pairDeltaKnown) for (auto& v : row) v = false;  // per-stream learned estimates
 
     inputGainPrev = juce::Decibels::decibelsToGain (initial.inputGainDb);
+    preampVolPrev = juce::Decibels::decibelsToGain (initial.preampVolumeDb);
     inLevel.store (0.0f);
     outLevel.store (0.0f);
 
     dryBuffer.setSize (numChannels, maxBlock, false, false, true);
     wet[0].setSize    (numChannels, maxBlock, false, false, true);
     wet[1].setSize    (numChannels, maxBlock, false, false, true);
+
+    // Reverb: a MONO convolver (½ the CPU of stereo, no false width — "not a stereo reverb") with the
+    // reference-unity RMS normalization DISABLED (the spring IRs are peak-normalized at bundle time). The
+    // default 4 s NUPC schedule covers the ≤ 3.5 s spring tails. reverbScratch is the mono send/return buffer.
+    reverbConv.prepare (sampleRate, maxBlock, 1, 4.0, /*normalize*/ false);
+    reverbScratch.setSize (1, maxBlock, false, false, true);
 }
 
 void CabEngine::reset()
@@ -81,6 +90,7 @@ void CabEngine::reset()
     ampEq.reset();
     amp.reset();
     powerAmpRouter.reset();
+    reverbConv.reset();
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
     autoLeveler.reset();
@@ -218,9 +228,71 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
           for (int ch = 0; ch < numCh; ++ch)
               juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), numSamples);
       nsPre = elapsedNs (a); }
+
+    // Preamp VOLUME: post-preamp output gain (block-ramped, zipper-free) — the preamp's own "volume"
+    // driving the tone stack / poweramp / cab. On the frontCh lane; ch>frontCh is stale but the mono
+    // fold overwrites it. Sits before the dry tap, so the auto-level reference tracks it.
+    {
+        const float pvTarget = juce::Decibels::decibelsToGain (p.preampVolumeDb);
+        buffer.applyGainRamp (0, numSamples, preampVolPrev, pvTarget);
+        preampVolPrev = pvTarget;
+    }
+
     { const auto a = PerfClock::now();
       ampEq.process (buffer.getArrayOfWritePointers(), frontCh, numSamples, p.eq);
       nsEq = elapsedNs (a); }
+
+    // --- SPRING REVERB (AFTER the EQ, BEFORE the poweramp): a real amp's built-in spring tank. The wet
+    // is summed into the amped guitar HERE, so the poweramp distorts it and the cab IR filters it — it
+    // mixes with the guitar "in the cabinet", NOT as a clean stereo studio reverb after the amp. Mono
+    // SEND/RETURN: sum the front lane(s) to one mono send, convolve ONCE (zero latency), add the single
+    // wet tail back to every front lane. One convolution in either the mono-fold (frontCh=1) or true-
+    // stereo (frontCh=2) case, and no false stereo width. Off (type 0 / mix 0 / IR not yet loaded) is
+    // skipped entirely (zero CPU); a turn-off fades via the ramp instead of cutting. Runs on the frontCh
+    // lanes, before the mono fold — the fold then carries the reverbed ch0 across in mono mode. ---
+    {
+        const float revTarget = (p.reverb.type > 0) ? p.reverb.mix01 : 0.0f;
+        reverbMixSm.setTargetValue (revTarget);
+        if (reverbHasIR() && (revTarget > 0.0f || reverbMixSm.getCurrentValue() > 1.0e-4f))
+        {
+            float* const* pio = buffer.getArrayOfWritePointers();
+            float*        rs  = reverbScratch.getWritePointer (0);
+            if (frontCh >= 2)
+                for (int n = 0; n < numSamples; ++n) rs[n] = 0.5f * (pio[0][n] + pio[1][n]);   // mono send
+            else
+                juce::FloatVectorOperations::copy (rs, pio[0], numSamples);
+
+            float* rsPlanes[1] { rs };
+            reverbConv.process (rsPlanes, 1, numSamples);   // mono spring tank, in-place, zero latency
+
+            // kReverbWetGain calibrates the return level: a spring IR convolved with a sustained note
+            // accumulates a LOT of tail energy, so a raw unity return is ~6-7× too hot (the Mix knob felt
+            // maxed by ~15 %). 0.15 spreads a musical range across 0..100 % (100 % ≈ the old ~15 %).
+            // scale01 = the TEMP wet-level calibration knob (replaces the old fixed 0.15 while per-reverb
+            // levels are dialled in). Read per block — a coarse step when dragged, fine for calibration.
+            const float wetScale = p.reverb.scale01;
+            for (int n = 0; n < numSamples; ++n)
+            {
+                const float wet = rs[n] * reverbMixSm.getNextValue() * wetScale;   // parallel return (dry kept)
+                for (int ch = 0; ch < frontCh; ++ch) pio[ch][n] += wet;
+            }
+        }
+        else
+        {
+            // Idle: park the mix ramp at 0 while the IR is still loading (async) so the reverb RAMPS IN from
+            // silence when it lands — no jump — else at the target. We deliberately do NOT reset the
+            // convolver to clear its tail here: reset() shares state (state_/xfade/slots) with the
+            // message-thread IR load (setOperator) and the NUPC contract forbids racing the two, so a
+            // mid-stream clear is unsafe. Cost: re-enabling after a disable can briefly reveal the previous
+            // decayed tail — inaudible in practice (the 30 ms mix ramp fades it in from silence).
+            reverbMixSm.setCurrentAndTargetValue (reverbHasIR() ? revTarget : 0.0f);
+        }
+    }
+
+    // Preamp-OUT level: the magnitude leaving the preamp section (preamp → volume → EQ → reverb) that feeds
+    // the poweramp — the "preamp out, before the poweramp + cab" meter on the right edge of the strip.
+    preampLevel.store (buffer.getMagnitude (0, numSamples), std::memory_order_relaxed);
+
     { const auto a = PerfClock::now();
       // The poweramp seam: ampOn gates the stage; powerAmpMode picks NAM capture (`amp`, default)
       // vs the white-box tube stage. The router crossfades click-free on a live capture<->tube

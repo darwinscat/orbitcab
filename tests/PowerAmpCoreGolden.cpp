@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa. Part of OrbitCab — see LICENSE.
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 //
 // MANIACAL adversarial golden for cab::poweramp::TubePowerAmp (block 2) — an oversampled PP/SE
 // tube waveshaper. Tests are written for the IDEA/physics and try to BREAK the code, not pass it.
