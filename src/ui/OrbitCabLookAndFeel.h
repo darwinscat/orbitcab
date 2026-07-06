@@ -141,7 +141,13 @@ public:
         // accent in buttonOnColourId. SELECTED = filled with that accent; UNSELECTED = NO background, just a
         // coloured border (a touch thicker) — per Oleh, replacing the old dim-fill-when-unselected style.
         // Plain buttons (no on-colour) keep the stock look.
-        if (b.isColourSpecified (juce::TextButton::buttonOnColourId))
+        //
+        // Opt-out ("orbitStockToggle"): two-fill toggles whose OFF state is the bright/active one — the I/II
+        // mute badge (off = playing/accent, on = muted/dark) and the A/B/C/D snapshots — must keep the stock
+        // fill-in-both-states look; the border style would blank the active button (its border would be drawn
+        // in the *dark* buttonOnColourId). Those buttons set this flag so they fall through to the stock path.
+        const bool stockToggle = (bool) b.getProperties().getWithDefault ("orbitStockToggle", false);
+        if (b.isColourSpecified (juce::TextButton::buttonOnColourId) && ! stockToggle)
         {
             const auto  bounds = b.getLocalBounds().toFloat().reduced (1.0f);
             const auto  accent = b.findColour (juce::TextButton::buttonOnColourId);

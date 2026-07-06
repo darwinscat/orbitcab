@@ -126,6 +126,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         auto& b = snapBtn[i];
         b.setButtonText (snapNames[i]);
         b.setClickingTogglesState (true);
+        b.getProperties().set ("orbitStockToggle", true);           // neutral two-fill toggle — keep the stock look, not the mode-button border
         b.setRadioGroupId (0x10C1500 + 1);                          // exclusive group
         b.setColour (juce::TextButton::buttonColourId,   juce::Colour (OrbitCabLookAndFeel::kPanel));
         b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
