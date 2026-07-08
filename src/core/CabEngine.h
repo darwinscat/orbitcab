@@ -14,6 +14,7 @@
 #include "DryAligner.h"                          // cab::DryAligner — dry latency alignment for the preamp bypass
 #include "AmpEq.h"
 #include "AutoLeveler.h"
+#include "NoiseGate.h"                           // cab::NoiseGate — in-amp gate: detector on the clean input, VCA after EQ
 #include "../poweramp/PowerAmpRouter.h"          // the poweramp seam: NAM capture <-> white-box tube
 #include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
 #include <felitronics/core/Smoother.h>          // JUCE-free LinearSmoother — bit-exact juce::SmoothedValue<float,Linear> drop-in
@@ -130,6 +131,7 @@ public:
     float outputLevel() const { return outLevel.load (std::memory_order_relaxed); }
     float preampOutLevel() const { return preampLevel.load (std::memory_order_relaxed); }   // level feeding the poweramp
     float autoLevelGain() const { return autoLeveler.currentGain(); }   // current wet->dry makeup (tests/diagnostics)
+    float gateGain() const { return gateLevel.load (std::memory_order_relaxed); }   // effective gate gain (1=open/off, <1=attenuating) — GR meter
 
     // DSP load meter — each stage's wall-clock as a smoothed % of the block's real-time budget.
     // Written on the audio thread (a few monotonic-clock reads per block), read by the GUI.
@@ -162,6 +164,7 @@ private:
     AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
     DryAligner  preampBypassAlign;         // delays the dry to the preamp's PDC while it's OFF → toggling
                                            // the preamp never changes reported latency (no host re-sync gap)
+    NoiseGate   noiseGate;                 // in-amp gate: DETECTOR keys off the clean pre-preamp input, VCA lands after the EQ
     AmpEq       ampEq;                      // amp tone stack, between the preamp and poweramp NAM stages
     AmpStage    amp;                       // optional NAM poweramp (capture mode), front of the cab
     poweramp::PowerAmpRouter powerAmpRouter; // poweramp seam: ampOn/mode → capture(amp) | tube, click-free
@@ -273,6 +276,7 @@ private:
     std::atomic<float> inLevel  { 0.0f };
     std::atomic<float> outLevel { 0.0f };
     std::atomic<float> preampLevel { 0.0f };   // magnitude leaving the preamp section (pre-poweramp)
+    std::atomic<float> gateLevel  { 1.0f };    // effective noise-gate gain (1 = open/off) — published for the GR meter
 
     felitronics::analysis::SpectrumTap preTap, postTap;
     std::atomic<bool> spectrumActive { false };

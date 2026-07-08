@@ -115,6 +115,9 @@ public:
     float getInputLevel()  const { return engine.inputLevel();  }
     float getOutputLevel() const { return engine.outputLevel(); }
     float getPreampOutLevel() const { return engine.preampOutLevel(); }   // level feeding the poweramp
+    float getGateGain()       const { return engine.gateGain(); }         // effective noise-gate gain (1 = open/off) — GR meter
+    float getGateThreshold()  const { return gateThresholdParam != nullptr ? gateThresholdParam->load() : -80.0f; }   // leftmost = OFF
+    bool  isGateArmed()       const;   // gate active = threshold above the OFF sentinel (defined in .cpp, where the constant lives)
 
     // DSP load meter (smoothed % of the real-time budget) for the perf badge + its breakdown popup.
     float getCpuTotal()    const { return engine.cpuTotal();    }
@@ -329,6 +332,10 @@ private:
     // reverbMix is the return amount (read every block, RT-safe).
     std::atomic<float>* reverbTypeParam = nullptr;
     std::atomic<float>* reverbMixParam  = nullptr;
+
+    // Noise-gate pointer (packed into cab::Params.gate each block, RT-safe). Single param: the OPEN threshold
+    // (dBFS vs the post-trim input); its leftmost position ("OFF") disables the gate — no separate on/off.
+    std::atomic<float>* gateThresholdParam = nullptr;
 
     // Cached raw parameter pointers — RT-safe atomic reads in processBlock. Per-slot
     // params are [0]=A, [1]=B.

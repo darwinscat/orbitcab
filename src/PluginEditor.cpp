@@ -484,6 +484,24 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     preampOutMeter.setRange (-24.0f, 6.0f);   // hot internal tap — zoom in so it reads as movement, not a pinned bar
     addAndMakeVisible (preampOutMeter);   // preamp-OUT meter (right of VOL) — shown/hidden with the front strip
 
+    // ---- NOISE GATE: in-amp gate — DETECTOR on the clean input, VCA after the EQ (the reverb tail rings out).
+    // A GATE caption + a compact HORIZONTAL threshold slider sit BOTTOM-LEFT under the device glyphs (no toggle —
+    // OFF = drag it left); a GateLed shows the state (grey off → green open → yellow → red closed). ----
+    styleLabel (gateLabel, "GATE");
+    gateLabel.setJustificationType (juce::Justification::centredLeft);
+    gateThreshSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    gateThreshSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 14);   // value readout: "OFF" / "−48 dB" (param getText)
+    gateThreshSlider.setColour (juce::Slider::backgroundColourId,     juce::Colour (0x33ffffff));
+    gateThreshSlider.setColour (juce::Slider::trackColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
+    gateThreshSlider.setColour (juce::Slider::thumbColourId,          juce::Colour (OrbitCabLookAndFeel::kAccent));
+    gateThreshSlider.setColour (juce::Slider::textBoxTextColourId,    juce::Colour (0xffb8b8c0));
+    gateThreshSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0x00000000));
+    gateThreshSlider.setTooltip (juce::String::fromUTF8 ("Noise Gate \xe2\x80\x94 drag LEFT to OFF; otherwise the OPEN threshold (dBFS) vs the input. Attenuates after the EQ so the reverb tail rings out."));
+    addAndMakeVisible (gateThreshSlider);
+    gateThreshAtt = std::make_unique<SAtt> (processorRef.apvts, "gateThreshold", gateThreshSlider);
+    addAndMakeVisible (gateLed);
+    addAndMakeVisible (gateLabel);
+
     // ---- POWERAMP SIMULATOR (white-box tube, blocks 2+3): the third stage tab (radio with CAPTURES) ----
     tubeSimBtn.setTooltip (juce::String::fromUTF8 ("White-box tube poweramp simulator \xe2\x80\x94 no capture needed. Shares the poweramp slot with POWER AMP CAPTURES (only one runs)."));
     tubeSimBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
@@ -588,6 +606,8 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     inMeter.setLevel  (processorRef.getInputLevel());
     outMeter.setLevel (processorRef.getOutputLevel());
     preampOutMeter.setLevel (processorRef.getPreampOutLevel());   // preamp OUT (pre-poweramp)
+    gateLed.setState (processorRef.isGateArmed(),                 // gate state LED: grey (off) → green (open) → yellow → red (closed)
+                      processorRef.getGateGain());
     {
         PerfBadge::Stats ps;
         const double sr = processorRef.getSampleRate();
@@ -2013,6 +2033,10 @@ void OrbitCabAudioProcessorEditor::resized()
     // empty (this single panel is painted via preampRowBounds).
     const bool preShown = hasPreamps && preampPowerBtn.getToggleState();
     const bool eqShown  = eqPowerBtn.getToggleState();
+    // Gate controls live in the preamp column (under the device glyphs) → visible with the preamp half.
+    gateLabel.setVisible (preShown);
+    gateThreshSlider.setVisible (preShown);
+    gateLed.setVisible (preShown);
     eqRowBounds = {};
     if (preShown || eqShown)
     {
@@ -2045,15 +2069,23 @@ void OrbitCabAudioProcessorEditor::resized()
         // ---- preamp picks (left, signal order) — device glyph removed; BOOST stacked under GAIN ----
         if (preShown)
         {
-            {   // gear caption (top) · NAME combo (middle) · device glyph strip (bottom)
+            {   // gear caption · NAME combo · device glyph strip · GATE row (threshold slider + state LED)
                 auto col = inner.removeFromLeft (150);
-                const int labH = 14, boxH = 28, stripH = 34, gap = 4;   // taller strip → bigger glyphs + glow room
-                auto stk = col.withSizeKeepingCentre (150, labH + boxH + stripH + 2 * gap);
+                const int labH = 14, boxH = 28, stripH = 34, gateH = 14, gap = 4;
+                auto stk = col.withSizeKeepingCentre (150, labH + boxH + stripH + gateH + 3 * gap);
                 preampGearLabel.setBounds   (stk.removeFromTop (labH));
                 stk.removeFromTop (gap);
                 preampBox.setBounds         (stk.removeFromTop (boxH));
                 stk.removeFromTop (gap);
                 preampDeviceStrip.setBounds (stk.removeFromTop (stripH));
+                stk.removeFromTop (gap);
+                // NOISE GATE — the GATE caption + a compact HORIZONTAL threshold slider UNDER the device glyphs,
+                // with a grey→green→yellow→red state LED at the far right.
+                auto grow = stk.removeFromTop (gateH);
+                gateLabel.setBounds (grow.removeFromLeft (34));
+                gateLed.setBounds (grow.removeFromRight (14).reduced (1, 1));
+                grow.removeFromRight (4);
+                gateThreshSlider.setBounds (grow);   // track + TextBoxRight (value / "OFF")
             }
             inner.removeFromLeft (12);
 

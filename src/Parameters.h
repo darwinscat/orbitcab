@@ -15,6 +15,11 @@
 namespace orbitcab
 {
 
+// The noise gate has no separate on/off — its threshold slider's LEFTMOST position ("OFF") disables it.
+// A threshold at or below this sentinel = OFF; above it = armed. ONE source of truth, shared by the param
+// text/value formatters, the adapter's on-derivation (packParams), and the editor's LED (isGateArmed).
+inline constexpr float kGateOffThresholdDb = -79.5f;
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 } // namespace orbitcab

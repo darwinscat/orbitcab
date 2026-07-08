@@ -57,6 +57,90 @@ struct CabEngineTest : juce::UnitTest
             expect (maxAbsDiff (buf, ref) < 1.0e-6f, "dry path altered the signal");
         }
 
+        beginTest ("noise gate END-TO-END: closes a sub-threshold signal, passes a supra-threshold one");
+        {
+            constexpr double twoPi = 6.283185307179586;
+            auto rmsDb = [] (const juce::AudioBuffer<float>& b)
+            {
+                double s = 0.0; int n = 0;
+                for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                    for (int i = 0; i < b.getNumSamples(); ++i) { const double v = b.getSample (ch, i); s += v * v; ++n; }
+                return juce::Decibels::gainToDecibels (std::sqrt (s / juce::jmax (1, n)), -160.0);
+            };
+            // Dry passthrough (no cab / preamp / poweramp / EQ, leveler off) so the OUTPUT is exactly the
+            // gated amp-front signal — isolates the gate. 60 blocks ≈ 0.64 s to settle the ramps.
+            auto settleOut = [&] (double peak, float thrDb, bool on)
+            {
+                Params p; p.autoLevel = false; p.aLoaded = false; p.preampOn = false; p.ampOn = false; p.eq.on = false;
+                p.gate.on = on; p.gate.thresholdDb = thrDb;
+                CabEngine e; e.prepare (sr, block, 2, p);
+                juce::AudioBuffer<float> buf (2, block);
+                for (int blk = 0; blk < 60; ++blk)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < block; ++i)
+                            buf.setSample (ch, i, (float) (peak * std::sin (twoPi * 220.0 * (blk * block + i) / sr)));
+                    run (e, buf, p);
+                }
+                return rmsDb (buf);
+            };
+            const double lo = juce::Decibels::decibelsToGain (-40.0);   // −40 dBFS peak sine (below the −20 threshold)
+            const double hi = juce::Decibels::decibelsToGain (-6.0);    // −6 dBFS peak sine (above it)
+            const double closed = settleOut (lo, -20.0f, true);   // sub-threshold + gate ON  → closed
+            const double bypass = settleOut (lo, -20.0f, false);  // sub-threshold + gate OFF → passes
+            const double open   = settleOut (hi, -20.0f, true);   // supra-threshold + gate ON → open, passes
+            logMessage ("gate ON  sub-thr (closed): " + juce::String (closed, 1) + " dB RMS");
+            logMessage ("gate OFF sub-thr (bypass): " + juce::String (bypass, 1) + " dB RMS");
+            logMessage ("gate ON  sup-thr (open):   " + juce::String (open,   1) + " dB RMS");
+            expect (bypass - closed > 30.0, "gate ON attenuates a sub-threshold signal by >30 dB vs OFF");
+            expect (open - closed   > 20.0, "gate stays OPEN (passes) for a supra-threshold signal");
+        }
+
+        beginTest ("leveler-HOLD: makeup is frozen while the gate holds closed (no droop over a long cab tail)");
+        {
+            // The gate floors DRY instantly, but a long cab-IR convolution TAIL keeps mixMS up, so the raw
+            // sqrt(dryMS/mixMS) the leveler chases is bogus during a gated pause. The engine FREEZES the leveler
+            // (skips processBlock) while the gate is closed — WITHOUT that, the makeup droops several dB chasing
+            // the tail (measured up to ~10 dB). This pins the freeze: makeup must not drift across the pause.
+            constexpr double twoPi = 6.283185307179586;
+            Params p; p.autoLevel = true; p.aLoaded = true; p.slot[0].dryWet01 = 1.0f;
+            p.preampOn = false; p.ampOn = false; p.eq.on = false;
+            p.gate.on = true; p.gate.thresholdDb = -40.0f;
+            CabEngine e; e.prepare (sr, block, 2, p);
+
+            // ~1 s exp-decay noise IR — a long tail is exactly the case the hold guards.
+            const int irN = (int) sr;
+            std::vector<float> ir ((size_t) irN);
+            unsigned rng = 22222u;
+            for (int i = 0; i < irN; ++i) { rng = rng * 1664525u + 1013904223u;
+                ir[(size_t) i] = (float) (std::exp (-3.5 * i / irN) * (((rng >> 9) & 0x3ffu) / 512.0 - 1.0)); }
+            ir[0] += 1.0f;
+            const float* irPtr[1] { ir.data() };
+            e.setSlotOriginalIR (0, irPtr, 1, irN, sr);
+            e.slotApplyTrim (0, false, 1.0f, false);
+            e.seedAutoLevel();
+
+            juce::AudioBuffer<float> buf (2, block);
+            auto note = [&] { for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < block; ++i)
+                buf.setSample (ch, i, (float) (0.25 * std::sin (twoPi * 220.0 * i / sr))); };
+
+            // warm-up: load the IR (async build + swap → sleep) while playing → gate opens, leveler converges.
+            for (int b = 0; b < 60; ++b) { note(); run (e, buf, p); juce::Thread::sleep (8); }
+            for (int b = 0; b < 150; ++b) { note(); run (e, buf, p); }   // settle the leveler on the open note
+            const double gPlay = juce::Decibels::gainToDecibels (e.autoLevelGain(), -120.0f);
+
+            // silence → the gate closes → the leveler must FREEZE. Sample the makeup early vs late in the pause.
+            double gEarly = 0.0, gLate = 0.0; float gateGainMid = 1.0f;
+            for (int b = 0; b < 80; ++b) { buf.clear(); run (e, buf, p);
+                if (b == 20) { gEarly = juce::Decibels::gainToDecibels (e.autoLevelGain(), -120.0f); gateGainMid = e.gateGain(); }
+                if (b == 75)   gLate  = juce::Decibels::gainToDecibels (e.autoLevelGain(), -120.0f); }
+
+            logMessage ("makeup play=" + juce::String (gPlay, 2) + " dB  pause@20=" + juce::String (gEarly, 2)
+                      + " dB  pause@75=" + juce::String (gLate, 2) + " dB  gateGain@pause=" + juce::String (gateGainMid, 5));
+            expect (gateGainMid < 0.1f, "the gate is actually CLOSED during the pause (the hold is exercised)");
+            expect (std::abs (gLate - gEarly) < 1.0, "leveler makeup does not drift while the gate holds closed (<1 dB)");
+        }
+
         beginTest ("empty slot A (aLoaded=false) => dry passthrough, not silence");
         {
             // The "no cabinet" contract: an empty slot must output the DRY signal (clean

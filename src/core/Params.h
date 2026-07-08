@@ -98,6 +98,19 @@ struct ReverbParams
     bool operator== (const ReverbParams&) const = default;   // context compare (leveler route memory)
 };
 
+// In-amp NOISE GATE — a dual-detection (ISP Decimator "G-String" style) gate. The DETECTOR keys off
+// the CLEAN post-trim input (before the preamp distortion, where the note envelope is un-compressed);
+// the VCA attenuates AFTER the tone stack and BEFORE the spring-reverb send (so preamp hiss is killed
+// but the spring tail rings out). Only the threshold is user-facing — attack/hold/release/hysteresis/
+// floor are fixed inside cab::NoiseGate. Deliberately NOT part of the leveler LevelContext: the gate is
+// a scale on the signal (dry + wet scale together), so the wet/dry makeup ratio is invariant to it.
+struct GateParams
+{
+    bool  on          = false;
+    float thresholdDb = -50.0f;   // open threshold (dBFS), referenced to the post-trim input level
+    bool operator== (const GateParams&) const = default;
+};
+
 struct Params
 {
     float inputGainDb  = 0.0f;
@@ -115,6 +128,7 @@ struct Params
                                  // section (preamp/EQ/poweramp) on ONE lane + duplicate before the
                                  // cab (½ the NAM cost). false = true-stereo (v1). Set by the adapter.
 
+    GateParams  gate;            // in-amp noise gate: detector on the clean input, VCA after EQ / before reverb send
     EqParams    eq;              // amp tone EQ, between the preamp and poweramp NAM stages
     ReverbParams reverb;         // in-amp spring reverb, between the EQ and poweramp (mono send/return)
     TubeParams  tube;            // white-box tube poweramp controls (Tube mode only)

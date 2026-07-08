@@ -32,6 +32,8 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // Dry-alignment for the preamp bypass: 256-sample capacity covers any NAM rate-match latency
     // (≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin — matches the router.
     preampBypassAlign.prepare (numChannels, maxBlock, 256);
+    noiseGate.prepare (sampleRate, maxBlock, numChannels);
+    noiseGate.seedEnabled (initial.gate.on);   // seed the on/off crossfade from the restored on-state (no fade-in leak)
     ampEq.prepare (sampleRate, maxBlock, numChannels);
     amp.prepare (sampleRate, maxBlock);
     powerAmpRouter.prepare (sampleRate, maxBlock, numChannels);
@@ -87,6 +89,7 @@ void CabEngine::reset()
 {
     preamp.reset();
     preampBypassAlign.reset();
+    noiseGate.reset();
     ampEq.reset();
     amp.reset();
     powerAmpRouter.reset();
@@ -147,6 +150,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         const float lvl = buffer.getMagnitude (0, numSamples);
         inLevel.store  (lvl, std::memory_order_relaxed);
         outLevel.store (lvl, std::memory_order_relaxed);
+        gateLevel.store (1.0f, std::memory_order_relaxed);   // bypassed → the gate isn't attenuating; keep its LED open
         const double z[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };   // decay the load meter toward 0 while bypassed
         accumulateLoads (z);
         return;
@@ -222,6 +226,11 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // re-sync gap. advance() reads the raw input first (before preamp.process overwrites it).
       float* const* pio = buffer.getArrayOfWritePointers();
       preampBypassAlign.advance (pio, numCh, numSamples, preamp.latencySamples());
+      // NOISE GATE — PHASE A (DETECTOR): key off the CLEAN post-trim input on the frontCh lane(s), NOW,
+      // before preamp.process overwrites pio in place. The per-sample gain curve is stashed and applied
+      // after the EQ (phase B). Keying the clean input gives accurate open/close; the preamp's latency
+      // (0 at 48 kHz) between here and the VCA point is a small free lookahead, uncompensated.
+      noiseGate.analyse (pio, frontCh, numSamples, p.gate.on, p.gate.thresholdDb);
       if (p.preampOn)
           preamp.process (pio, frontCh, numSamples, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
       else
@@ -240,6 +249,10 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
 
     { const auto a = PerfClock::now();
       ampEq.process (buffer.getArrayOfWritePointers(), frontCh, numSamples, p.eq);
+      // NOISE GATE — PHASE B (VCA): apply the gain curve computed in phase A. Post-EQ (kills the preamp's
+      // hiss shaped by the tone stack) and BEFORE the spring-reverb send below, so a closing gate stops
+      // feeding the tank while its tail rings out. On the frontCh lane(s); the mono fold carries ch0 across.
+      noiseGate.applyGain (buffer.getArrayOfWritePointers(), frontCh, numSamples);
       nsEq = elapsedNs (a); }
 
     // --- SPRING REVERB (AFTER the EQ, BEFORE the poweramp): a real amp's built-in spring tank. The wet
@@ -291,9 +304,14 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         nsRev = elapsedNs (aRev);
     }
 
-    // Preamp-OUT level: the magnitude leaving the preamp section (preamp → volume → EQ → reverb) that feeds
-    // the poweramp — the "preamp out, before the poweramp + cab" meter on the right edge of the strip.
-    preampLevel.store (buffer.getMagnitude (0, numSamples), std::memory_order_relaxed);
+    // Preamp-OUT level: the magnitude leaving the preamp section (preamp → volume → EQ → gate → reverb) that
+    // feeds the poweramp — the "preamp out, before the poweramp + cab" meter on the right edge of the strip.
+    // Over the FRONT lane(s) only: in mono-fold + preamp-on, ch ≥ frontCh is stale until the fold below
+    // (~line 329), so an all-channels getMagnitude would read the UNGATED stale lane and ignore the gate.
+    float preampMag = 0.0f;
+    for (int ch = 0; ch < frontCh; ++ch) preampMag = juce::jmax (preampMag, buffer.getMagnitude (ch, 0, numSamples));
+    preampLevel.store (preampMag, std::memory_order_relaxed);
+    gateLevel.store  (noiseGate.currentGain(), std::memory_order_relaxed);   // effective gate gain → GR meter (atomic publish)
 
     { const auto a = PerfClock::now();
       // The poweramp seam: ampOn gates the stage; powerAmpMode picks NAM capture (`amp`, default)
@@ -397,7 +415,19 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
                 autoLeveler.openTransitionWindow();
         }
 
-        autoLeveler.processBlock (dryMS, mMS / chs, p.autoLevel, numSamples);
+        // Freeze the leveler while the GATE holds the signal closed. The gate floors the DRY instantly, but
+        // the cab-IR convolution TAIL keeps mixMS up (convolution has memory) — so the raw sqrt(dryMS/mixMS)
+        // ratio is bogus during a gated pause. Adapting to it droops the makeup (measured up to ~10 dB with a
+        // multi-second user IR) and would poison the route-makeup cache on note return. Skipping processBlock
+        // holds the followers + target at their pre-close values; the gate re-opens fast so the leveler resumes
+        // at once. (The gate stays OUT of LevelContext/routeCode — it is a signal SCALE, not a spectral-context
+        // change: dry and wet scale together, so a STATIC gate gain is already ratio-invariant; only this
+        // DYNAMIC close-vs-IR-tail case needs the hold. Short cab IRs — both followers free-fall in lockstep —
+        // are unaffected either way.) gateGain 1 (open) or gate off ⇒ never holds.
+        constexpr float kGateLevelerHoldGain = 0.1f;   // gate ≥ 20 dB down ⇒ dry is effectively gone
+        const bool gateHold = p.gate.on && noiseGate.currentGain() < kGateLevelerHoldGain;
+        if (! gateHold)
+            autoLeveler.processBlock (dryMS, mMS / chs, p.autoLevel, numSamples);
 
         // An autoLevel flip starts the leveler's own 0.35 s glide — the dwell must restart so a
         // mid-glide gain can't be trusted (review finding: off→on then a fast A/B snapped to a
