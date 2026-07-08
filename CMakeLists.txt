@@ -455,6 +455,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -502,6 +503,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -550,6 +552,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -597,6 +600,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -634,6 +638,7 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -723,6 +728,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
