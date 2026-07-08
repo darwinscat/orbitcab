@@ -133,7 +133,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.5.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.6.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -410,6 +410,7 @@ target_link_libraries(OrbitCab PRIVATE
     felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
     felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
     felitronics::eq             # min-phase presence/depth shelves (block 3)
+    felitronics::dynamics       # in-amp noise gate (cab::NoiseGate = felitronics::dynamics::NoiseGate)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -454,6 +455,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -501,6 +503,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -549,6 +552,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -596,6 +600,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -633,6 +638,7 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -722,6 +728,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     nam_core
     teq::core
     felitronics::analysis
+    felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
     felitronics::oversampling
@@ -751,6 +758,8 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
     tests/PowerAmpSwitchLevelTest.cpp  # capture<->tube mode switch: AutoLeveler must not swell (~0.5 s volume rise) — CI gate
     tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
+    # (cab::NoiseGate unit tests moved to felitronics-core modules/dynamics — the gate math lives there now;
+    #  OrbitCab keeps only the CabEngine END-TO-END gate + leveler-hold integration tests, in CabEngineTests.)
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
     tests/PreampSelectorTests.cpp  # orbitcab::PreampSelector — contextual resolve/visibility (≥2-rule, keep-else-default)
@@ -779,6 +788,7 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     felitronics::saturation       # cab::poweramp::TubePowerAmp curves
     felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS
     felitronics::eq               # block-3 presence/depth shelves
+    felitronics::dynamics         # cab::NoiseGate (CabEngine end-to-end gate test)
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags

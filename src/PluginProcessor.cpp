@@ -143,6 +143,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     eqLpfFreqParam  = apvts.getRawParameterValue ("eqLpfFreq");
     reverbTypeParam = apvts.getRawParameterValue ("reverbType");
     reverbMixParam  = apvts.getRawParameterValue ("reverbMix");
+    gateThresholdParam = apvts.getRawParameterValue ("gateThreshold");
     for (int i = 0; i < 2; ++i)
     {
         const juce::String s = (i == 0 ? "A" : "B");
@@ -1166,6 +1167,11 @@ void OrbitCabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 //==============================================================================
 // Pack the cached APVTS atomics into a plain cab::Params for the core. RT-safe
 // (only atomic loads); called from processBlock and to seed the engine in prepare.
+bool OrbitCabAudioProcessor::isGateArmed() const
+{
+    return getGateThreshold() > orbitcab::kGateOffThresholdDb;   // leftmost ("OFF") = not armed
+}
+
 cab::Params OrbitCabAudioProcessor::packParams() const
 {
     cab::Params p;
@@ -1209,6 +1215,14 @@ cab::Params OrbitCabAudioProcessor::packParams() const
     }
     p.reverb.mix01   = reverbMixParam->load()  * 0.01f;
     p.reverb.scale01 = 0.04f;   // Tube's baked calibration (the removed Reverb Scale knob was 4 %)
+    {
+        const float gt = gateThresholdParam->load();   // leftmost ("OFF") disables; anything above arms the gate
+        // The gate is a PREAMP-section feature (detector on the clean input, VCA in the preamp): it's OFF whenever
+        // the preamp is off — its UI lives under the preamp glyphs and hides with the section, and it's not wanted
+        // in a cab-sim-only / poweramp-only chain. So: armed AND the preamp is on.
+        p.gate.on          = p.preampOn && gt > orbitcab::kGateOffThresholdDb;
+        p.gate.thresholdDb = gt;
+    }
     for (int i = 0; i < 2; ++i)
     {
         p.slot[i].hpfOn    = hpfOnP[i]->load() > 0.5f;

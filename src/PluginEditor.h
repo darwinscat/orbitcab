@@ -35,6 +35,46 @@
 class CentreUnitSlider : public juce::Slider {};
 
 //==============================================================================
+// GateLed — the noise-gate state indicator. Its COLOUR tracks the gate gain like a hardware gate LED:
+// GREEN when open (signal passing) → YELLOW mid-transition → RED when closed (muting). Not a level bar.
+class GateLed final : public juce::Component
+{
+public:
+    // `active` = the gate is armed (not at the OFF position); `g` = the effective gate gain (0..1).
+    void setState (bool active, float g)
+    {
+        g = juce::jlimit (0.0f, 1.0f, g);
+        if (active != on || std::abs (g - gain) > 1.0e-4f) { on = active; gain = g; repaint(); }
+    }
+    void paint (juce::Graphics& gr) override
+    {
+        auto r = getLocalBounds().toFloat();
+        gr.setColour (juce::Colour (0xff0f0f12));
+        gr.fillRoundedRectangle (r, 3.0f);
+        juce::Colour c;
+        if (! on)
+            c = juce::Colour (0xff3a3a42);   // OFF → dim grey (gate inactive)
+        else
+        {
+            const float db = gain > 0.0f ? juce::Decibels::gainToDecibels (gain) : -120.0f;
+            // −1 dB (open) → green … −30 dB (closed) → red, through yellow in the middle.
+            const float t = juce::jlimit (0.0f, 1.0f, juce::jmap (db, -30.0f, -1.0f, 0.0f, 1.0f));
+            const juce::Colour red (0xffe5544e), yellow (0xfff2c94c), green (0xff53c07a);
+            c = t < 0.5f ? red.interpolatedWith (yellow, t * 2.0f)
+                         : yellow.interpolatedWith (green, (t - 0.5f) * 2.0f);
+        }
+        auto led = r.reduced (1.5f);
+        gr.setColour (c);
+        gr.fillRoundedRectangle (led, 2.0f);
+        gr.setColour (c.brighter (0.5f).withAlpha (on ? 0.55f : 0.25f));   // subtle glow rim
+        gr.drawRoundedRectangle (led, 2.0f, 1.0f);
+    }
+private:
+    float gain = 1.0f;
+    bool  on = false;
+};
+
+//==============================================================================
 // OrbitCab editor — direct-manipulation layout. Two IR slots A|B side by
 // side, each a full channel: browser (Open file/folder, ‹ ›, click-name popup) + a
 // waveform hosting TRIM (drag) and the HPF/LPF EQ curve, plus per-slot control rows
@@ -244,7 +284,7 @@ private:
     bool eqDiscretePref = true;                                                           // config: tone knobs snap to whole-dB steps (HPF/LPF stay smooth)
     void updateEqRow();                                                                   // reveal/hide the row + resize
     int  eqRowH()    const { return 104; }   // (legacy, unused since the merge)
-    int  frontRowH() const { return 112; }   // merged PREAMP+TONE strip: combo/gain/channel/boost (left) + tone knobs/curve/HPF-LPF (right)
+    int  frontRowH() const { return 128; }   // merged PREAMP+TONE strip: combo/gain/channel/boost + GATE row (left) + tone knobs/curve/HPF-LPF (right)
 
     // REVERB — in-amp spring tank (after EQ, before poweramp). Lives in the merged PREAMP+TONE strip
     // (far right), so it shows whenever that strip is open (Preamp or EQ on). A guitar-style DISCRETE
@@ -259,6 +299,15 @@ private:
     juce::Label      preampVolLabel;
     std::unique_ptr<SAtt> preampVolAtt;
     LevelMeter       preampOutMeter;   // thin vertical meter at the strip's right edge — preamp OUT (feeds the poweramp)
+
+    // NOISE GATE — in-amp gate (detector on the clean input, VCA after the EQ; the spring tail rings out).
+    // A GATE caption + a compact HORIZONTAL threshold slider sit at the BOTTOM-LEFT under the preamp device
+    // glyphs (no on/off toggle — OFF = drag the slider left); a GateLed shows the state: grey (off) → green
+    // (open) → yellow → red (closed).
+    juce::Label           gateLabel;   // "GATE" caption for the row (no on/off toggle — OFF = drag the slider left)
+    juce::Slider          gateThreshSlider;
+    std::unique_ptr<SAtt> gateThreshAtt;
+    GateLed               gateLed;
 
     static constexpr int  kBaseHeight = 620;
     int ampRowH()    const { return showTubesPref ? 90 : 54; }   // tall row with tubes, slim strip (amp icon stays) without

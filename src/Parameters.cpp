@@ -142,6 +142,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // (The former TEMP calibration knobs Reverb Scale / Reverb Trim are GONE — the Tube spring is now
     // calibrated in code: wet level baked as a fixed 0.04 in packParams, full IR length (no trim).)
 
+    // ---- NOISE GATE: in-amp gate — DETECTOR on the clean input, VCA after the EQ / before the reverb send ----
+    // Dual-detection (ISP Decimator "G-String" style): keys off the clean pre-preamp signal so open/close is
+    // accurate, attenuates downstream where the preamp hiss lives (spring tail rings out — VCA is before the
+    // parallel send). Attack/hold/release/hysteresis/floor are fixed in cab::NoiseGate. NO separate on/off —
+    // like the REVERB (MIX 0 = off), the gate is OFF at the leftmost threshold ("OFF") and arms as you drag it
+    // up; `gateThreshold` is then the OPEN level in dBFS vs the post-trim input. Default OFF. New ID at v1.
+    auto gateText = [] (float v, int) { return v <= kGateOffThresholdDb ? juce::String ("OFF")
+                                                                        : juce::String (juce::roundToInt (v)) + juce::String (" dB"); };
+    // Typing "off" (case-insensitive) into the value box maps to the OFF end — WITHOUT this, JUCE's default
+    // string→value parses "off" as 0.0 and clamps it to −20 dB (the MOST aggressive gate — the opposite of OFF).
+    auto gateVal  = [] (const juce::String& t) { return t.trim().equalsIgnoreCase ("off") ? -80.0f : t.getFloatValue(); };
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "gateThreshold", kParamVersion }, "Noise Gate",
+                                                        NormalisableRange<float> (-80.0f, -20.0f, 1.0f), -80.0f,
+                                                        AudioParameterFloatAttributes().withStringFromValueFunction (gateText)
+                                                                                       .withValueFromStringFunction (gateVal)));
+
     // ---- per slot (A/B): HPF + LPF + Phase + Dry/Wet + Trim-enable ----
     // Cutoff ranges (widened per user): HPF 30–400 Hz (def 80), LPF 2–12 kHz (def 7k);
     // skew to the geometric centre for a musical log-ish feel.

@@ -64,6 +64,16 @@ The bundled content (IRs, font) is ledgered in
   (the lock-free `SpectrumTap` used by `cab::CabEngine`), and `felitronics::convolution` (the JUCE-free cab
   IR convolver `MatrixConvolverNupc`, backing `cab::Convolver`).
 
+### namz (lossless .nam ↔ .namz codec)
+- **License:** MIT.
+- **Copyright:** © Darwin's Cat — Oleh Tsymaienko and Alisa Lafoks. First-party, but a
+  **separately versioned** sibling library — extracted from OrbitCab's own codec (byte-identical) and
+  released under **MIT** so other tools can reuse it, so it's recorded here.
+- **Source:** https://github.com/darwinscat/namz — fetched via CMake `FetchContent` at a pinned tag
+  (`namz_src` in [`CMakeLists.txt`](CMakeLists.txt)); header-only (`namz.h`, populated without building the
+  project). Backs the JUCE adapter `src/core/NamCodec.{h,cpp}` — the lossless `.nam` (JSON weights) ↔
+  `.namz` (float32-packed, DEFLATE) round-trip for the bundled/imported captures.
+
 ### pffft (SIMD FFT backend for the cab convolution — vendored in felitronics-core)
 - **License:** BSD-style (FFTPACK5 / UCAR) — AGPL-compatible.
 - **Copyright:** © Julien Pommier (2013). Derived from FFTPACKv4 by Dr Paul Swarztrauber (NCAR, 1985).
