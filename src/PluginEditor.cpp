@@ -6,6 +6,8 @@
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
 
+#include <felitronics/appkit/TextPrompt.h>   // the family's one-line modal prompt (preset name)
+
 #include <algorithm>
 
 namespace
@@ -1560,19 +1562,15 @@ void OrbitCabAudioProcessorEditor::refreshPresets()
 
 void OrbitCabAudioProcessorEditor::promptSavePreset (const juce::String& initialName)
 {
-    saveDialog = std::make_unique<juce::AlertWindow> ("Save preset", "Preset name:",
-                                                      juce::MessageBoxIconType::NoIcon);
-    saveDialog->addTextEditor ("name", initialName.isNotEmpty() ? initialName : juce::String ("My Preset"));
-    saveDialog->addButton ("Save",   1, juce::KeyPress (juce::KeyPress::returnKey));
-    saveDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    saveDialog->enterModalState (true, juce::ModalCallbackFunction::create (
-        [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (int result)
+    // The one-line name prompt is the family's appkit::textPrompt (OK/Enter · Cancel/Esc, branded
+    // editor, self-deleting); everything inside the callback — factory-shadowing / silent-overwrite
+    // protection with a warning + prefilled re-prompt — stays OrbitCab's wrapper. textPrompt only
+    // fires onOk for a non-empty trimmed name, which is exactly the old cancel/empty early-out.
+    felitronics::appkit::textPrompt ("Save preset",
+        initialName.isNotEmpty() ? initialName : juce::String ("My Preset"),
+        [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this)] (juce::String name)
         {
             if (safe == nullptr) return;   // editor gone before the dialog closed
-            const auto name = saveDialog->getTextEditorContents ("name").trim();
-            saveDialog.reset();
-            if (result != 1 || name.isEmpty())
-                return;
 
             // Never shadow a factory preset name, and never silently overwrite an existing user
             // preset: show an error and re-prompt (prefilled) so the user picks a different name.
@@ -1601,7 +1599,7 @@ void OrbitCabAudioProcessorEditor::promptSavePreset (const juce::String& initial
 
             loadedPresetFile = presets.saveAs (name);   // becomes the current backing file (Save target)
             refreshPresets();          // rebuild list; updatePresetDisplay selects it by name
-        }), false);
+        });
 }
 
 void OrbitCabAudioProcessorEditor::loadPresetFile (const juce::File& file)
