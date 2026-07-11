@@ -150,6 +150,24 @@ endif()
 # set before MakeAvailable so modules/fftpffft is actually built and the felitronics::fftpffft alias exists.
 set(FELITRONICS_WITH_PFFFT ON CACHE BOOL "OrbitCab uses the pffft SIMD FFT backend for the cab convolver" FORCE)
 FetchContent_MakeAvailable(felitronics_core)
+
+# felitronics-appkit — the family's shared APP-SIDE JUCE infrastructure. src/UpdateChecker.h is now
+# a thin adapter over it (the in-tree implementation was PROMOTED there, consolidated with TabbyEQ's
+# copy and crew-hardened). Same hybrid consumption as felitronics-core above; header-only INTERFACE
+# target — it never links JUCE itself (we supply juce_events/juce_data_structures transitively).
+set(ORBITCAB_APPKIT_TAG "v0.1.0" CACHE STRING "felitronics-appkit release tag (fetched when no local checkout)")
+set(ORBITCAB_APPKIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-appkit" CACHE PATH "Local felitronics-appkit checkout (used if present); else the pinned release is fetched")
+if(ORBITCAB_APPKIT_DIR AND EXISTS "${ORBITCAB_APPKIT_DIR}/CMakeLists.txt")
+    message(STATUS "felitronics-appkit: local checkout — ${ORBITCAB_APPKIT_DIR}")
+    FetchContent_Declare(felitronics_appkit SOURCE_DIR "${ORBITCAB_APPKIT_DIR}")
+else()
+    message(STATUS "felitronics-appkit: fetching ${ORBITCAB_APPKIT_TAG} from GitHub")
+    FetchContent_Declare(felitronics_appkit
+        GIT_REPOSITORY https://github.com/darwinscat/felitronics-appkit.git
+        GIT_TAG        ${ORBITCAB_APPKIT_TAG}
+        GIT_SHALLOW    TRUE)
+endif()
+FetchContent_MakeAvailable(felitronics_appkit)
 # Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
 # (same posture as nam_core / Eigen above).
 get_target_property(_teq_inc teq_core INTERFACE_INCLUDE_DIRECTORIES)
@@ -282,7 +300,6 @@ endif()
 target_sources(OrbitCab PRIVATE
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -404,6 +421,7 @@ target_link_libraries(OrbitCab PRIVATE
     # CMake 3.24+ maps this to -force_load (Apple) / --whole-archive (GNU) / /WHOLEARCHIVE (MSVC).
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
     felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver → MatrixConvolverNupc)
     felitronics::fftpffft       # SIMD (pffft/BSD) audio FFT backend for the cab convolver
@@ -430,7 +448,6 @@ target_sources(orbitcab_dsp_test PRIVATE
     tools/dsp-test/test_trim.cpp
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -454,6 +471,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabReverbData                          # embedded spring-reverb IRs (ReverbBinaryData)
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
     teq::core
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
     felitronics::dynamics
     felitronics::convolution
@@ -478,7 +496,6 @@ target_sources(orbitcab_fade_measure PRIVATE
     tools/dsp-test/measure_fades.cpp
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -502,6 +519,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabReverbData
     nam_core
     teq::core
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
     felitronics::dynamics
     felitronics::convolution
@@ -527,7 +545,6 @@ target_sources(orbitcab_tube_audition PRIVATE
     tools/dsp-test/tube_audition.cpp
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -551,6 +568,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     OrbitCabReverbData
     nam_core
     teq::core
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
     felitronics::dynamics
     felitronics::convolution
@@ -575,7 +593,6 @@ target_sources(orbitcab_poweramp_toggle_probe PRIVATE
     tools/dsp-test/poweramp_toggle_probe.cpp
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -599,6 +616,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     OrbitCabReverbData
     nam_core
     teq::core
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
     felitronics::dynamics
     felitronics::convolution
@@ -703,7 +721,6 @@ target_sources(orbitcab_latency_pdc_test PRIVATE
     tests/LatencyPdcTest.cpp
     src/PluginProcessor.cpp
     src/Parameters.cpp
-    src/UpdateChecker.cpp
     src/PresetManager.cpp
     src/PluginEditor.cpp
     src/ui/SlotComponent.cpp
@@ -727,6 +744,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     OrbitCabReverbData
     nam_core
     teq::core
+    felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
     felitronics::dynamics
     felitronics::convolution
