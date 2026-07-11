@@ -21,6 +21,12 @@
 //     once the audio thread has provably stepped past it — so no use-after-free and the
 //     audio thread never deletes.
 //
+// The swap machinery itself (atomic live pointer, block-counter retire, message-thread GC) is
+// the shared felitronics::neural::NeuralStage — extracted FROM this class into felitronics-core;
+// what stays here is the NAM-specific backend (dual-instance true stereo, loudness makeup, .namz
+// unpack, rate-match) in the .cpp. This class remains the stable public seam — call-sites don't
+// see the split.
+//
 // Channels: a MONO stream (1 ch) runs ONE model instance on the single channel; a STEREO stream
 // (2 ch) runs TWO independent instances of the SAME capture (true stereo — L/R independent). Both
 // instances are always built on load, and prepare() configures both per-channel resamplers, so a
