@@ -155,7 +155,7 @@ FetchContent_MakeAvailable(felitronics_core)
 # a thin adapter over it (the in-tree implementation was PROMOTED there, consolidated with TabbyEQ's
 # copy and crew-hardened). Same hybrid consumption as felitronics-core above; header-only INTERFACE
 # target — it never links JUCE itself (we supply juce_events/juce_data_structures transitively).
-set(ORBITCAB_APPKIT_TAG "v0.1.0" CACHE STRING "felitronics-appkit release tag (fetched when no local checkout)")
+set(ORBITCAB_APPKIT_TAG "v0.2.1" CACHE STRING "felitronics-appkit release tag (fetched when no local checkout)")
 set(ORBITCAB_APPKIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-appkit" CACHE PATH "Local felitronics-appkit checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_APPKIT_DIR AND EXISTS "${ORBITCAB_APPKIT_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-appkit: local checkout — ${ORBITCAB_APPKIT_DIR}")
