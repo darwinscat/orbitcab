@@ -133,7 +133,7 @@ target_include_directories(nam_core SYSTEM PUBLIC
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.6.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.8.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -422,7 +422,8 @@ target_link_libraries(OrbitCab PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
-    felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine
+    felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine + offline blend-interference curves
+    felitronics::measurement    # XcorrAlign — auto-polarity of slot B vs A on IR load
     felitronics::convolution    # JUCE-free cab IR convolution (cab::Convolver → MatrixConvolverNupc)
     felitronics::fftpffft       # SIMD (pffft/BSD) audio FFT backend for the cab convolver
     felitronics::saturation     # tube waveshaper curves (cab::poweramp::TubePowerAmp)
@@ -473,6 +474,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -521,6 +523,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -570,6 +573,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -618,6 +622,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -656,6 +661,7 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
     teq::core
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -746,6 +752,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
+    felitronics::measurement
     felitronics::dynamics
     felitronics::convolution
     felitronics::saturation
@@ -770,6 +777,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/TestMain.cpp
     tests/CabEngineTests.cpp
     tests/IRSlotTests.cpp
+    tests/BlendAnalysisTests.cpp  # cab::blend — auto-polarity (xcorr) + MIX interference tint — CI gate
     tests/SvfSmootherNull.cpp     # A/B null gate: felitronics eq::Svf / core::LinearSmoother vs the juce originals
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
@@ -801,7 +809,8 @@ target_compile_definitions(OrbitCab_Tests PRIVATE
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
     teq::core                     # cab::AmpEq (AmpEqTests)
-    felitronics::analysis         # cab::CabEngine SpectrumTap capture
+    felitronics::analysis         # cab::CabEngine SpectrumTap capture + offline blend curves
+    felitronics::measurement      # xcorrAlign (cab::blend auto-polarity — BlendAnalysisTests)
     felitronics::convolution      # cab::Convolver
     felitronics::saturation       # cab::poweramp::TubePowerAmp curves
     felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS

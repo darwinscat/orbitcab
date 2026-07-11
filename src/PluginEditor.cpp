@@ -113,6 +113,8 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     addAndMakeVisible (settingsBtn);
     spectrumEnabled = processorRef.appPreferences().getFlag ("spectrumOn", true);   // global view pref
     processorRef.setSpectrumActive (spectrumEnabled);                    // editor open + analyser on
+    blendTintPref = processorRef.appPreferences().getFlag ("blendTint", true);      // MIX phase tint (default on)
+    processorRef.setBlendTintActive (blendTintPref);                     // compute only while wanted
     waveLogPref   = processorRef.appPreferences().getFlag ("waveLog",  true);       // global view prefs
     waveFloorPref = processorRef.appPreferences().getInt  ("waveFloor", -48);       // default log, −48 dB
     applyWaveformScale();
@@ -597,6 +599,7 @@ OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
 {
     stopTimer();
     processorRef.setSpectrumActive (false);   // editor gone → stop feeding the analyser
+    processorRef.setBlendTintActive (false);  // …and stop recomputing the MIX tint
     preampBox.setLookAndFeel (nullptr);        // detach the custom popup L&F before it is destroyed
     setLookAndFeel (nullptr);
 }
@@ -625,6 +628,15 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     updateEnablement();
     refreshDryWetVisibility();                     // catch a blend (mix ≠ 100%) loaded by the host
     updateSpectrum();
+
+    // Blend tint: the processor bumps its revision when a fresh interference curve lands —
+    // repaint just the MIX strip area (the tint is painted with the rail in paint()).
+    if (const auto tintRev = processorRef.blendTintRevision(); tintRev != blendTintSeenRev)
+    {
+        blendTintSeenRev = tintRev;
+        if (blendTintPref && ! mixABSlider.getBounds().isEmpty())
+            repaint (mixABSlider.getBounds().expanded (2, 16));
+    }
 
     // Reflect poweramp params onto the controls (host automation / state restore don't fire the
     // button onClicks). A change in ampOn re-runs the reveal + resize; otherwise just keep the
@@ -769,7 +781,8 @@ void OrbitCabAudioProcessorEditor::applyWaveformScale()
 void OrbitCabAudioProcessorEditor::openSettings()
 {
     auto panel = std::make_unique<SettingsPanel> (
-        processorRef.getHeadTrim(), processorRef.getInputSource(), dryWetPref, spectrumEnabled, waveLogPref, waveFloorPref,
+        processorRef.getHeadTrim(), processorRef.getInputSource(), dryWetPref, spectrumEnabled, blendTintPref,
+        waveLogPref, waveFloorPref,
         showTubesPref,
         [this] (bool on)                                   // HEAD: persisted session setting
         {
@@ -797,6 +810,13 @@ void OrbitCabAudioProcessorEditor::openSettings()
                 slots[0].setSpectrum (spectrum.pre(), spectrum.post());
                 slots[1].setSpectrum (spectrum.pre(), spectrum.post());
             }
+        },
+        [this] (bool on)                                   // Blend phase tint: global view preference
+        {
+            blendTintPref = on;
+            processorRef.appPreferences().setFlag ("blendTint", on);   // persist across sessions
+            processorRef.setBlendTintActive (on);          // stop the (debounced) recompute when off
+            repaint();                                     // the MIX strip appears/disappears
         },
         [this] (bool on)                                   // Log waveform (dB): global view pref
         {
@@ -1892,6 +1912,38 @@ void OrbitCabAudioProcessorEditor::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (8.0f, juce::Font::bold));
         g.drawText ("0", juce::Rectangle<float> (cx - 6.0f, track.getY() - 14.0f, 12.0f, 9.0f),
                     juce::Justification::centred, false);
+
+        // BLEND PHASE TINT (opt-in view pref): a thin log-f strip (20 Hz → 20 kHz, left → right)
+        // under the MIX rail — red where the A/B blend phase-cancels, green where it coherently
+        // reinforces; brightness ∝ dB depth. The curve is computed processor-side on the PREPARED
+        // IRs (debounced, message thread); empty = no two-sided blend → nothing is drawn. The
+        // frequency axis is intentionally NOT the mix axis — this answers "WHERE does this blend
+        // comb?", the rail above answers "how much of each".
+        if (blendTintPref && mixABSlider.isEnabled())
+        {
+            const auto& tint = processorRef.blendTintCurve();
+            if (! tint.empty())
+            {
+                const auto strip = juce::Rectangle<float> (track.getX(), track.getBottom() + 5.0f,
+                                                           track.getWidth(), 4.0f);
+                const int n = (int) tint.size();
+                const int w = juce::jmax (1, (int) strip.getWidth());
+                for (int x = 0; x < w; ++x)
+                {
+                    // both axes are log-uniform over the same span → linear pixel↔point map
+                    const double v = tint[(size_t) juce::jlimit (0, n - 1, (int) std::lround ((double) x / (w - 1) * (n - 1)))];
+                    juce::Colour c;
+                    if (v < -0.5)                                              // cancellation — red, full by −12 dB
+                        c = juce::Colour (0xffff5a52).withAlpha (juce::jmap ((float) juce::jlimit (0.5, 12.0, -v), 0.5f, 12.0f, 0.10f, 0.85f));
+                    else if (v > 0.5)                                          // reinforcement — green, full at +3 dB
+                        c = juce::Colour (0xff69d18f).withAlpha (juce::jmap ((float) juce::jlimit (0.5, 3.0, v), 0.5f, 3.0f, 0.10f, 0.70f));
+                    else
+                        continue;                                              // ±0.5 dB — neutral, leave dark
+                    g.setColour (c);
+                    g.fillRect (strip.getX() + (float) x, strip.getY(), 1.0f, strip.getHeight());
+                }
+            }
+        }
     }
 
 }

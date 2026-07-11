@@ -115,6 +115,13 @@ public:
     float irNormalizationGain()   const noexcept { return normGain_; }
     float irNormalizationGainDb() const noexcept { return normGainDb_; }
 
+    // The staged AUDIBLE taps of the last load — resampled to host rate + reference-unity
+    // normalized, exactly what the convolver plays (retained anyway for the reject-retry
+    // coalescing). Message thread; input for the offline blend analysis (auto-polarity /
+    // interference tint). NOTE: they persist after a slot clear (the engine only gates the
+    // slot off) — callers gate on the slot's own loaded state, not on non-emptiness here.
+    const std::vector<std::vector<float>>& stagedTaps() const noexcept { return ir_; }
+
     // RT-safe in-place convolution of `numChannels` planar channels. NUPC processes the prepared channel
     // count and no-ops if handed fewer planes — callers pass the prepared width (wet buffer == bus width).
     void process (float* const* io, int numChannels, int numSamples)

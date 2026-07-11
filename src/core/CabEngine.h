@@ -77,6 +77,9 @@ public:
     double slotTrimmedSeconds   (int slot) const;
     const  juce::AudioBuffer<float>& slotOriginal (int slot) const;
     double slotOriginalSampleRate (int slot) const;
+    // The slot's PREPARED (audible) taps — post HEAD/TRIM, host-rate, reference-unity — for the
+    // offline blend analysis (cab::blend). Message thread; see Convolver::stagedTaps caveats.
+    const std::vector<std::vector<float>>& slotPreparedTaps (int s) const { return slot[s].preparedTaps(); }
     void   pumpConvolverReloads() { slot[0].pumpReload(); slot[1].pumpReload(); reverbConv.flushPending(); }   // retry coalesced IR swaps (poll)
 
     //--- REVERB IR lifecycle (message thread) — the in-amp spring convolver -------

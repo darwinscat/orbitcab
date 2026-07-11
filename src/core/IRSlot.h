@@ -55,6 +55,10 @@ public:
     const juce::AudioBuffer<float>& originalBuffer() const { return original; }
     double originalSampleRate() const { return irSampleRate; }
 
+    // The convolver's staged audible taps (post HEAD/TRIM + resample + normalization) — the
+    // offline blend analysis reads these. See Convolver::stagedTaps for the caveats.
+    const std::vector<std::vector<float>>& preparedTaps() const noexcept { return conv.stagedTaps(); }
+
 private:
     Convolver conv;
     felitronics::eq::Svf hpf, lpf;

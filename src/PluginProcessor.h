@@ -139,6 +139,19 @@ public:
     // AND the "≈" toggle on); processBlock also skips capture during an offline render.
     void setSpectrumActive (bool shouldFeed) { engine.setSpectrumActive (shouldFeed); }
 
+    // Blend-interference tint (the MIX strip's red/green phase view). The editor opts the
+    // computation in (view pref + editor open); the curve is then recomputed OFF the audio
+    // thread on the 30 Hz poll, debounced, whenever the audible blend changes (IR load/trim,
+    // per-slot filters/phase/mute/dry-wet, MIX). cab::blend::kPoints values on the log-f
+    // 20 Hz–20 kHz grid; empty = no two-sided blend (don't tint). Message thread only.
+    void setBlendTintActive (bool shouldCompute)
+    {
+        blendTintActive.store (shouldCompute, std::memory_order_relaxed);
+        if (shouldCompute) blendTintDirty.store (true, std::memory_order_relaxed);
+    }
+    const std::vector<double>& blendTintCurve() const { return blendTintData; }
+    juce::uint32 blendTintRevision() const { return blendTintRev.load (std::memory_order_relaxed); }
+
     // Load an IR into a slot. Decoded on the calling (message) thread;
     // the convolver swaps it on JUCE's loader thread — RT-safe. Two sources per
     // slot: a user-chosen file, and a bundled IR (embedded bytes via BinaryData). The
@@ -364,8 +377,24 @@ private:
     {
         slotAudioLoaded[slotIdx].store (slotState[(size_t) slotIdx].status == orbitcab::state::SlotIR::Status::ready,
                                         std::memory_order_relaxed);
+        blendTintDirty.store (true, std::memory_order_relaxed);   // slot identity changed → retint
     }
     void applyTrimAndLoad (bool slotA);
+
+    // Auto-polarity on a USER IR load (never a session/preset restore — those must respect the
+    // saved phase): when both slots carry IRs, ask cab::blend whether B is phase-flipped
+    // against A and set the existing phaseB param to match. Confidence-gated. Message thread.
+    void autoPolarityOnLoad();
+
+    // Blend-tint state: the editor-facing curve + revision, the opt-in gate, and the dirty/
+    // debounce pair. Flags are atomics because parameterChanged can fire on the audio thread;
+    // the data itself is touched on the message thread only (refreshBlendTint ↔ editor reads).
+    void refreshBlendTint();
+    std::vector<double>       blendTintData;
+    std::atomic<juce::uint32> blendTintRev    { 0 };
+    std::atomic<bool>         blendTintDirty  { true };
+    std::atomic<bool>         blendTintActive { false };
+    int                       blendTintSettle = 0;       // debounce ticks left (timer thread only)
 
     // TRIM/HEAD enable are params that reshape the IR, so toggling them must re-trim — but
     // the change can arrive on the audio thread (host automation). parameterChanged does

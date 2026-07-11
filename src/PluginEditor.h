@@ -339,6 +339,15 @@ private:
     SpectrumAnalyser spectrum;   // display-side pre/post analyser (extracted)
     bool spectrumEnabled = true;
 
+    // Blend phase tint (gear panel, global view pref, default ON): a log-f strip under the
+    // MIX rail tinting where the A/B blend cancels (red) / reinforces (green). The curve is
+    // computed processor-side on the prepared IRs (debounced, message thread); the editor
+    // polls blendTintRevision() on its timer and repaints the strip on change. It only ever
+    // shows for a real two-sided blend (both slots + MIX between the ends), so the default-on
+    // costs nothing in the common single-IR workflow.
+    bool blendTintPref = true;                   // persisted under "blendTint"
+    juce::uint32 blendTintSeenRev = 0;           // last revision painted
+
     // Global view pref (gear panel, default off): reveal the per-slot Dry/Wet sliders.
     // Persisted via the UpdateChecker's PropertiesFile under "dryWetShown", seeded in the ctor.
     // The sliders are ALSO force-shown whenever a slot's Dry/Wet mix ≠ 100% (a non-default
