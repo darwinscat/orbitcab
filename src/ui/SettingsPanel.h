@@ -22,12 +22,14 @@
 class SettingsPanel final : public juce::Component
 {
 public:
-    SettingsPanel (bool headOn, int inputSource, bool dryWetOn, bool spectrumOn, bool waveLogOn, int waveFloorDb,
+    SettingsPanel (bool headOn, int inputSource, bool dryWetOn, bool spectrumOn, bool blendTintOn,
+                   bool waveLogOn, int waveFloorDb,
                    bool showTubes,
                    std::function<void (bool)> onHead,
                    std::function<void (int)>  onInputSource,
                    std::function<void (bool)> onDryWet,
                    std::function<void (bool)> onSpectrum,
+                   std::function<void (bool)> onBlendTint,
                    std::function<void (bool)> onWaveLog,
                    std::function<void (int)>  onWaveFloor,
                    std::function<void (bool)> onShowTubes,
@@ -64,6 +66,9 @@ public:
         setUp (spectrum, "Spectrum analyser", spectrumOn,
                "Show the faint pre/post spectrum behind the waveforms.",
                std::move (onSpectrum));
+        setUp (blendTint, "Blend phase tint", blendTintOn,
+               "Colour the MIX rail where the two IRs cancel (red) or reinforce (green) when blended - phase interference of the A/B pair.",
+               std::move (onBlendTint));
 
         // Waveform amplitude scale (view pref): log (dB, lifts the decay tail into view) vs
         // linear, with a selectable dB floor for the log scale.
@@ -118,7 +123,7 @@ public:
         setCaption (sessionCap, "SAVED WITH THE PROJECT");
         setCaption (globalCap,  "THIS COMPUTER");
 
-        setSize (264, 402);
+        setSize (264, 428);
     }
 
     void resized() override
@@ -138,6 +143,7 @@ public:
         globalCap.setBounds (r.removeFromTop (14));
         dryWet.setBounds    (r.removeFromTop (26));
         spectrum.setBounds  (r.removeFromTop (26));
+        blendTint.setBounds (r.removeFromTop (26));
         waveLog.setBounds   (r.removeFromTop (26));
         auto floorRow = r.removeFromTop (26);
         floorCap.setBounds  (floorRow.removeFromLeft (58).withTrimmedTop (6));
@@ -184,7 +190,7 @@ private:
     }
 
     juce::Label        title, sessionCap, globalCap, floorCap, ampCap, inputCap;
-    juce::ToggleButton head, dryWet, spectrum, waveLog, showTubesBtn;
+    juce::ToggleButton head, dryWet, spectrum, blendTint, waveLog, showTubesBtn;
     juce::TextButton   manageBtn, managePreampBtn;
     juce::ComboBox     waveFloor, inputSrc;
     int                dividerY = 0, ampDividerY = 0;   // section dividers (set in resized(), drawn in paint())
