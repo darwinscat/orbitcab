@@ -136,9 +136,11 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black);
         b.setColour (OrbitCabLookAndFeel::accentBorderColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
         b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1)
-                      + ")   ·  right-click to copy");
-        b.onClick = [this, i] { switchSnapshot (i); };
-        b.addMouseListener (this, false);       // right-click → copy menu (left-click stays the toggle)
+                      + ")   ·  right-click: copy / paste   ·  drag onto another to copy");
+        b.setRegisterIndex (i);
+        b.onClick    = [this, i] { switchSnapshot (i); };
+        b.onPopup    = [this, i] { showSnapshotMenu (i); };
+        b.onCopyDrop = [this] (int from, int to) { applySnapshotCopy (from, to); };
         addAndMakeVisible (b);
     }
     updateSnapshotButtons();
@@ -1494,6 +1496,86 @@ void OrbitCabAudioProcessorEditor::switchSnapshot (int i)
     updateSnapshotButtons();
 }
 
+//==============================================================================
+// A/B/C/D register copy — right-click menu / drag-n-drop / system clipboard.
+// Every path lands in the engine (copyRegister / applyEdit): ONE discrete undoable
+// edit in the TARGET register's own history, a no-op copy records nothing.
+//==============================================================================
+void OrbitCabAudioProcessorEditor::showSnapshotMenu (int i)
+{
+    // Sources for "copy here from": ONLY content-bearing registers (the active one or a stored
+    // snapshot) — copying from a never-visited slot is meaningless. Targets are unrestricted.
+    juce::PopupMenu from, to;
+    for (int j = 0; j < OrbitCabAudioProcessor::kNumSnapshots; ++j)
+    {
+        if (j == i) continue;
+        const auto name = snapBtn[j].getButtonText();
+        if (processorRef.snapshotHasContent (j))
+            from.addItem (100 + j, name);
+        to.addItem (200 + j, name);
+    }
+
+    // The ⌘C/⌘V hints are true only for the ACTIVE register (the shortcuts act on it); a
+    // right-click on a sibling shows the same items unhinted.
+    const bool active = (i == processorRef.getActiveSnapshot());
+    const auto hasContent = processorRef.snapshotHasContent (i);
+    juce::PopupMenu m;
+    m.addSectionHeader ("Snapshot " + snapBtn[i].getButtonText());
+    m.addSubMenu ("Copy here from", from, from.getNumItems() > 0);
+    m.addSubMenu ("Copy this to",   to,   hasContent);
+    m.addSeparator();
+    const auto hint = [] (juce::juce_wchar c)
+    {
+        return "  (" + juce::KeyPress (c, juce::ModifierKeys::commandModifier, 0)
+                           .getTextDescriptionWithIcons() + ")";
+    };
+    m.addItem (1, "Copy sound" + (active ? hint ('c') : juce::String()), hasContent);
+    {
+        const auto clip = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
+        m.addItem (2, "Paste sound" + (active ? hint ('v') : juce::String()),
+                   clip.hasType ("Sound"));
+    }
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapBtn[i]),
+        [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this), i] (int r)
+        {
+            if (safe == nullptr || r == 0) return;
+            if      (r == 1)        copySnapshotToClipboard (i);
+            else if (r == 2)        pasteSnapshotFromClipboard (i);
+            else if (r >= 200)      applySnapshotCopy (i, r - 200);   // "copy this to" → i is the source
+            else if (r >= 100)      applySnapshotCopy (r - 100, i);   // "copy here from" → i is the target
+        });
+}
+
+void OrbitCabAudioProcessorEditor::applySnapshotCopy (int from, int to)
+{
+    if (from == to) return;
+    processorRef.copySnapshot (from, to);
+    afterUndoRedo();   // live may have changed (copy INTO the active register); markers always
+}
+
+void OrbitCabAudioProcessorEditor::copySnapshotToClipboard (int i)
+{
+    // The register's whole <Sound> (params + both IR slot identities) as XML. IR audio is NOT
+    // inlined — a paste re-resolves by ref/path with the usual MISSING fallback, so a cross-
+    // instance paste works whenever the IR is bundled, on disk, or in the target's session pool.
+    if (const auto t = processorRef.snapshotSound (i); t.isValid())
+        if (const auto xml = t.createXml())
+            juce::SystemClipboard::copyTextToClipboard (xml->toString());
+}
+
+bool OrbitCabAudioProcessorEditor::pasteSnapshotFromClipboard (int toReg)
+{
+    // The clipboard is untrusted input: accept only a well-formed <Sound> that actually carries
+    // a <Params> payload — a hollow tree would "paste" a slot-clearing half-state.
+    const auto t = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
+    if (! t.hasType ("Sound") || t.getChildWithName ("Params").getNumChildren() == 0)
+        return false;
+    processorRef.pasteSound (toReg, t);
+    afterUndoRedo();
+    return true;
+}
+
 bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 {
     // 1/2/3/4 → snapshot A/B/C/D. Only the digit row (no modifiers) so it won't fight typing
@@ -1504,6 +1586,18 @@ bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
             switchSnapshot (i);
             return true;
         }
+
+    // ⌘C/⌘V (Ctrl on Windows) — copy/paste the ACTIVE register's sound via the system clipboard
+    // (the right-click menu reaches any register). An unrecognised clipboard falls through to
+    // the host (return false), so a stray ⌘V doesn't get swallowed.
+    if (key == juce::KeyPress ('c', juce::ModifierKeys::commandModifier, 0))
+    {
+        copySnapshotToClipboard (processorRef.getActiveSnapshot());
+        return true;
+    }
+    if (key == juce::KeyPress ('v', juce::ModifierKeys::commandModifier, 0))
+        return pasteSnapshotFromClipboard (processorRef.getActiveSnapshot());
+
     return false;
 }
 

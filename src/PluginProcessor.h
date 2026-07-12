@@ -273,7 +273,11 @@ public:
         return i == history.active() ? orbitcab::state::toTree (captureLive(), false)
                                      : history.registerTree (i).value_or (juce::ValueTree());
     }
-    void pasteSound (int toReg, const juce::ValueTree& sound) { history.applyEdit (toReg, sound); }
+    void pasteSound (int toReg, const juce::ValueTree& sound)
+    {
+        if (! sound.hasType ("Sound")) return;   // clipboard is untrusted input (editor validates deeper)
+        history.applyEdit (toReg, sound);
+    }
 
     // Undo / redo — the shared felitronics-appkit CompareHistory engine, PerRegister mode: each
     // A/B/C/D register has its OWN undo/redo history, and a register SWITCH is NOT an undo step (its

@@ -14,6 +14,7 @@
 #include "ui/SpectrumAnalyser.h"
 #include "ui/SettingsPanel.h"
 #include "ui/SlotComponent.h"
+#include "ui/SnapshotButton.h"
 #include "ui/TubeDisplay.h"
 #include "ui/DeviceGlyph.h"   // schematic tube / PNP / FET glyphs for the preamp device strip
 #include "ui/PreampMenuLNF.h" // draws those glyphs inside the preamp combo's dropdown items
@@ -84,6 +85,7 @@ private:
 //==============================================================================
 class OrbitCabAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                        public  juce::FileDragAndDropTarget,
+                                       public  juce::DragAndDropContainer,   // A/B/C/D drag-copy (button onto button)
                                        private juce::Timer
 {
 public:
@@ -139,10 +141,16 @@ private:
     IconButton            undoBtn   { IconButton::Kind::undo };
     IconButton            redoBtn   { IconButton::Kind::redo };
     IconButton            settingsBtn { IconButton::Kind::settings };       // gear → settings pop-over
-    juce::TextButton      snapBtn[OrbitCabAudioProcessor::kNumSnapshots];   // A/B/C/D compare registers
+    orbitcab::ui::SnapshotButton snapBtn[OrbitCabAudioProcessor::kNumSnapshots];   // A/B/C/D compare registers
     void updateSnapshotButtons();                                       // reflect the active register
     void switchSnapshot (int i);                                        // recall register i + re-sync (click or 1-4 key)
     void afterUndoRedo();                                               // re-sync UI after undo/redo
+    // Register copy — the engine's copyRegister/applyEdit behind the UI gestures (right-click
+    // menu, button drag-n-drop, system clipboard). Clipboard payload = the <Sound> XML.
+    void showSnapshotMenu (int i);                                      // right-click on button i
+    void applySnapshotCopy (int from, int to);                          // copyRegister + UI re-sync
+    void copySnapshotToClipboard (int i);                               // register i's <Sound> → clipboard
+    bool pasteSnapshotFromClipboard (int toReg);                        // clipboard → register (validated)
     juce::ComboBox        presetBox;
     std::unique_ptr<juce::Drawable> logo;  // Darwin's Cat mark (drawn inside HeaderBrand)
     HeaderBrand           brand;           // logo + OrbitCab brand -> /orbitcab
