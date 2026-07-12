@@ -430,6 +430,7 @@ target_link_libraries(OrbitCab PRIVATE
     felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
     felitronics::eq             # min-phase presence/depth shelves (block 3)
     felitronics::dynamics       # in-amp noise gate (cab::NoiseGate = felitronics::dynamics::NoiseGate)
+    felitronics::neural         # swap-safe NeuralStage holder for cab::AmpStage (NAM backend stays local)
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -480,6 +481,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -529,6 +531,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -579,6 +582,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -628,6 +632,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -667,6 +672,7 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -758,6 +764,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     felitronics::saturation
     felitronics::oversampling
     felitronics::eq
+    felitronics::neural
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
@@ -816,6 +823,7 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     felitronics::oversampling     # cab::poweramp::TubePowerAmp 4x OS
     felitronics::eq               # block-3 presence/depth shelves
     felitronics::dynamics         # cab::NoiseGate (CabEngine end-to-end gate test)
+    felitronics::neural           # swap-safe NeuralStage holder consumed by cab::AmpStage
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
     juce::juce_recommended_config_flags

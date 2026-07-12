@@ -233,7 +233,11 @@ void OrbitCabAudioProcessor::timerCallback()
 {
     // Reclaim any NAM model retired by an atomic swap, now the audio thread has stepped past
     // it (cheap no-op when the garbage list is empty). Safe regardless of enginePrepared.
-    engine.collectAmpGarbage();
+    // True = a load/clear that was DEFERRED (full retire queue — see AmpStage) landed on THIS
+    // tick: re-report PDC exactly like a normal load/clear does, because the landing can change
+    // a stage's rate-match latency (e.g. a deferred bypass-clear at 96 kHz drops it to 0).
+    if (engine.collectAmpGarbage())
+        updateLatency();
 
     // Message thread. Coalesces rapid toggles/drags (many flag stores between ticks → one
     // reload). Gated on enginePrepared so a flag set before prepareToPlay / after

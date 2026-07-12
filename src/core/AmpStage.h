@@ -21,6 +21,12 @@
 //     once the audio thread has provably stepped past it — so no use-after-free and the
 //     audio thread never deletes.
 //
+// The swap machinery itself (atomic live pointer, block-counter retire, message-thread GC) is
+// the shared felitronics::neural::NeuralStage — extracted FROM this class into felitronics-core;
+// what stays here is the NAM-specific backend (dual-instance true stereo, loudness makeup, .namz
+// unpack, rate-match) in the .cpp. This class remains the stable public seam — call-sites don't
+// see the split.
+//
 // Channels: a MONO stream (1 ch) runs ONE model instance on the single channel; a STEREO stream
 // (2 ch) runs TWO independent instances of the SAME capture (true stereo — L/R independent). Both
 // instances are always built on load, and prepare() configures both per-channel resamplers, so a
@@ -50,11 +56,19 @@ public:
     // Build a NAM model from raw .nam bytes off the audio thread and atomic-swap it in.
     // Returns false (and leaves the current model untouched) on a bad / unsupported /
     // non-mono model. The replaced model is reclaimed later via collectGarbage().
+    // A load (or clear) that was ACCEPTED is guaranteed to apply: immediately in the normal
+    // case, or — if the bounded swap-retire queue is momentarily full (audio frozen across
+    // many swaps) — on the next collectGarbage()/prepare() drain. The info getters below
+    // update only when it actually lands, so they always describe the model that is live.
     // trimDb = per-model output offset (dB) folded into the loudness-normalisation makeup.
     // (Bytes only — file I/O stays in the adapter layer, never in pure-DSP core.)
     bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);
     void   clearModel();
-    void   collectGarbage();          // free models retired by a swap, once audio moved past them
+    bool   collectGarbage();          // free models retired by a swap, once audio moved past them,
+                                      // and land any load/clear deferred by a full retire queue.
+                                      // Returns true when a DEFERRED intent landed on this call —
+                                      // model state (and possibly latencySamples()) changed, so the
+                                      // caller re-reports host PDC like after a normal load.
 
     bool   hasModel() const;
     double modelSampleRate() const;   // the model's expected sample rate (<= 0 if none / unknown)

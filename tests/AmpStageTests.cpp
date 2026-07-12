@@ -142,6 +142,116 @@ struct AmpStageTest : juce::UnitTest
             }
            #endif
         }
+
+        // The swap holder (felitronics::neural::NeuralStage) bounds its retire queue at 64; with
+        // the audio thread FROZEN (zero process() calls) nothing can be GC'd, so enough load/clear
+        // churn fills it. The stage must stay truthful through that: every valid load is ACCEPTED
+        // (never silently dropped), the info getters always describe the model that is actually
+        // live, and the LAST command wins once audio moves and the periodic drain (collectGarbage)
+        // runs. (Counts are tied to that bound of 64 — raise them if the bound ever grows.)
+        beginTest ("retire-queue overflow (frozen audio): loads/clears defer honestly; last command wins");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const juce::File nf = juce::File (ORBITCAB_RES_DIR).getChildFile ("preamps/V4KRAK-red-12h.namz");
+            juce::MemoryBlock mb; if (nf.existsAsFile()) nf.loadFileAsData (mb);
+            if (mb.getSize() > 0)
+            {
+                auto rms = [] (const std::vector<float>& v)
+                { double s = 0; for (float x : v) s += (double) x * x; return (float) std::sqrt (s / (double) v.size()); };
+
+                //--- phase 1: the LAST command is a CLEAR --------------------------------------
+                AmpStage amp; amp.prepare (48000.0, 512);
+                expect (amp.loadModelFromMemory (mb.getData(), mb.getSize()), "reference load");
+                const double refSR = amp.modelSampleRate();      // mirror baseline for THIS model
+                const bool   refHL = amp.modelHasLoudness();
+                amp.clearModel();
+
+                bool allAccepted = true;                         // audio frozen: NO process() below
+                for (int i = 0; i < 70; ++i)
+                {
+                    allAccepted = amp.loadModelFromMemory (mb.getData(), mb.getSize()) && allAccepted;
+                    amp.clearModel();
+                }
+                expect (allAccepted, "every valid load is accepted even against a full retire queue");
+                bool landedWhileFrozen = false;                     // frozen ticks: nothing can drain yet
+                for (int t = 0; t < 3; ++t) landedWhileFrozen = amp.collectGarbage() || landedWhileFrozen;
+                expect (! landedWhileFrozen, "frozen ticks report no state change (nothing landed)");
+
+                // Past the queue bound the trailing clears DEFER, so an older capture is still
+                // live — and the getters must still say so (no "empty" lie while it keeps playing).
+                expect (amp.hasModel(), "a model is still live while the final clear is deferred");
+                expect (std::abs (amp.modelSampleRate() - refSR) < 1.0e-9 && amp.modelHasLoudness() == refHL,
+                        "the info getters describe the LIVE model, not the deferred intent");
+
+                // Audio resumes: one block advances the GC epoch; the next tick drains the retired
+                // models and lands the deferred intent — the LAST command was clearModel().
+                auto x = sine (512, 48000.0, 220.0, 0.3f);
+                float* io1[1] = { x.data() };
+                amp.process (io1, 1, 512, true);
+                expect (amp.collectGarbage(), "the drain tick REPORTS the landed clear (PDC re-report signal)");
+                expect (! amp.hasModel(), "after the drain the deferred clear has landed (last command wins)");
+                expect (std::abs (amp.modelSampleRate()) < 1.0e-9 && ! amp.modelHasLoudness(),
+                        "getters agree: no model");
+                expect (amp.latencySamples() == 0);
+
+                //--- phase 2: the LAST command is a LOAD (distinct trim → landing is measurable) --
+                AmpStage amp2; amp2.prepare (48000.0, 512);
+                for (int i = 0; i < 64; ++i)                     // fill the retire queue exactly
+                {
+                    expect (amp2.loadModelFromMemory (mb.getData(), mb.getSize()), "refill load accepted");
+                    amp2.clearModel();
+                }
+                expect (amp2.loadModelFromMemory (mb.getData(), mb.getSize(), 0.0f),
+                        "trim-0 load lands (live slot was empty)");
+                expect (amp2.loadModelFromMemory (mb.getData(), mb.getSize(), -20.0f),
+                        "-20 dB trim load is accepted against the full queue (deferred)");
+                expect (amp2.hasModel());
+
+                const auto in = sine (512, 48000.0, 220.0, 0.3f);
+                auto run = [&] { auto b = in; float* io[1] = { b.data() };
+                                 amp2.process (io, 1, 512, true); return b; };
+                (void) run();                     // warm the trim-0 model…
+                const float r1 = rms (run());     // …then measure it
+                expect (amp2.collectGarbage(),    // audio has advanced → the drain lands the -20 dB load
+                        "the drain tick REPORTS the landed deferred load (PDC re-report signal)");
+                (void) run();                     // identical warm-up for the swapped-in model…
+                const float r2 = rms (run());     // …then measure it
+                expectWithinAbsoluteError (r2 / r1, 0.1f, 0.05f,
+                        "the deferred load (its -20 dB trim) is what went live after the drain");
+
+                //--- phase 3: a deferred CLEAR must re-report LATENCY when it lands (96k host) ---
+                // At 96 kHz a 48k model rate-matches → real PDC. While the clear is deferred, the
+                // model keeps playing, so latencySamples() must HOLD; once the drain lands it, the
+                // rate-match latency drops to 0 and the drain call reports true — the processor's
+                // timer turns exactly that into updateLatency(), same as after a normal load.
+                AmpStage amp3; amp3.prepare (96000.0, 512);
+                expect (amp3.loadModelFromMemory (mb.getData(), mb.getSize()),
+                        "48k model loads at a 96k host (rate-matched)");
+                const int lat = amp3.latencySamples();
+                expect (lat > 0, "rate-matching reports real latency at 96k");
+                for (int i = 0; i < 66; ++i)                     // frozen churn: fills the queue
+                {
+                    amp3.clearModel();
+                    expect (amp3.loadModelFromMemory (mb.getData(), mb.getSize()), "churn load accepted");
+                }
+                amp3.clearModel();                               // the LAST command; deferred past the bound
+                expect (amp3.hasModel(), "the clear deferred — an older capture is still live");
+                expect (amp3.latencySamples() == lat,
+                        "a deferred clear keeps the LIVE model's latency (host PDC stays honest)");
+                expect (! amp3.collectGarbage(), "frozen tick: nothing landed, no re-report signal");
+                expect (amp3.latencySamples() == lat, "still latched while frozen");
+
+                auto y = sine (512, 96000.0, 220.0, 0.3f);       // audio resumes for one block
+                float* io3[1] = { y.data() };
+                amp3.process (io3, 1, 512, true);
+                expect (amp3.collectGarbage(),
+                        "the drain tick REPORTS the landed clear so the host re-reports PDC");
+                expect (! amp3.hasModel() && amp3.latencySamples() == 0,
+                        "after landing: no model, the rate-match latency is gone");
+                expect (! amp3.collectGarbage(), "steady state: no further re-report signals");
+            }
+           #endif
+        }
     }
 };
 
