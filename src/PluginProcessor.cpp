@@ -98,7 +98,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", orbitcab::createParameterLayout()),
       updateCheckerInstance (JucePlugin_VersionString, *appPreferencesInstance),
-      // The shared appkit undo/redo + A/B/C/D engine (WholeWorkspace mode). The opaque seam is the
+      // The shared appkit undo/redo + A/B/C/D engine (PerRegister mode). The opaque seam is the
       // <Sound> payload: captureLive()->tree and applyLive(sound-from-tree). Declared after apvts +
       // slotState, which captureLive reads at the engine's construction-time capture-stability assert.
       history (felitronics::appkit::CompareHistory::Mode::PerRegister,
@@ -1070,8 +1070,8 @@ void OrbitCabAudioProcessor::applyLive (const orbitcab::state::SoundState& s)
 // A/B/C/D switch — the shared appkit engine stashes live into the leaving register, recalls the
 // target (a fresh register inherits the current live sound), and fires onAfterApply → bumpSound/
 // bumpWorkspace (the re-sync the old body did after applyLive). undoTick/undo/redo are one-line
-// delegations in the header. The engine owns the whole workspace as one undo unit, so a switch is
-// exactly reversible — OrbitCab's WholeWorkspace topology, unchanged.
+// delegations in the header. PerRegister mode: the switch itself is NOT an undo step (its inverse
+// is re-selecting the slot); undo/redo act on the active register's own history only.
 void OrbitCabAudioProcessor::switchToSnapshot (int index)
 {
     history.switchTo (index);

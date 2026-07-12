@@ -564,32 +564,40 @@ int main()
         std::printf ("RESULT: %s\n", ok ? "PRESET LOAD RESETS A/B/C/D" : "BUG B REGRESSED (stale register recalled)");
     }
 
-    // ---- BUG C: a snapshot switch is undoable — undo restores BOTH the live sound AND the
-    //      active-register index (the chosen fully-reversible compare model).
+    // ---- BUG C (PerRegister): every A/B/C/D register keeps its OWN undo/redo history and a
+    //      register switch is NOT an undo step (its inverse is re-selecting the slot). Undo/redo
+    //      act on the active register only and never teleport the selector — the old
+    //      whole-workspace model did exactly that, silently reverting a keeper register.
     {
         OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
         auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
         auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
         auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
-        setG (0.20f); ticks (20);                          // register 0 settles
+        const float g0 = getG();                           // register 0's pristine sound
+        setG (0.20f); ticks (20);                          // settles into register 0's OWN track
         const float reg0 = getG();
-        p.switchToSnapshot (1); ticks (20);                // switch is one undo step
-        setG (0.85f); ticks (20);                          // edit is another
+        p.switchToSnapshot (1); ticks (20);                // NOT an undo step; fresh slot inherits live
+        const bool bornClean = ! p.canUndo() && std::abs (getG() - reg0) < 1e-4f
+                             && p.getActiveSnapshot() == 1;
+        setG (0.85f); ticks (20);                          // register 1's own first step
         const float reg1 = getG();
-        const int activeBefore = p.getActiveSnapshot();
-        p.undo();                                          // undo the edit
-        p.undo();                                          // undo the switch itself
-        const int   activeAfter = p.getActiveSnapshot();
-        const float soundAfter  = getG();
-        // gain is stored in dB (getG is the raw value), so assert the INVARIANT, not a 0..1
-        // literal: the two registers differ, and undo restores BOTH reg0's sound and active=0.
-        const bool ok = std::abs (reg1 - reg0) > 1.0f && activeBefore == 1
-                      && activeAfter == 0 && std::abs (soundAfter - reg0) < 1e-2f;
+        const bool undoEdit  = p.undo() && std::abs (getG() - reg0) < 1e-2f
+                             && p.getActiveSnapshot() == 1;            // reverts reg1's edit in place
+        const bool undoFloor = ! p.undo() && p.getActiveSnapshot() == 1
+                             && std::abs (getG() - reg0) < 1e-2f;      // no-op: NO selector teleport
+        const bool redoEdit  = p.redo() && std::abs (getG() - reg1) < 1e-2f
+                             && p.getActiveSnapshot() == 1;            // no-op undo didn't eat redo
+        p.switchToSnapshot (0); ticks (20);                // back to A — its history must be intact
+        const bool undoA     = p.undo() && std::abs (getG() - g0) < 1e-2f
+                             && p.getActiveSnapshot() == 0;            // reg0's own step survives
+        // gain is stored in dB (getG is the raw value), so assert INVARIANTS, not 0..1 literals.
+        const bool ok = std::abs (reg1 - reg0) > 1.0f
+                      && bornClean && undoEdit && undoFloor && redoEdit && undoA;
         allPass &= ok;
-        std::printf ("BUG-C TEST: reg0=%.2f reg1=%.2f activeBefore=%d → activeAfter=%d sound=%.2f\n",
-                     reg0, reg1, activeBefore, activeAfter, soundAfter);
-        std::printf ("RESULT: %s\n", ok ? "SNAPSHOT SWITCH IS UNDOABLE (sound + active index)"
-                                        : "BUG C REGRESSED (undo ignores the register)");
+        std::printf ("BUG-C TEST (PerRegister): reg0=%.2f reg1=%.2f bornClean=%d undoEdit=%d undoFloor=%d redo=%d undoA=%d\n",
+                     reg0, reg1, (int) bornClean, (int) undoEdit, (int) undoFloor, (int) redoEdit, (int) undoA);
+        std::printf ("RESULT: %s\n", ok ? "PER-REGISTER UNDO (own history per slot; a switch is not a step)"
+                                        : "BUG C REGRESSED (undo crosses registers / teleports the selector)");
     }
 
     // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must

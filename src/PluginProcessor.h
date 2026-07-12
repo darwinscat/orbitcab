@@ -515,8 +515,8 @@ private:
     juce::CriticalSection preampPoolLock;     // guards embeddedPreamps (same threads as powerampPoolLock)
 
     // Undo/redo + the A/B/C/D compare registers — the shared felitronics-appkit engine, in
-    // WholeWorkspace mode (OrbitCab's topology: the undo snapshot is the whole workspace, so a
-    // register switch is exactly reversible). It owns the registers, the settle-timer coalescing
+    // PerRegister mode (each register keeps its OWN undo/redo track; a register switch is NOT an
+    // undo step). It owns the registers, the settle-timer coalescing
     // and the <Workspace> persistence envelope; captureLive/applyLive (below) are the opaque
     // <Sound> payload seam. Declared AFTER apvts + slotState (captureLive reads them at the
     // engine's construction-time capture-stability assert). Message-thread only.
