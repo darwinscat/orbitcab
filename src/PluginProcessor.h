@@ -6,6 +6,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <felitronics/appkit/CompareHistory.h>
+
 #include "core/CabEngine.h"
 #include "AppPreferences.h"
 #include "PowerampLibrary.h"
@@ -253,16 +255,17 @@ public:
     // is saved in the DAW session. Called on the message thread (button click).
     static constexpr int kNumSnapshots = 4;
     void switchToSnapshot (int index);
-    int  getActiveSnapshot() const { return activeSnapshot; }
+    int  getActiveSnapshot() const { return history.active(); }
 
-    // Undo / redo — a stack of full ref-only state snapshots (reuses capture/applyStateTree).
-    // The editor pumps undoTick() on its timer; a burst of edits coalesces into one step
-    // once the state settles. undo()/redo() apply a step (the editor then re-syncs its UI).
-    void undoTick();
-    bool undo();
-    bool redo();
-    bool canUndo() const { return ! undoStack.empty(); }
-    bool canRedo() const { return ! redoStack.empty(); }
+    // Undo / redo — the shared felitronics-appkit CompareHistory engine (WholeWorkspace mode: the
+    // snapshot is the whole compare workspace, so an A/B/C/D switch is exactly reversible). The
+    // editor pumps undoTick() on its timer; a burst of edits coalesces into one step once the state
+    // settles. undo()/redo() apply a step (the editor then re-syncs its UI).
+    void undoTick() { history.tick(); }
+    bool undo()     { return history.undo(); }
+    bool redo()     { return history.redo(); }
+    bool canUndo() const { return history.canUndo(); }
+    bool canRedo() const { return history.canRedo(); }
 
     // Embedded IR bytes for a path, if this session carries them — lets the editor
     // draw the waveform from the embedded copy when the original file is gone.
@@ -471,8 +474,6 @@ private:
     void resolveSlot           (int slotIdx, orbitcab::state::SlotIR target);   // load `target` into the engine + commit to slotState
     orbitcab::state::SoundState captureLive();                                  // live params + both slots' identity (copyState mutates → non-const)
     void                        applyLive (const orbitcab::state::SoundState&); // restore params + resolve both slots
-    orbitcab::state::Workspace  currentWorkspace();                             // live + active + the 4 registers
-    void                        applyWorkspace (const orbitcab::state::Workspace&);
     static juce::String computeBlobId (const juce::MemoryBlock& canonicalWav);  // "ir-<hex>" content id of the embedded WAV
     juce::MemoryBlock  canonicalWavForSlot (int slotIdx) const;                 // the embedded 24-bit WAV (original SR) of the loaded original
 
@@ -495,12 +496,13 @@ private:
     std::map<juce::String, juce::MemoryBlock> embeddedPreamps;
     juce::CriticalSection preampPoolLock;     // guards embeddedPreamps (same threads as powerampPoolLock)
 
-    // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
-    // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as
-    // nullopt — `currentWorkspace`/`applyWorkspace` enforce that invariant). nullopt = a
-    // never-used register that inherits the current sound on first switch.
-    std::optional<orbitcab::state::SoundState> snapshots[kNumSnapshots];
-    int activeSnapshot = 0;
+    // Undo/redo + the A/B/C/D compare registers — the shared felitronics-appkit engine, in
+    // WholeWorkspace mode (OrbitCab's topology: the undo snapshot is the whole workspace, so a
+    // register switch is exactly reversible). It owns the registers, the settle-timer coalescing
+    // and the <Workspace> persistence envelope; captureLive/applyLive (below) are the opaque
+    // <Sound> payload seam. Declared AFTER apvts + slotState (captureLive reads them at the
+    // engine's construction-time capture-stability assert). Message-thread only.
+    felitronics::appkit::CompareHistory history;
 
     // Monotonic editor-sync counters (see the public *Revision() getters).
     std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 };
@@ -528,13 +530,7 @@ private:
     juce::String stateFingerprint();           // hash of captureStateTree() — cheap dirty probe
     void         loadFactoryDefaultIR();        // bundled IR #16 into slot A (the factory Default cab)
 
-    // Undo/redo state (message-thread only). Snapshots are ref-only (no embedded bytes —
-    // those live in embeddedIRs for the instance), so the stacks stay tiny.
-    std::vector<juce::ValueTree> undoStack, redoStack;
-    juce::ValueTree undoBaseline, undoPrev;
-    int undoSettle = 0;
-    static constexpr int kMaxUndo        = 64;
-    static constexpr int kUndoSettleTicks = 12;   // ~0.4 s of no change @ 30 Hz → commit
+    // (undo/redo + A/B/C/D live in `history`, above — the shared appkit CompareHistory engine)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrbitCabAudioProcessor)
 };
