@@ -173,7 +173,9 @@ struct AmpStageTest : juce::UnitTest
                     amp.clearModel();
                 }
                 expect (allAccepted, "every valid load is accepted even against a full retire queue");
-                for (int t = 0; t < 3; ++t) amp.collectGarbage();   // frozen ticks: nothing can drain yet
+                bool landedWhileFrozen = false;                     // frozen ticks: nothing can drain yet
+                for (int t = 0; t < 3; ++t) landedWhileFrozen = amp.collectGarbage() || landedWhileFrozen;
+                expect (! landedWhileFrozen, "frozen ticks report no state change (nothing landed)");
 
                 // Past the queue bound the trailing clears DEFER, so an older capture is still
                 // live — and the getters must still say so (no "empty" lie while it keeps playing).
@@ -186,7 +188,7 @@ struct AmpStageTest : juce::UnitTest
                 auto x = sine (512, 48000.0, 220.0, 0.3f);
                 float* io1[1] = { x.data() };
                 amp.process (io1, 1, 512, true);
-                amp.collectGarbage();
+                expect (amp.collectGarbage(), "the drain tick REPORTS the landed clear (PDC re-report signal)");
                 expect (! amp.hasModel(), "after the drain the deferred clear has landed (last command wins)");
                 expect (std::abs (amp.modelSampleRate()) < 1.0e-9 && ! amp.modelHasLoudness(),
                         "getters agree: no model");
@@ -210,11 +212,43 @@ struct AmpStageTest : juce::UnitTest
                                  amp2.process (io, 1, 512, true); return b; };
                 (void) run();                     // warm the trim-0 model…
                 const float r1 = rms (run());     // …then measure it
-                amp2.collectGarbage();            // audio has advanced → the drain lands the -20 dB load
+                expect (amp2.collectGarbage(),    // audio has advanced → the drain lands the -20 dB load
+                        "the drain tick REPORTS the landed deferred load (PDC re-report signal)");
                 (void) run();                     // identical warm-up for the swapped-in model…
                 const float r2 = rms (run());     // …then measure it
                 expectWithinAbsoluteError (r2 / r1, 0.1f, 0.05f,
                         "the deferred load (its -20 dB trim) is what went live after the drain");
+
+                //--- phase 3: a deferred CLEAR must re-report LATENCY when it lands (96k host) ---
+                // At 96 kHz a 48k model rate-matches → real PDC. While the clear is deferred, the
+                // model keeps playing, so latencySamples() must HOLD; once the drain lands it, the
+                // rate-match latency drops to 0 and the drain call reports true — the processor's
+                // timer turns exactly that into updateLatency(), same as after a normal load.
+                AmpStage amp3; amp3.prepare (96000.0, 512);
+                expect (amp3.loadModelFromMemory (mb.getData(), mb.getSize()),
+                        "48k model loads at a 96k host (rate-matched)");
+                const int lat = amp3.latencySamples();
+                expect (lat > 0, "rate-matching reports real latency at 96k");
+                for (int i = 0; i < 66; ++i)                     // frozen churn: fills the queue
+                {
+                    amp3.clearModel();
+                    expect (amp3.loadModelFromMemory (mb.getData(), mb.getSize()), "churn load accepted");
+                }
+                amp3.clearModel();                               // the LAST command; deferred past the bound
+                expect (amp3.hasModel(), "the clear deferred — an older capture is still live");
+                expect (amp3.latencySamples() == lat,
+                        "a deferred clear keeps the LIVE model's latency (host PDC stays honest)");
+                expect (! amp3.collectGarbage(), "frozen tick: nothing landed, no re-report signal");
+                expect (amp3.latencySamples() == lat, "still latched while frozen");
+
+                auto y = sine (512, 96000.0, 220.0, 0.3f);       // audio resumes for one block
+                float* io3[1] = { y.data() };
+                amp3.process (io3, 1, 512, true);
+                expect (amp3.collectGarbage(),
+                        "the drain tick REPORTS the landed clear so the host re-reports PDC");
+                expect (! amp3.hasModel() && amp3.latencySamples() == 0,
+                        "after landing: no model, the rate-match latency is gone");
+                expect (! amp3.collectGarbage(), "steady state: no further re-report signals");
             }
            #endif
         }

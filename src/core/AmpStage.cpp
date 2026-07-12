@@ -286,28 +286,35 @@ struct AmpStage::Impl
     // refusal contract above), so it is simply retried. A pending SWAP is attempted ONLY when
     // NeuralStage's own precondition guarantees success: live == nullptr can never refuse;
     // otherwise the ledger must show room in the retire queue.
-    void tryApplyPending()
+    //
+    // Returns true when an intent LANDED in this call — the model state (and with it possibly
+    // latencySamples()) just changed. Load/clear/prepare callers already re-report host PDC via
+    // their normal paths and may ignore the result; collectGarbage() forwards it, so the
+    // processor's timer re-reports PDC when a DEFERRED swap/clear lands between those calls
+    // (e.g. a deferred bypass-clear at 96 kHz drops the rate-match latency to 0 — the host must
+    // hear about that the same way it does after a normal load).
+    bool tryApplyPending()
     {
         stage.collectGarbage();            // frees retired models → their dtors drop the ledger
         if (! pendingActive)
-            return;
+            return false;
 
         if (pendingBackend == nullptr)     // pending CLEAR
         {
             const bool hadModel = stage.hasModel();
             if (! stage.clear())
-                return;                    // queue still full — keep the intent for the next tick
+                return false;              // queue still full — keep the intent for the next tick
             if (hadModel)
                 ++retiredLedger;           // the cleared model just entered the retire queue
             pendingActive = false;
             publishMirrors (0.0, 0.0, false);
-            return;
+            return true;
         }
 
         // swapPrepared() refuses only when a model is live AND the retire queue is full; the
         // ledger mirrors that queue exactly, so this test equals the core's own precondition.
         if (stage.hasModel() && retiredLedger >= kMaxRetiredModels)
-            return;                        // would lose the load — keep it parked instead
+            return false;                  // would lose the load — keep it parked instead
 
         const bool   hadModel = stage.hasModel();
         const double sr  = pendingBackend->reportedSampleRate();
@@ -317,10 +324,11 @@ struct AmpStage::Impl
         const bool ok = stage.swapPrepared (std::move (pendingBackend));
         pendingActive = false;
         if (! ok)                          // unreachable given the precondition above; kept honest —
-            return;                        // mirrors stay untouched if it ever fired
+            return false;                  // mirrors stay untouched if it ever fired
         if (hadModel)
             ++retiredLedger;               // the replaced model just entered the retire queue
         publishMirrors (sr, ldb, hl);
+        return true;
     }
 };
 
@@ -431,9 +439,12 @@ void AmpStage::clearModel()
     impl->tryApplyPending();
 }
 
-void AmpStage::collectGarbage()
+bool AmpStage::collectGarbage()
 {
-    impl->tryApplyPending();   // drains the retire queue, then lands any deferred swap/clear
+    // Drains the retire queue, then lands any deferred swap/clear. True = a deferred intent
+    // landed HERE (between load/clear calls) — the caller must re-report host PDC exactly like
+    // after a normal load, because the landing can change latencySamples().
+    return impl->tryApplyPending();
 }
 
 bool   AmpStage::hasModel()         const { return impl->stage.hasModel(); }

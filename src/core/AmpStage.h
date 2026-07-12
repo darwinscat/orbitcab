@@ -64,8 +64,11 @@ public:
     // (Bytes only — file I/O stays in the adapter layer, never in pure-DSP core.)
     bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);
     void   clearModel();
-    void   collectGarbage();          // free models retired by a swap, once audio moved past them,
-                                      // and land any load/clear deferred by a full retire queue
+    bool   collectGarbage();          // free models retired by a swap, once audio moved past them,
+                                      // and land any load/clear deferred by a full retire queue.
+                                      // Returns true when a DEFERRED intent landed on this call —
+                                      // model state (and possibly latencySamples()) changed, so the
+                                      // caller re-reports host PDC like after a normal load.
 
     bool   hasModel() const;
     double modelSampleRate() const;   // the model's expected sample rate (<= 0 if none / unknown)

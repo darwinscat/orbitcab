@@ -109,7 +109,15 @@ public:
         return ok;
     }
     void   clearAmpModel()                              { amp.clearModel(); lastAmpBytesHash = 0; bumpLevelContext(); }
-    void   collectAmpGarbage()                          { amp.collectGarbage(); preamp.collectGarbage(); }
+    // True = a DEFERRED load/clear landed on this drain (see AmpStage::collectGarbage) — the
+    // processor re-reports host PDC then, same as after a normal load. Both stages must drain
+    // on every tick, so no short-circuit `||` across the two calls.
+    bool   collectAmpGarbage()
+    {
+        const bool a = amp.collectGarbage();
+        const bool p = preamp.collectGarbage();
+        return a || p;
+    }
     bool   ampHasModel()         const                  { return amp.hasModel(); }
     double ampModelSampleRate()  const                  { return amp.modelSampleRate(); }
     double ampModelLoudness()    const                  { return amp.modelLoudness(); }
