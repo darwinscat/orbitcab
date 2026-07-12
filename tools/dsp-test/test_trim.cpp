@@ -600,6 +600,50 @@ int main()
                                         : "BUG C REGRESSED (undo crosses registers / teleports the selector)");
     }
 
+    // ---- COPY/PASTE (register copy): every UI gesture (menu / drag / clipboard) lands in the
+    //      same engine primitives, so assert the CONTRACT here: a copy is ONE undoable edit in
+    //      the TARGET register's own track (live untouched when the target is stored), the
+    //      clipboard payload is a <Sound>, and a junk tree is refused without a phantom step.
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        // Only the active register bears content until others are visited or copied into.
+        const bool seed = p.snapshotHasContent (0) && ! p.snapshotHasContent (1)
+                        && ! p.snapshotHasContent (2) && ! p.snapshotHasContent (3);
+        setG (0.20f); ticks (20);
+        const float gx = getG();
+        const auto  clip = p.snapshotSound (0);            // "⌘C" surrogate: the active <Sound>
+        const bool  clipOk = clip.hasType ("Sound");
+        p.switchToSnapshot (1); ticks (20);                // birth B (inherits X)
+        setG (0.85f); ticks (20);
+        const float gy = getG();
+        p.switchToSnapshot (0); ticks (20);
+        p.copySnapshot (0, 1);                             // A → stored B: live must NOT move
+        const bool liveKept = p.getActiveSnapshot() == 0 && std::abs (getG() - gx) < 1e-2f
+                            && p.snapshotHasContent (1);
+        p.switchToSnapshot (1); ticks (20);
+        const bool copied   = std::abs (getG() - gx) < 1e-2f;              // B now sounds like A
+        const bool undone   = p.undo() && std::abs (getG() - gy) < 1e-2f;  // one step, B's OWN track
+        const bool redone   = p.redo() && std::abs (getG() - gx) < 1e-2f;
+        setG (0.40f); ticks (20);
+        const float gz = getG();
+        p.pasteSound (1, juce::ValueTree ("Junk"));        // refused: not a <Sound>
+        const bool junkOut  = std::abs (getG() - gz) < 1e-4f;
+        p.pasteSound (1, clip);                            // "⌘V": one undoable step onto B
+        const bool pasted   = std::abs (getG() - gx) < 1e-2f && p.getActiveSnapshot() == 1;
+        const bool pasteUndo = p.undo() && std::abs (getG() - gz) < 1e-2f; // and junk left no phantom
+        const bool ok = seed && clipOk && liveKept && copied && undone && redone
+                      && junkOut && pasted && pasteUndo;
+        allPass &= ok;
+        std::printf ("COPY TEST: seed=%d clip=%d liveKept=%d copied=%d undo=%d redo=%d junkOut=%d pasted=%d pasteUndo=%d\n",
+                     (int) seed, (int) clipOk, (int) liveKept, (int) copied, (int) undone,
+                     (int) redone, (int) junkOut, (int) pasted, (int) pasteUndo);
+        std::printf ("RESULT: %s\n", ok ? "REGISTER COPY/PASTE (one undoable edit in the target's track)"
+                                        : "COPY/PASTE BROKEN (live moved / phantom step / junk accepted)");
+    }
+
     // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must
     //      resolve to MISSING (slot not loaded, no phantom IR), keeping the name for relink.
     {
