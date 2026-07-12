@@ -259,6 +259,21 @@ public:
     // "Modified since you dialed it in" marker for the A/B/C/D buttons: has this register
     // accumulated edits (its own undo history is non-empty)?
     bool snapshotEdited (int i) const { return history.registerEdited (i); }
+    // A register "has content" (a valid copy SOURCE) if it is the active/live one or holds a stored
+    // snapshot. Drives the copy menu (only content-bearing registers are offered as sources).
+    bool snapshotHasContent (int i) const { return i == history.active() || history.registerTree (i).has_value(); }
+
+    // Copy the whole sound of one A/B/C/D register into another — one discrete undoable edit in the
+    // target (drag a button onto another, or the copy menu). The clipboard paste path shares the
+    // engine's applyEdit primitive: capture the live/register <Sound> for Copy, apply an external
+    // <Sound> for Paste (the editor validates it is a <Sound> before applying).
+    void copySnapshot (int from, int to) { history.copyRegister (from, to); }
+    juce::ValueTree snapshotSound (int i)         // the <Sound> of register i (active -> live), for the clipboard
+    {
+        return i == history.active() ? orbitcab::state::toTree (captureLive(), false)
+                                     : history.registerTree (i).value_or (juce::ValueTree());
+    }
+    void pasteSound (int toReg, const juce::ValueTree& sound) { history.applyEdit (toReg, sound); }
 
     // Undo / redo — the shared felitronics-appkit CompareHistory engine, PerRegister mode: each
     // A/B/C/D register has its OWN undo/redo history, and a register SWITCH is NOT an undo step (its

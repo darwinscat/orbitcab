@@ -135,8 +135,10 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         b.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xff8a8a92));
         b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black);
         b.setColour (OrbitCabLookAndFeel::accentBorderColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
-        b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1) + ")");
+        b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1)
+                      + ")   ·  right-click to copy");
         b.onClick = [this, i] { switchSnapshot (i); };
+        b.addMouseListener (this, false);       // right-click → copy menu (left-click stays the toggle)
         addAndMakeVisible (b);
     }
     updateSnapshotButtons();
