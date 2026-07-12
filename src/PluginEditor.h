@@ -388,7 +388,8 @@ private:
     // Last-seen processor revision counters — polled on the timer to re-sync the slot display /
     // A/B/C/D buttons / recents after any processor-side state change (incl. host setStateInformation).
     juce::uint32 lastSoundRev = 0, lastWorkspaceRev = 0, lastUserIRRev = 0;
-    unsigned lastDirtyMask = 0;   // A/B/C/D "modified since dialed" markers — refreshed when the set changes
+    juce::uint32 lastHistoryRev = 0xffffffff;   // ≠ 0 so the first tick always syncs the history UI
+                                                // (undo/redo enablement + A/B/C/D dots) from the engine
 
     // The actual file the current preset was loaded from / saved to THIS session — the Save /
     // Delete target. Tracking the file (not matching by name) stops Save overwriting a different

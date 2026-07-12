@@ -110,6 +110,18 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
     // switchToSnapshot/applyWorkspace did after applyLive. Read-only w.r.t. live state (contract 2).
     history.onAfterApply = [this] (felitronics::appkit::CompareHistory::Reason) { bumpSound(); bumpWorkspace(); };
 
+    // Event surface (engine v1.1): every history mutation (commit / undo / redo / switch / copy /
+    // clear / load) bumps an atomic revision the editor polls — see historyRevision(). A register-
+    // count mismatch on a foreign session is diagnostic-only: the engine already skipped the
+    // out-of-range snapshots (skip-not-clamp), and this build's count is fixed at kNumSnapshots.
+    history.onHistoryChanged = [this] { historyRev.fetch_add (1, std::memory_order_relaxed); };
+    history.onRegisterCountMismatch = [] (int savedCount, int buildCount)
+    {
+        juce::ignoreUnused (savedCount, buildCount);
+        DBG ("OrbitCab: session carries " << savedCount << " compare registers, build has "
+             << buildCount << " — extras dropped");
+    };
+
     formatManager.registerBasicFormats();   // WAV/AIFF/FLAC… for IR decode (bundled + user files)
 
     // Stamp the saved state with a version from day one (forward-compat is non-negotiable);
@@ -1318,15 +1330,21 @@ void OrbitCabAudioProcessor::applyFactoryDefault()
     }
 
     // --- fallback bootstrap default (shouldn't normally run) ---
-    for (auto* p : getParameters())
-        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            rp->setValueNotifyingHost (rp->getDefaultValue());
+    {
+        // Programmatic bulk writes — suppressed so they can't seed a phantom undo burst. The
+        // reset() below is a history LOAD call and must stay OUTSIDE the scope (v1.1 contract:
+        // navigation/load inside a suppress scope is misuse).
+        const felitronics::appkit::CompareHistory::ScopedSuppress ss (history);
+        for (auto* p : getParameters())
+            if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
 
-    clearSlotB();
-    loadFactoryDefaultIR();
-    if (auto* q = apvts.getParameter ("hpfOnA"))
-        q->setValueNotifyingHost (1.0f);
-    setHeadTrim (true);
+        clearSlotB();
+        loadFactoryDefaultIR();
+        if (auto* q = apvts.getParameter ("hpfOnA"))
+            q->setValueNotifyingHost (1.0f);
+        setHeadTrim (true);
+    }
 
     history.reset();   // active register A, all A/B/C/D registers empty, undo/redo cleared (live left as set above)
     bumpWorkspace();
@@ -1658,13 +1676,18 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
         if (auto ws = root.getChildWithName ("Workspace"); ws.isValid())
         {
-            history.fromTree (ws);   // v4 session — the engine parses the <Workspace> envelope
+            // v4 session — the engine parses the <Workspace> envelope. v1.1 validates BEFORE
+            // mutating: false = corrupt envelope (nothing applied, prior state kept) or a newer
+            // schema (best-effort load). Neither is a programming error on a host-supplied blob.
+            if (! history.fromTree (ws))
+                DBG ("OrbitCab: <Workspace> envelope rejected (corrupt) or newer schema (best-effort)");
         }
         else if (auto sound = root.getChildWithName ("Sound"); sound.isValid())
         {
             orbitcab::state::Workspace w;                              // v4 portable preset (live only) →
             w.live = orbitcab::state::soundFromTree (sound);           // reset the compare registers (bug B)
-            history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            jassert (ok);   // locally built envelope — always well-formed, current schema
         }
         else
         {
@@ -1709,7 +1732,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                 }
             }
             migratedLegacy = true;
-            history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            jassert (ok);   // locally built envelope — always well-formed, current schema
         }
     }
     else if (xml->hasTagName (apvts.state.getType()))
@@ -1723,7 +1747,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
         orbitcab::state::Workspace w;
         w.live.params = root.createCopy();
         migratedLegacy = true;
-        history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+        [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+        jassert (ok);   // locally built envelope — always well-formed, current schema
     }
 
     // Migration: HEAD trim was per-slot params (headOnA/B, default off) through 1.0.x; it's

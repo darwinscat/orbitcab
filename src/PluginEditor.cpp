@@ -587,6 +587,30 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     pushFiltersToWave();
     refreshPresets();
 
+    // Gesture brackets (engine B1): wrap EVERY slider drag in beginGesture/endGesture, so one
+    // drag commits as exactly ONE labelled undo step — even a slow drag that outlives the settle
+    // window, or a drag grabbed within 0.4 s of a prior tweak (the pre-drag burst flushes first
+    // instead of merging in). A recursive walk at ctor end reaches the SlotComponents' sliders
+    // too; hooks are CHAINED in case a slider already had onDragStart/onDragEnd. Custom drag
+    // surfaces (waveform TRIM, EqCurve corners) stay on plain settle coalescing.
+    {
+        std::function<void (juce::Component&)> wireGestures = [this, &wireGestures] (juce::Component& parent)
+        {
+            for (auto* child : parent.getChildren())
+            {
+                if (auto* s = dynamic_cast<juce::Slider*> (child))
+                {
+                    s->onDragStart = [this, s, prev = std::move (s->onDragStart)]
+                    { processorRef.beginParamGesture (s->getName()); if (prev) prev(); };
+                    s->onDragEnd   = [this, prev = std::move (s->onDragEnd)]
+                    { processorRef.endParamGesture(); if (prev) prev(); };
+                }
+                wireGestures (*child);
+            }
+        };
+        wireGestures (*this);
+    }
+
     // Seed the revision caches to the current values so the first timer tick doesn't re-sync
     // what the ctor just synced (only genuine later changes trip the poll).
     lastSoundRev     = processorRef.soundRevision();
@@ -687,15 +711,17 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     }
 
     processorRef.undoTick();                       // coalesce edits into undo steps
-    undoBtn.setEnabled (processorRef.canUndo());
-    redoBtn.setEnabled (processorRef.canRedo());
 
-    // The A/B/C/D "modified since you dialed it in" markers change as edits COMMIT (a settle-timer
-    // event, not a revision bump), so refresh them here when the dirty set changes.
-    unsigned dirty = 0;
-    for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
-        if (processorRef.snapshotEdited (i)) dirty |= (1u << (unsigned) i);
-    if (dirty != lastDirtyMask) { lastDirtyMask = dirty; updateSnapshotButtons(); }
+    // History UI (undo/redo enablement + the A/B/C/D "modified" dots) re-syncs only when the
+    // engine reports a change — onHistoryChanged bumps historyRevision() on every commit / undo /
+    // redo / switch / copy / clear / load. No more per-tick canUndo/registerEdited rescans.
+    if (const auto r = processorRef.historyRevision(); r != lastHistoryRev)
+    {
+        lastHistoryRev = r;
+        undoBtn.setEnabled (processorRef.canUndo());
+        redoBtn.setEnabled (processorRef.canRedo());
+        updateSnapshotButtons();
+    }
 
     // Catch processor-side state changes WITHOUT a push callback (revision-counter poll): a
     // host-driven setStateInformation, or any path that didn't already re-sync the editor.

@@ -101,7 +101,7 @@ public:
     // a DAW session reload. All message-thread (editor / state restore).
     void applyFactoryDefault();                            // first-start / reset: load the bundled default (Roche Limit)
     void loadFactoryPresetState (const void* data, int size);   // load a bundled read-only factory preset (editor Factory section)
-    void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); }
+    void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); history.markSaved(); }
     bool isPresetDirty()          { return presetBaselineFingerprint.isNotEmpty() && stateFingerprint() != presetBaselineFingerprint; }
     void ensureBaselineCaptured() { if (presetBaselineFingerprint.isEmpty()) captureBaseline(); }
     bool isPresetFactory() const  { return presetIsFactory; }
@@ -288,6 +288,25 @@ public:
     bool redo()     { return history.redo(); }
     bool canUndo() const { return history.canUndo(); }
     bool canRedo() const { return history.canRedo(); }
+
+    // Saved/clean marker (engine B6): has ANY register's history moved since the last preset
+    // boundary (captureBaseline → markSaved)? Never falsely clean — undoing back to the saved
+    // CONTENT still reads unsaved. The preset combo's ' *' stays fingerprint-based on purpose:
+    // it is content-true and reacts mid-burst (as the knob moves), which the commit-level
+    // serial cannot; this marker is the cheap history-level probe for save prompts.
+    bool hasUnsavedChanges() const { return history.hasUnsavedChanges(); }
+
+    // Gesture brackets (engine B1) — the editor wraps every slider drag, so one drag commits as
+    // ONE labelled undo step and a pre-drag burst is flushed first instead of merging into it.
+    void beginParamGesture (const juce::String& label) { history.beginGesture (label); }
+    void endParamGesture()                             { history.endGesture(); }
+
+    // Event-driven history revision (engine B5): onHistoryChanged bumps the counter on every
+    // commit / undo / redo / switch / copy / clear / load. The editor polls the COUNTER on its
+    // timer instead of rescanning canUndo/canRedo/registerEdited each tick — push-computed,
+    // poll-delivered, because hosts may call setStateInformation off the message thread and a
+    // direct UI callback from inside the engine could then touch components cross-thread.
+    juce::uint32 historyRevision() const { return historyRev.load (std::memory_order_relaxed); }
 
     // Embedded IR bytes for a path, if this session carries them — lets the editor
     // draw the waveform from the embedded copy when the original file is gone.
@@ -527,7 +546,7 @@ private:
     felitronics::appkit::CompareHistory history;
 
     // Monotonic editor-sync counters (see the public *Revision() getters).
-    std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 };
+    std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 }, historyRev { 0 };
     void bumpSound()     { soundRev.fetch_add     (1, std::memory_order_relaxed); }
     void bumpWorkspace() { workspaceRev.fetch_add (1, std::memory_order_relaxed); }
 

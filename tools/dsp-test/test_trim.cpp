@@ -644,6 +644,52 @@ int main()
                                         : "COPY/PASTE BROKEN (live moved / phantom step / junk accepted)");
     }
 
+    // ---- v1.1 HISTORY API: gesture brackets (a drag = ONE step, even across a settle pause;
+    //      an unsettled pre-drag tweak flushes as its OWN step), the saved/clean marker (clean at
+    //      a preset boundary, NEVER falsely clean after undo-past-save — conservative, unlike the
+    //      content-true preset fingerprint), and the event-driven history revision (quiet on a
+    //      no-op undo at the floor).
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        const bool startClean = ! p.canUndo() && ! p.hasUnsavedChanges();
+        const float g0 = getG();
+        p.beginParamGesture ("gain");                    // (a) one slow drag, mid-drag pause > settle
+        setG (0.30f); ticks (20);
+        setG (0.60f);
+        p.endParamGesture(); ticks (2);
+        const float gA = getG();
+        const bool dragOneStep = p.undo() && std::abs (getG() - g0) < 1e-2f && ! p.canUndo();
+        const auto rFloor = p.historyRevision();
+        const bool noopQuiet = ! p.undo() && p.historyRevision() == rFloor;   // no-op undo: no event
+        const auto rRedo = p.historyRevision();
+        const bool redoBumps = p.redo() && std::abs (getG() - gA) < 1e-2f && p.historyRevision() != rRedo;
+        setG (0.25f); ticks (2);                         // (b) tweak, NOT settled (settle = 12 ticks)
+        const float gTweak = getG();
+        p.beginParamGesture ("gain");                    // grab within the window → tweak flushes
+        setG (0.90f);
+        p.endParamGesture(); ticks (2);
+        const bool grabTwoSteps = p.undo() && std::abs (getG() - gTweak) < 1e-2f
+                               && p.undo() && std::abs (getG() - gA) < 1e-2f;
+        p.captureBaseline();                             // (c) preset boundary at gA
+        const bool cleanAtSave   = ! p.hasUnsavedChanges() && ! p.isPresetDirty();
+        const bool dirtyPastSave = p.undo() && p.hasUnsavedChanges() && p.isPresetDirty();
+        // redo back to the EXACT saved content: the serial marker stays conservative (unsaved),
+        // the fingerprint is content-true (clean) — the two markers differ BY DESIGN here.
+        const bool markersSplit  = p.redo() && std::abs (getG() - gA) < 1e-2f
+                                && p.hasUnsavedChanges() && ! p.isPresetDirty();
+        const bool ok = startClean && dragOneStep && noopQuiet && redoBumps
+                      && grabTwoSteps && cleanAtSave && dirtyPastSave && markersSplit;
+        allPass &= ok;
+        std::printf ("V1.1 API TEST: start=%d dragOne=%d noopQuiet=%d redoBump=%d grabTwo=%d cleanSave=%d pastSave=%d split=%d\n",
+                     (int) startClean, (int) dragOneStep, (int) noopQuiet, (int) redoBumps,
+                     (int) grabTwoSteps, (int) cleanAtSave, (int) dirtyPastSave, (int) markersSplit);
+        std::printf ("RESULT: %s\n", ok ? "V1.1 HISTORY API (gestures, saved marker, quiet no-ops)"
+                                        : "V1.1 API BROKEN (gesture split/merged / marker wrong / noisy no-op)");
+    }
+
     // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must
     //      resolve to MISSING (slot not loaded, no phantom IR), keeping the name for relink.
     {
