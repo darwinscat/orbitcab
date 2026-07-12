@@ -33,7 +33,8 @@ struct PowerampManagerTraits
     static bool               removeModel (OrbitCabAudioProcessor& p, const juce::String& id) { return p.removePoweramp (id); }
 
     // Row badge: the mode (PP / SE / — for Other). NB: sets no font — it deliberately inherits the
-    // 9.5f bold tag font the row just used, exactly as the pre-dedup panel painted it.
+    // FACTORY/USER tag font (9.5f bold) the row set just before, exactly as the pre-dedup panel
+    // painted it. Setting a font here would change the badge's pixels.
     static void paintVariant (juce::Graphics& g, const Entry& e, juce::Rectangle<int>& body)
     {
         auto badge = body.removeFromRight (40);

@@ -277,6 +277,13 @@ private:
 
     void addClicked()
     {
+        // Lifetime audit (JUCE 8.0.14): capturing raw `this` below is safe — the callback's life is
+        // bounded by the FileChooser, which is a member: ~FileChooser() nulls asyncCallback and
+        // finished() std::exchange's it, so once this panel (and `chooser` with it) dies the lambda
+        // can never fire; the macOS-native pimpl additionally guards via SafePointer<Native> and
+        // closes an open panel in its dtor. Reassigning `chooser` mid-dialog is equally handled by
+        // JUCE (old panel closed, old callback cleared) — and is unreachable anyway, since the
+        // chooser's modal state blocks clicks on the rest of the UI while the dialog is up.
         chooser = std::make_unique<juce::FileChooser> (Traits::chooserTitle,
                                                        Traits::userDir (proc), "*.nam;*.namz");
         chooser->launchAsync (juce::FileBrowserComponent::openMode
