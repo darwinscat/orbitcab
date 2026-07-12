@@ -33,6 +33,12 @@ namespace
     // native rate (NAM is rate-locked).
     constexpr double kModelSampleRate = 48000.0;
 
+    // NeuralStage bounds its retire queue (the pre-extraction code kept an unbounded vector) and
+    // REFUSES a swap/clear against a full one. 64 pending models is unreachable in normal use —
+    // the queue only backs up while the audio thread is frozen across that many swaps — and the
+    // pending-intent slot in AmpStage::Impl makes even that case lossless.
+    constexpr int kMaxRetiredModels = 64;
+
 //==============================================================================
 // NamBackend — the NAM half of the split. The generic model-swap machinery (atomic live pointer,
 // block-counter retire, message-thread GC) moved to felitronics::neural::NeuralStage (it was
@@ -71,25 +77,49 @@ public:
         }
     }
 
+    // Retire-ledger hook (see AmpStage::Impl::retiredLedger). Attached ONLY when this instance is
+    // handed to a swap that goes live — a superseded, never-live pending instance stays detached,
+    // so its death doesn't skew the count. The dtor runs on the message thread only (NeuralStage
+    // frees retired backends in collectGarbage / its own teardown, never on the audio thread).
+    void attachRetireLedger (int* ledger) noexcept { retireLedger = ledger; }
+    ~NamBackend() noexcept { if (retireLedger != nullptr) --(*retireLedger); }
+
     //--- felitronics::neural::Inference seam --------------------------------------
     // Message thread, with audio stopped (live instance, via NeuralStage::prepare) or on a
     // not-yet-live instance (the loader). Decide the run rate, (re)configure the per-channel
     // resamplers/scratch, and Reset both instances to it (alloc + prewarm — fine off the audio
     // thread). Both lanes are always configured — see the ctor note on mono<->stereo re-prepare.
+    //
+    // The Inference concept REQUIRES prepare() to be noexcept, yet the body genuinely allocates
+    // (resampler/scratch resizes + the NAM Reset prewarm) — sizes depend on the host's future
+    // sampleRate/maxBlock, so they can't be preallocated in the ctor. A low-memory failure is
+    // therefore caught HERE instead of std::terminate()-ing the host: the backend marks itself
+    // unprepared, process() degrades to a clean passthrough and latencySamples() to 0. The loader
+    // checks prepared() and fails the load honestly; a LIVE backend whose re-prepare fails keeps
+    // running as a passthrough (degraded, never a crash).
     void prepare (double sampleRate, int maxBlockIn, int /*maxChannels*/) noexcept
     {
-        hostSR   = sampleRate;
-        maxBlock = std::max (1, maxBlockIn);
-        configureRates (expectedSR > 0.0 ? expectedSR : kModelSampleRate);
-        for (auto& m : inst)
-            if (m) m->Reset (modelRunSR, maxModelFrames);
+        prepared_ = false;
+        try
+        {
+            hostSR   = sampleRate;
+            maxBlock = std::max (1, maxBlockIn);
+            configureRates (expectedSR > 0.0 ? expectedSR : kModelSampleRate);
+            for (auto& m : inst)
+                if (m) m->Reset (modelRunSR, maxModelFrames);
+            prepared_ = true;
+        }
+        catch (...) {}   // bad_alloc (or a throwing NAM Reset): stay unprepared, never crash
     }
 
+    bool prepared() const noexcept { return prepared_; }
+
     // 🔴 RT-safe, in place — the audio thread reaches this via NeuralStage::process() on the
-    // live instance. Never allocates, locks, does IO or throws.
+    // live instance. Never allocates, locks, does IO or throws. An unprepared backend (failed
+    // low-memory prepare — see above) is a clean passthrough.
     void process (float* const* io, int numChannels, int numSamples) noexcept
     {
-        if (numChannels <= 0 || numSamples <= 0)
+        if (! prepared_ || numChannels <= 0 || numSamples <= 0)
             return;
 
         const int   n = std::min (numSamples, maxBlock);
@@ -114,7 +144,7 @@ public:
     // needs ~3 samples of lookahead per stage to prime; round-trip ≈ down (model→host) + up.
     int latencySamples() const noexcept
     {
-        if (! resampling) return 0;
+        if (! prepared_ || ! resampling) return 0;   // an unprepared backend passes through — no latency
         return (int) std::ceil (3.0 * hostSR / modelRunSR) + 3;
     }
 
@@ -177,6 +207,8 @@ private:
 
     std::unique_ptr<nam::DSP> inst[2];
     const std::atomic<bool>*  normalize = nullptr;   // AmpStage::Impl's per-call flag (see ctor)
+    int*  retireLedger = nullptr;                    // attached only once live (see attachRetireLedger)
+    bool  prepared_    = false;                      // false until prepare() fully succeeded
 
     float  makeup      = 1.0f;
     double expectedSR  = 0.0;
@@ -199,13 +231,8 @@ static_assert (felitronics::neural::Inference<NamBackend>,
 //==============================================================================
 struct AmpStage::Impl
 {
-    // The swap-safe holder: atomic live-pointer swap, block-counter retire, message-thread GC.
-    // MaxRetired 64: the pre-extraction code kept an UNBOUNDED retire vector; 64 pending models
-    // keeps load/clear effectively unconditional (the queue can only stay full if the audio
-    // thread is frozen across 64 swaps — the message thread drains it via collectGarbage()).
-    felitronics::neural::NeuralStage<NamBackend, 64> stage;
-
-    // UI mirrors (message thread reads these).
+    // UI mirrors (message thread reads these) — published ONLY when a swap/clear actually lands
+    // (swap first, mirrors second), so they always describe the model that is audibly live.
     std::atomic<double> expectedSR  { 0.0 };
     std::atomic<double> loudnessDb  { 0.0 };
     std::atomic<bool>   hasLoudness { false };
@@ -213,10 +240,88 @@ struct AmpStage::Impl
     // Per-call `normalize` handoff to the live backend (see AmpStage::process / NamBackend ctor).
     std::atomic<bool> normalize { true };
 
+    // EXACT mirror of NeuralStage's internal retire-queue count (which it doesn't expose): +1 when
+    // a successful swap/clear retires the live model; -1 from the dtor of every once-live backend
+    // when the GC frees it (instances are attached to the ledger only when they go live, so a
+    // superseded pending instance doesn't skew it; the live one freed at stage teardown decrements
+    // a dying int — harmless). Needed because swapPrepared() takes ownership and destroys the
+    // handed-in instance when it refuses: tryApplyPending() must KNOW a swap can't refuse before
+    // handing over a load it is not allowed to lose. Message thread only.
+    int retiredLedger = 0;
+
+    // The swap-safe holder: atomic live-pointer swap, block-counter retire, message-thread GC.
+    // Declared AFTER every member the backends touch — the normalize flag they point at and the
+    // ledger their dtors decrement — because members destruct in reverse order: the stage, and
+    // every backend it still owns, must die first.
+    //
+    // Refusal contract (verified against NeuralStage.h v0.8.0 — settled, don't re-litigate):
+    // a swap/clear against a FULL retire queue returns false BEFORE the live-pointer exchange,
+    // so the LIVE model is neither replaced nor deleted (no use-after-free, audio keeps playing
+    // it). The only thing freed on refusal is the handed-in candidate — by its own unique_ptr,
+    // on the message thread. That loss-on-refusal is exactly why the pending machinery below
+    // never attempts a swap it cannot prove will succeed.
+    felitronics::neural::NeuralStage<NamBackend, kMaxRetiredModels> stage;
+
+    // Deferred intent, last-wins (message thread only): set when the retire queue was full at
+    // swap/clear time. nullptr backend = a pending CLEAR (mirroring stage.clear() ==
+    // swapPrepared (nullptr)). Retried by tryApplyPending() on every message-thread touch —
+    // load / clear / prepare / the periodic collectGarbage() tick — until it lands.
+    bool pendingActive = false;
+    std::unique_ptr<NamBackend> pendingBackend;
+
     double hostSR   = 48000.0;
     int    maxBlock = 512;
     double modelRunSR = kModelSampleRate;   // run rate configured at the last prepare() — the
                                             // reference for the mid-stream model-rate contract
+
+    void publishMirrors (double sr, double ldb, bool hl)
+    {
+        expectedSR.store (sr, std::memory_order_relaxed);
+        loudnessDb.store (ldb, std::memory_order_relaxed);
+        hasLoudness.store (hl, std::memory_order_relaxed);
+    }
+
+    // Message thread. Drain the retire queue, then try to land the deferred intent (if any).
+    // A pending CLEAR is lossless to attempt (a refused clear() has no side effects — see the
+    // refusal contract above), so it is simply retried. A pending SWAP is attempted ONLY when
+    // NeuralStage's own precondition guarantees success: live == nullptr can never refuse;
+    // otherwise the ledger must show room in the retire queue.
+    void tryApplyPending()
+    {
+        stage.collectGarbage();            // frees retired models → their dtors drop the ledger
+        if (! pendingActive)
+            return;
+
+        if (pendingBackend == nullptr)     // pending CLEAR
+        {
+            const bool hadModel = stage.hasModel();
+            if (! stage.clear())
+                return;                    // queue still full — keep the intent for the next tick
+            if (hadModel)
+                ++retiredLedger;           // the cleared model just entered the retire queue
+            pendingActive = false;
+            publishMirrors (0.0, 0.0, false);
+            return;
+        }
+
+        // swapPrepared() refuses only when a model is live AND the retire queue is full; the
+        // ledger mirrors that queue exactly, so this test equals the core's own precondition.
+        if (stage.hasModel() && retiredLedger >= kMaxRetiredModels)
+            return;                        // would lose the load — keep it parked instead
+
+        const bool   hadModel = stage.hasModel();
+        const double sr  = pendingBackend->reportedSampleRate();
+        const double ldb = pendingBackend->reportedLoudnessDb();
+        const bool   hl  = pendingBackend->reportedHasLoudness();
+        pendingBackend->attachRetireLedger (&retiredLedger);
+        const bool ok = stage.swapPrepared (std::move (pendingBackend));
+        pendingActive = false;
+        if (! ok)                          // unreachable given the precondition above; kept honest —
+            return;                        // mirrors stay untouched if it ever fired
+        if (hadModel)
+            ++retiredLedger;               // the replaced model just entered the retire queue
+        publishMirrors (sr, ldb, hl);
+    }
 };
 
 //==============================================================================
@@ -234,7 +339,10 @@ void AmpStage::prepare (double sampleRate, int maxBlock)
     // can't split the rate-config from the Reset).
     const double liveSR = impl->expectedSR.load (std::memory_order_relaxed);
     impl->modelRunSR = (liveSR > 0.0 ? liveSR : kModelSampleRate);
+    if (impl->pendingBackend != nullptr)                                // a parked load must follow the
+        impl->pendingBackend->prepare (sampleRate, impl->maxBlock, 2);  // new rates before it goes live
     impl->stage.prepare ({ sampleRate, impl->maxBlock, 2 });
+    impl->tryApplyPending();   // if the retire queue drained since the deferral, land the intent now
 }
 
 void AmpStage::reset() {}   // transient state cleared by prepare()'s Reset on the next play
@@ -294,34 +402,38 @@ bool AmpStage::loadModelFromMemory (const void* data, std::size_t size, float tr
     if (modelSR > 0.0 && std::abs (modelSR - impl->modelRunSR) > 0.5)
         return false;
 
-    // Build + prepare the new backend while it is NOT live (alloc + prewarm is fine here), then
-    // hand it to NeuralStage: atomic swap in, old model retired for message-thread GC.
-    auto backend = std::make_unique<NamBackend> (std::move (m0), std::move (m1), trimDb, impl->normalize);
+    // Build + prepare the new backend while it is NOT live (alloc + prewarm is fine here — and a
+    // low-memory failure fails the LOAD, never the host: prepare() self-catches, see NamBackend).
+    std::unique_ptr<NamBackend> backend;
+    try   { backend = std::make_unique<NamBackend> (std::move (m0), std::move (m1), trimDb, impl->normalize); }
+    catch (...) { return false; }
     backend->prepare (impl->hostSR, impl->maxBlock, 2);
-
-    const double sr  = backend->reportedSampleRate();
-    const double ldb = backend->reportedLoudnessDb();
-    const bool   hl  = backend->reportedHasLoudness();
-    if (! impl->stage.swapPrepared (std::move (backend)))
+    if (! backend->prepared())
         return false;
 
-    impl->expectedSR.store (sr, std::memory_order_relaxed);
-    impl->loudnessDb.store (ldb, std::memory_order_relaxed);
-    impl->hasLoudness.store (hl, std::memory_order_relaxed);
+    // Accepted — from here the load is GUARANTEED to apply. Park it as the (single, last-wins)
+    // pending intent and try to land it now: the normal path lands immediately; only a full
+    // retire queue (audio frozen across kMaxRetiredModels swaps) defers it to a later drain
+    // (collectGarbage / prepare / the next load or clear). Mirrors update only when it lands.
+    impl->pendingBackend = std::move (backend);
+    impl->pendingActive  = true;
+    impl->tryApplyPending();
     return true;
 }
 
 void AmpStage::clearModel()
 {
-    impl->expectedSR.store (0.0, std::memory_order_relaxed);
-    impl->loudnessDb.store (0.0, std::memory_order_relaxed);
-    impl->hasLoudness.store (false, std::memory_order_relaxed);
-    impl->stage.clear();   // retire the live model for message-thread GC
+    // Last-wins intent: a clear supersedes any parked (never-applied) load. Mirrors are zeroed
+    // only when the clear actually LANDS (swap first, mirrors second) — a deferred clear keeps
+    // reporting the model that is still audibly live, instead of lying "empty".
+    impl->pendingBackend.reset();
+    impl->pendingActive = true;
+    impl->tryApplyPending();
 }
 
 void AmpStage::collectGarbage()
 {
-    impl->stage.collectGarbage();
+    impl->tryApplyPending();   // drains the retire queue, then lands any deferred swap/clear
 }
 
 bool   AmpStage::hasModel()         const { return impl->stage.hasModel(); }

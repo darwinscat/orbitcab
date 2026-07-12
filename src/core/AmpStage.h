@@ -56,11 +56,16 @@ public:
     // Build a NAM model from raw .nam bytes off the audio thread and atomic-swap it in.
     // Returns false (and leaves the current model untouched) on a bad / unsupported /
     // non-mono model. The replaced model is reclaimed later via collectGarbage().
+    // A load (or clear) that was ACCEPTED is guaranteed to apply: immediately in the normal
+    // case, or — if the bounded swap-retire queue is momentarily full (audio frozen across
+    // many swaps) — on the next collectGarbage()/prepare() drain. The info getters below
+    // update only when it actually lands, so they always describe the model that is live.
     // trimDb = per-model output offset (dB) folded into the loudness-normalisation makeup.
     // (Bytes only — file I/O stays in the adapter layer, never in pure-DSP core.)
     bool   loadModelFromMemory (const void* data, std::size_t size, float trimDb = 0.0f);
     void   clearModel();
-    void   collectGarbage();          // free models retired by a swap, once audio moved past them
+    void   collectGarbage();          // free models retired by a swap, once audio moved past them,
+                                      // and land any load/clear deferred by a full retire queue
 
     bool   hasModel() const;
     double modelSampleRate() const;   // the model's expected sample rate (<= 0 if none / unknown)
