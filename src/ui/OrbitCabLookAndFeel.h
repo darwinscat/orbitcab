@@ -170,6 +170,15 @@ public:
             juce::LookAndFeel_V4::drawButtonBackground (g, b, bg, highlighted, down);
         }
 
+        // "Modified since you dialed it in" marker (A/B/C/D snapshots): a small warm dot, top-right.
+        if ((bool) b.getProperties().getWithDefault ("orbitDirty", false))
+        {
+            const auto r = b.getLocalBounds().toFloat();
+            const float d = 4.0f;
+            g.setColour (juce::Colour (0xffff8a3d).withAlpha (b.isEnabled() ? 0.95f : 0.4f));   // family orange
+            g.fillEllipse (r.getRight() - d - 3.0f, r.getY() + 3.0f, d, d);
+        }
+
         if (b.isColourSpecified (accentBorderColourId))
         {
             g.setColour (b.findColour (accentBorderColourId).withAlpha (b.isEnabled() ? 0.85f : 0.4f));

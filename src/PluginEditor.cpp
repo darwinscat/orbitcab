@@ -686,6 +686,13 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     undoBtn.setEnabled (processorRef.canUndo());
     redoBtn.setEnabled (processorRef.canRedo());
 
+    // The A/B/C/D "modified since you dialed it in" markers change as edits COMMIT (a settle-timer
+    // event, not a revision bump), so refresh them here when the dirty set changes.
+    unsigned dirty = 0;
+    for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
+        if (processorRef.snapshotEdited (i)) dirty |= (1u << (unsigned) i);
+    if (dirty != lastDirtyMask) { lastDirtyMask = dirty; updateSnapshotButtons(); }
+
     // Catch processor-side state changes WITHOUT a push callback (revision-counter poll): a
     // host-driven setStateInformation, or any path that didn't already re-sync the editor.
     // Editor-initiated actions re-sync immediately AND bump these, so this is mostly a no-op
@@ -1467,7 +1474,11 @@ void OrbitCabAudioProcessorEditor::updateSnapshotButtons()
 {
     const int a = processorRef.getActiveSnapshot();
     for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
+    {
         snapBtn[i].setToggleState (i == a, juce::dontSendNotification);
+        snapBtn[i].getProperties().set ("orbitDirty", processorRef.snapshotEdited (i));   // "modified since dialed" dot
+        snapBtn[i].repaint();
+    }
 }
 
 void OrbitCabAudioProcessorEditor::switchSnapshot (int i)

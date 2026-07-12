@@ -256,11 +256,14 @@ public:
     static constexpr int kNumSnapshots = 4;
     void switchToSnapshot (int index);
     int  getActiveSnapshot() const { return history.active(); }
+    // "Modified since you dialed it in" marker for the A/B/C/D buttons: has this register
+    // accumulated edits (its own undo history is non-empty)?
+    bool snapshotEdited (int i) const { return history.registerEdited (i); }
 
-    // Undo / redo — the shared felitronics-appkit CompareHistory engine (WholeWorkspace mode: the
-    // snapshot is the whole compare workspace, so an A/B/C/D switch is exactly reversible). The
-    // editor pumps undoTick() on its timer; a burst of edits coalesces into one step once the state
-    // settles. undo()/redo() apply a step (the editor then re-syncs its UI).
+    // Undo / redo — the shared felitronics-appkit CompareHistory engine, PerRegister mode: each
+    // A/B/C/D register has its OWN undo/redo history, and a register SWITCH is NOT an undo step (its
+    // inverse is re-selecting the slot). Undo/redo act only on the active register. The editor pumps
+    // undoTick() on its timer; a burst of edits coalesces into one step once the state settles.
     void undoTick() { history.tick(); }
     bool undo()     { return history.undo(); }
     bool redo()     { return history.redo(); }

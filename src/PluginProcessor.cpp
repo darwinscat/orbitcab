@@ -101,7 +101,7 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
       // The shared appkit undo/redo + A/B/C/D engine (WholeWorkspace mode). The opaque seam is the
       // <Sound> payload: captureLive()->tree and applyLive(sound-from-tree). Declared after apvts +
       // slotState, which captureLive reads at the engine's construction-time capture-stability assert.
-      history (felitronics::appkit::CompareHistory::Mode::WholeWorkspace,
+      history (felitronics::appkit::CompareHistory::Mode::PerRegister,
                [this] { return orbitcab::state::toTree (captureLive(), /*portable*/ false); },
                [this] (const juce::ValueTree& t) { applyLive (orbitcab::state::soundFromTree (t)); },
                felitronics::appkit::CompareHistory::Config { kNumSnapshots, 64, 12 })
