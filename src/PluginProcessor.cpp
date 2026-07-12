@@ -1759,6 +1759,11 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     // The IR re-trim is deferred to the reload poll, which reads getHeadTrim() after this returns.
     if (! apvts.state.hasProperty ("headTrim"))
     {
+        // Suppressed: fromTree() above reseeded the undo baseline EAGERLY, so this post-load
+        // fix-up would otherwise settle into a phantom undo step — and undoing it would REMOVE
+        // the property, silently flipping HEAD back on (the exact regression this migration
+        // guards against). Suppressed writes still apply, they just record no history.
+        const felitronics::appkit::CompareHistory::ScopedSuppress ss (history);
         apvts.state.setProperty ("headTrim", false, nullptr);   // pre-1.1: HEAD was off by default
         // resolveSlot already trimmed with HEAD defaulting ON — re-trim both now it's known off.
         if (isSlotALoaded()) applyTrimAndLoad (true);
@@ -1775,7 +1780,10 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
     // A loaded session/preset is a fresh starting point — you can't undo past the load. Every load
     // path above routes through history.fromTree(), which clears the undo/redo history and re-seeds
-    // the baseline lazily on the next undoTick(), so no explicit clear is needed here.
+    // the baseline EAGERLY, so no explicit clear is needed here. The suppressed migrations above
+    // marked the serial dirty (by contract — suppression is never falsely clean); a freshly loaded
+    // session must still read clean, so re-baseline the saved marker as the final word.
+    history.markSaved();
 }
 
 //==============================================================================

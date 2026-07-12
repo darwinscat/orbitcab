@@ -601,9 +601,9 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
                 if (auto* s = dynamic_cast<juce::Slider*> (child))
                 {
                     s->onDragStart = [this, s, prev = std::move (s->onDragStart)]
-                    { processorRef.beginParamGesture (s->getName()); if (prev) prev(); };
+                    { ++openParamGestures; processorRef.beginParamGesture (s->getName()); if (prev) prev(); };
                     s->onDragEnd   = [this, prev = std::move (s->onDragEnd)]
-                    { processorRef.endParamGesture(); if (prev) prev(); };
+                    { if (openParamGestures > 0) { --openParamGestures; processorRef.endParamGesture(); } if (prev) prev(); };
                 }
                 wireGestures (*child);
             }
@@ -626,6 +626,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
 {
     stopTimer();
+
+    // Drain any slider gesture still open (window destroyed mid-drag: the slider dies without
+    // its onDragEnd). The engine outlives the editor in the processor — a leaked refcount would
+    // stop EVERY future drag from committing an undo step until the next nav call force-heals.
+    while (openParamGestures > 0) { --openParamGestures; processorRef.endParamGesture(); }
+
     processorRef.setSpectrumActive (false);   // editor gone → stop feeding the analyser
     processorRef.setBlendTintActive (false);  // …and stop recomputing the MIX tint
     preampBox.setLookAndFeel (nullptr);        // detach the custom popup L&F before it is destroyed
@@ -1557,9 +1563,11 @@ void OrbitCabAudioProcessorEditor::showSnapshotMenu (int i)
     };
     m.addItem (1, "Copy sound" + (active ? hint ('c') : juce::String()), hasContent);
     {
+        // Enablement uses the SAME predicate the paste itself enforces — a hollow or foreign
+        // <Sound> must show as disabled, not as an enabled item that silently no-ops.
         const auto clip = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
         m.addItem (2, "Paste sound" + (active ? hint ('v') : juce::String()),
-                   clip.hasType ("Sound"));
+                   processorRef.canPasteSound (clip));
     }
 
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapBtn[i]),
@@ -1592,10 +1600,10 @@ void OrbitCabAudioProcessorEditor::copySnapshotToClipboard (int i)
 
 bool OrbitCabAudioProcessorEditor::pasteSnapshotFromClipboard (int toReg)
 {
-    // The clipboard is untrusted input: accept only a well-formed <Sound> that actually carries
-    // a <Params> payload — a hollow tree would "paste" a slot-clearing half-state.
+    // The clipboard is untrusted input: accept only a well-formed <Sound> whose <Params>
+    // payload IS this plugin's parameter tree (one shared predicate — see canPasteSound).
     const auto t = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
-    if (! t.hasType ("Sound") || t.getChildWithName ("Params").getNumChildren() == 0)
+    if (! processorRef.canPasteSound (t))
         return false;
     processorRef.pasteSound (toReg, t);
     afterUndoRedo();
@@ -1604,12 +1612,18 @@ bool OrbitCabAudioProcessorEditor::pasteSnapshotFromClipboard (int toReg)
 
 bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 {
+    // While a slider gesture is open (mouse mid-drag), history NAVIGATION shortcuts are inert:
+    // a register switch or a paste would reach the engine's gesture×nav misuse path (force-commit
+    // + debug assert). Swallow them — acting mid-drag was never meaningful. ⌘C stays live (read-only).
+    const bool midGesture = openParamGestures > 0;
+
     // 1/2/3/4 → snapshot A/B/C/D. Only the digit row (no modifiers) so it won't fight typing
     // in a text field (a modal name prompt grabs focus anyway) or common host shortcuts.
     for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
         if (key == juce::KeyPress ((juce::juce_wchar) ('1' + i)))
         {
-            switchSnapshot (i);
+            if (! midGesture)
+                switchSnapshot (i);
             return true;
         }
 
@@ -1622,7 +1636,7 @@ bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
         return true;
     }
     if (key == juce::KeyPress ('v', juce::ModifierKeys::commandModifier, 0))
-        return pasteSnapshotFromClipboard (processorRef.getActiveSnapshot());
+        return ! midGesture && pasteSnapshotFromClipboard (processorRef.getActiveSnapshot());
 
     return false;
 }

@@ -391,6 +391,12 @@ private:
     juce::uint32 lastHistoryRev = 0xffffffff;   // ≠ 0 so the first tick always syncs the history UI
                                                 // (undo/redo enablement + A/B/C/D dots) from the engine
 
+    // Open slider gestures (normally 0 or 1; >1 = nested). Counted so the destructor can drain a
+    // gesture left open by a window destroyed mid-drag (the engine outlives the editor — a leaked
+    // refcount would stop future drags from committing undo steps), and so history-navigation
+    // shortcuts (1-4 switch, ⌘V paste) go inert while the mouse is mid-drag.
+    int openParamGestures = 0;
+
     // The actual file the current preset was loaded from / saved to THIS session — the Save /
     // Delete target. Tracking the file (not matching by name) stops Save overwriting a different
     // library preset that happens to share the imported preset's name (doc#7). Empty after a

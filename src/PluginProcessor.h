@@ -101,7 +101,10 @@ public:
     // a DAW session reload. All message-thread (editor / state restore).
     void applyFactoryDefault();                            // first-start / reset: load the bundled default (Roche Limit)
     void loadFactoryPresetState (const void* data, int size);   // load a bundled read-only factory preset (editor Factory section)
-    void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); history.markSaved(); }
+    // Flush the pending edit burst BEFORE recording the saved serial — else an unsettled edit
+    // commits right after the save and a just-saved state reads unsaved. No UI path can save
+    // mid-slider-drag (flush inside an open gesture is engine misuse), so flush() is safe here.
+    void captureBaseline()        { history.flush(); presetBaselineFingerprint = stateFingerprint(); history.markSaved(); }
     bool isPresetDirty()          { return presetBaselineFingerprint.isNotEmpty() && stateFingerprint() != presetBaselineFingerprint; }
     void ensureBaselineCaptured() { if (presetBaselineFingerprint.isEmpty()) captureBaseline(); }
     bool isPresetFactory() const  { return presetIsFactory; }
@@ -267,15 +270,29 @@ public:
     // target (drag a button onto another, or the copy menu). The clipboard paste path shares the
     // engine's applyEdit primitive: capture the live/register <Sound> for Copy, apply an external
     // <Sound> for Paste (the editor validates it is a <Sound> before applying).
-    void copySnapshot (int from, int to) { history.copyRegister (from, to); }
+    void copySnapshot (int from, int to)
+    {
+        if (juce::isPositiveAndBelow (from, kNumSnapshots) && juce::isPositiveAndBelow (to, kNumSnapshots))
+            history.copyRegister (from, to);
+    }
     juce::ValueTree snapshotSound (int i)         // the <Sound> of register i (active -> live), for the clipboard
     {
+        if (! juce::isPositiveAndBelow (i, kNumSnapshots)) return {};
         return i == history.active() ? orbitcab::state::toTree (captureLive(), false)
                                      : history.registerTree (i).value_or (juce::ValueTree());
     }
+    // One paste-validation predicate for every consumer (menu enablement, ⌘V, pasteSound itself):
+    // a well-formed <Sound> whose <Params> payload IS this plugin's APVTS root type. Anything
+    // less lets a crafted clipboard replaceState() a foreign-typed tree into the live params.
+    bool canPasteSound (const juce::ValueTree& sound) const
+    {
+        return sound.hasType ("Sound")
+            && sound.getChildWithName ("Params").getChild (0).hasType (apvts.state.getType());
+    }
     void pasteSound (int toReg, const juce::ValueTree& sound)
     {
-        if (! sound.hasType ("Sound")) return;   // clipboard is untrusted input (editor validates deeper)
+        if (! juce::isPositiveAndBelow (toReg, kNumSnapshots) || ! canPasteSound (sound))
+            return;                              // clipboard is untrusted input
         history.applyEdit (toReg, sound);
     }
 

@@ -305,7 +305,12 @@ int main()
         OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);   // fresh defaults headTrim ON
         b.setStateInformation (oldState.getData(), (int) oldState.getSize());
         pump (60);
+        for (int i = 0; i < 20; ++i) b.undoTick();            // let any phantom burst settle
         const bool migOk = ! b.getHeadTrim();                 // absent on load → migrated to OFF
+        // The migration write is SUPPRESSED (post-fromTree fix-up): a freshly loaded old session
+        // must read clean — no phantom undo step whose undo would flip HEAD back on, no dirty.
+        const bool migClean = ! b.canUndo() && ! b.hasUnsavedChanges()
+                           && ! b.undo() && ! b.getHeadTrim();
 
         OrbitCabAudioProcessor c; c.prepareToPlay (sr, block); c.setHeadTrim (true);
         juce::MemoryBlock newState; c.getStateInformation (newState);
@@ -314,11 +319,11 @@ int main()
         pump (60);
         const bool keepOk = d.getHeadTrim();                  // present → preserved ON
 
-        const bool migrateOk = migOk && keepOk;
+        const bool migrateOk = migOk && migClean && keepOk;
         allPass &= migrateOk;
-        std::printf ("MIGRATION TEST: old(no headTrim)->off=%d  new(on)->on=%d\n", migOk, keepOk);
-        std::printf ("RESULT: %s\n", migrateOk ? "HEADTRIM MIGRATION WORKS (absent -> off, present -> kept)"
-                                               : "HEADTRIM MIGRATION BROKEN");
+        std::printf ("MIGRATION TEST: old(no headTrim)->off=%d clean=%d  new(on)->on=%d\n", migOk, (int) migClean, keepOk);
+        std::printf ("RESULT: %s\n", migrateOk ? "HEADTRIM MIGRATION WORKS (absent -> off, clean load, present -> kept)"
+                                               : "HEADTRIM MIGRATION BROKEN (or the migration left a phantom undo step)");
     }
 
     // ---- preset-centric model: factory default + dirty tracking + persistence ----
@@ -688,6 +693,41 @@ int main()
                      (int) grabTwoSteps, (int) cleanAtSave, (int) dirtyPastSave, (int) markersSplit);
         std::printf ("RESULT: %s\n", ok ? "V1.1 HISTORY API (gestures, saved marker, quiet no-ops)"
                                         : "V1.1 API BROKEN (gesture split/merged / marker wrong / noisy no-op)");
+    }
+
+    // ---- v1.1 edge interleavings (crew round): an UNSETTLED edit flushes into the LEAVING
+    //      register's own track on a switch; pasting into a never-used register is a BIRTH
+    //      (content lands, live untouched, NO undo entry — the switch-birth rule); a byte-equal
+    //      no-op copy records nothing and stays clean.
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        const float g0 = getG();
+        setG (0.20f);                                      // NOT settled (no ticks)…
+        const float gx = getG();
+        p.switchToSnapshot (1); ticks (20);                // …the switch flushes it into reg0's track
+        p.switchToSnapshot (0); ticks (20);
+        const bool flushed = std::abs (getG() - gx) < 1e-2f
+                          && p.undo() && std::abs (getG() - g0) < 1e-2f;   // one step, not lost
+        p.redo(); ticks (2);                               // back to gx
+        const auto clip = p.snapshotSound (0);             // the active <Sound> (gx)
+        const bool wasEmpty = ! p.snapshotHasContent (3);
+        p.pasteSound (3, clip);                            // paste-BIRTH into never-used D
+        const bool birthQuiet = p.getActiveSnapshot() == 0 && p.snapshotHasContent (3)
+                             && std::abs (getG() - gx) < 1e-2f;            // live untouched
+        p.switchToSnapshot (3); ticks (20);
+        const bool birth = std::abs (getG() - gx) < 1e-2f && ! p.canUndo();   // birth pushes NO step
+        p.captureBaseline();                               // clean boundary…
+        p.copySnapshot (0, 3);                             // …then a byte-equal no-op copy onto D
+        const bool noopClean = ! p.hasUnsavedChanges() && ! p.canUndo();
+        const bool ok = flushed && wasEmpty && birthQuiet && birth && noopClean;
+        allPass &= ok;
+        std::printf ("EDGE TEST: flushOnSwitch=%d wasEmpty=%d birthQuiet=%d birth=%d noopClean=%d\n",
+                     (int) flushed, (int) wasEmpty, (int) birthQuiet, (int) birth, (int) noopClean);
+        std::printf ("RESULT: %s\n", ok ? "V1.1 EDGES (switch flushes; paste-birth quiet; no-op copy clean)"
+                                        : "V1.1 EDGES BROKEN (lost burst / noisy birth / dirty no-op)");
     }
 
     // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must
