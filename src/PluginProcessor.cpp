@@ -97,8 +97,31 @@ OrbitCabAudioProcessor::OrbitCabAudioProcessor()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", orbitcab::createParameterLayout()),
-      updateCheckerInstance (JucePlugin_VersionString, *appPreferencesInstance)
+      updateCheckerInstance (JucePlugin_VersionString, *appPreferencesInstance),
+      // The shared appkit undo/redo + A/B/C/D engine (PerRegister mode). The opaque seam is the
+      // <Sound> payload: captureLive()->tree and applyLive(sound-from-tree). Declared after apvts +
+      // slotState, which captureLive reads at the engine's construction-time capture-stability assert.
+      history (felitronics::appkit::CompareHistory::Mode::PerRegister,
+               [this] { return orbitcab::state::toTree (captureLive(), /*portable*/ false); },
+               [this] (const juce::ValueTree& t) { applyLive (orbitcab::state::soundFromTree (t)); },
+               felitronics::appkit::CompareHistory::Config { kNumSnapshots, 64, 12 })
 {
+    // Any apply (switch / undo / redo / load) re-syncs the editor (revisions) — exactly what the old
+    // switchToSnapshot/applyWorkspace did after applyLive. Read-only w.r.t. live state (contract 2).
+    history.onAfterApply = [this] (felitronics::appkit::CompareHistory::Reason) { bumpSound(); bumpWorkspace(); };
+
+    // Event surface (engine v1.1): every history mutation (commit / undo / redo / switch / copy /
+    // clear / load) bumps an atomic revision the editor polls — see historyRevision(). A register-
+    // count mismatch on a foreign session is diagnostic-only: the engine already skipped the
+    // out-of-range snapshots (skip-not-clamp), and this build's count is fixed at kNumSnapshots.
+    history.onHistoryChanged = [this] { historyRev.fetch_add (1, std::memory_order_relaxed); };
+    history.onRegisterCountMismatch = [] (int savedCount, int buildCount)
+    {
+        juce::ignoreUnused (savedCount, buildCount);
+        DBG ("OrbitCab: session carries " << savedCount << " compare registers, build has "
+             << buildCount << " — extras dropped");
+    };
+
     formatManager.registerBasicFormats();   // WAV/AIFF/FLAC… for IR decode (bundled + user files)
 
     // Stamp the saved state with a version from day one (forward-compat is non-negotiable);
@@ -1056,103 +1079,14 @@ void OrbitCabAudioProcessor::applyLive (const orbitcab::state::SoundState& s)
     pendingPreampReload.store  (true, std::memory_order_relaxed);
 }
 
-orbitcab::state::Workspace OrbitCabAudioProcessor::currentWorkspace()
-{
-    orbitcab::state::Workspace w;
-    w.live   = captureLive();
-    w.active = activeSnapshot;
-    for (int i = 0; i < kNumSnapshots; ++i)
-        w.snapshots[(size_t) i] = snapshots[(size_t) i];
-    w.snapshots[(size_t) activeSnapshot] = std::nullopt;   // the active register IS live — never stored twice
-    return w;
-}
-
-void OrbitCabAudioProcessor::applyWorkspace (const orbitcab::state::Workspace& w)
-{
-    activeSnapshot = juce::jlimit (0, kNumSnapshots - 1, w.active);
-    for (int i = 0; i < kNumSnapshots; ++i)
-        snapshots[(size_t) i] = w.snapshots[(size_t) i];
-    snapshots[(size_t) activeSnapshot] = std::nullopt;     // active is live, not a stored register
-    applyLive (w.live);
-    bumpSound();
-    bumpWorkspace();
-}
-
+// A/B/C/D switch — the shared appkit engine stashes live into the leaving register, recalls the
+// target (a fresh register inherits the current live sound), and fires onAfterApply → bumpSound/
+// bumpWorkspace (the re-sync the old body did after applyLive). undoTick/undo/redo are one-line
+// delegations in the header. PerRegister mode: the switch itself is NOT an undo step (its inverse
+// is re-selecting the slot); undo/redo act on the active register's own history only.
 void OrbitCabAudioProcessor::switchToSnapshot (int index)
 {
-    if (index < 0 || index >= kNumSnapshots || index == activeSnapshot)
-        return;
-    snapshots[(size_t) activeSnapshot] = captureLive();    // stash live into the register we're leaving
-    if (snapshots[(size_t) index].has_value())
-        applyLive (*snapshots[(size_t) index]);            // recall an existing register
-    // else: a fresh register inherits the current live sound (nothing to apply)
-    activeSnapshot = index;
-    snapshots[(size_t) activeSnapshot] = std::nullopt;     // active is live now
-    bumpSound();
-    bumpWorkspace();
-}
-
-//==============================================================================
-// Undo / redo — coalesced full-WORKSPACE snapshots, so an A/B/C/D switch is exactly
-// reversible (it restores the live sound, the active register AND the register contents).
-//==============================================================================
-void OrbitCabAudioProcessor::undoTick()
-{
-    // Driven by the editor timer. Commit one undo step once the state has settled
-    // (unchanged for kUndoSettleTicks), so a slider drag becomes a single step.
-    auto cur = orbitcab::state::toTree (currentWorkspace(), false);
-    if (! undoBaseline.isValid())                       // first tick → seed the baseline
-    {
-        undoBaseline = cur;
-        undoPrev     = cur;
-        undoSettle   = 0;
-        return;
-    }
-    if (! cur.isEquivalentTo (undoPrev))                // still changing → wait
-    {
-        undoPrev   = cur;
-        undoSettle = 0;
-        return;
-    }
-    if (! cur.isEquivalentTo (undoBaseline) && ++undoSettle >= kUndoSettleTicks)
-    {
-        undoStack.push_back (undoBaseline);
-        if ((int) undoStack.size() > kMaxUndo)
-            undoStack.erase (undoStack.begin());
-        redoStack.clear();
-        undoBaseline = cur;
-        undoSettle   = 0;
-    }
-}
-
-bool OrbitCabAudioProcessor::undo()
-{
-    if (undoStack.empty())
-        return false;
-    redoStack.push_back (orbitcab::state::toTree (currentWorkspace(), false));
-    const auto target = undoStack.back();
-    undoStack.pop_back();
-    applyWorkspace (orbitcab::state::workspaceFromTree (target));
-    // Re-seed from the ACTUAL post-apply workspace (resolveSlot may re-key an external ref
-    // path→content-id), so the next undoTick doesn't record a phantom step.
-    undoBaseline = undoPrev = orbitcab::state::toTree (currentWorkspace(), false);
-    undoSettle   = 0;
-    return true;
-}
-
-bool OrbitCabAudioProcessor::redo()
-{
-    if (redoStack.empty())
-        return false;
-    undoStack.push_back (orbitcab::state::toTree (currentWorkspace(), false));
-    const auto target = redoStack.back();
-    redoStack.pop_back();
-    applyWorkspace (orbitcab::state::workspaceFromTree (target));
-    // Re-seed from the ACTUAL post-apply workspace (resolveSlot may re-key an external ref
-    // path→content-id), so the next undoTick doesn't record a phantom step.
-    undoBaseline = undoPrev = orbitcab::state::toTree (currentWorkspace(), false);
-    undoSettle   = 0;
-    return true;
+    history.switchTo (index);
 }
 
 const juce::MemoryBlock* OrbitCabAudioProcessor::embeddedIRBytes (const juce::String& path) const
@@ -1396,20 +1330,23 @@ void OrbitCabAudioProcessor::applyFactoryDefault()
     }
 
     // --- fallback bootstrap default (shouldn't normally run) ---
-    for (auto* p : getParameters())
-        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            rp->setValueNotifyingHost (rp->getDefaultValue());
+    {
+        // Programmatic bulk writes — suppressed so they can't seed a phantom undo burst. The
+        // reset() below is a history LOAD call and must stay OUTSIDE the scope (v1.1 contract:
+        // navigation/load inside a suppress scope is misuse).
+        const felitronics::appkit::CompareHistory::ScopedSuppress ss (history);
+        for (auto* p : getParameters())
+            if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
 
-    clearSlotB();
-    loadFactoryDefaultIR();
-    if (auto* q = apvts.getParameter ("hpfOnA"))
-        q->setValueNotifyingHost (1.0f);
-    setHeadTrim (true);
+        clearSlotB();
+        loadFactoryDefaultIR();
+        if (auto* q = apvts.getParameter ("hpfOnA"))
+            q->setValueNotifyingHost (1.0f);
+        setHeadTrim (true);
+    }
 
-    activeSnapshot = 0;
-    for (auto& snap : snapshots) snap = std::nullopt;
-    undoStack.clear();  redoStack.clear();
-    undoBaseline = juce::ValueTree();  undoPrev = juce::ValueTree();  undoSettle = 0;
+    history.reset();   // active register A, all A/B/C/D registers empty, undo/redo cleared (live left as set above)
     bumpWorkspace();
 
     currentMeta      = orbitcab::PresetMeta();
@@ -1487,7 +1424,7 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
     }
     else
     {
-        root.appendChild (orbitcab::state::toTree (currentWorkspace(), /*portable*/ false), nullptr);
+        root.appendChild (history.toTree(), nullptr);   // <Workspace> envelope (byte-identical to the old currentWorkspace path)
         root.setProperty ("userIRs", userIRPaths.joinIntoString ("\n"), nullptr);   // recents (session-only)
     }
 
@@ -1502,10 +1439,11 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
         addSlot (slotState[1]);
         if (! forPreset)
             for (int i = 0; i < kNumSnapshots; ++i)
-                if (snapshots[(size_t) i].has_value())
+                if (const auto& rt = history.registerTree (i); rt.has_value())
                 {
-                    addSlot (snapshots[(size_t) i]->slots[0]);
-                    addSlot (snapshots[(size_t) i]->slots[1]);
+                    const auto ss = orbitcab::state::soundFromTree (*rt);
+                    addSlot (ss.slots[0]);
+                    addSlot (ss.slots[1]);
                 }
 
         juce::ValueTree pool ("IRPool");
@@ -1534,8 +1472,8 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
         addAmp (apvts.state);                                   // live (its ampSel == captureLive()'s)
         if (! forPreset)
             for (int i = 0; i < kNumSnapshots; ++i)
-                if (snapshots[(size_t) i].has_value())
-                    addAmp (snapshots[(size_t) i]->params);
+                if (const auto& rt = history.registerTree (i); rt.has_value())
+                    addAmp (orbitcab::state::soundFromTree (*rt).params);
 
         // Materialise any referenced model not pooled yet (selected then saved before the reload poll
         // ran) — load its bytes from the library so the save still embeds it. Lock only around the map.
@@ -1575,8 +1513,8 @@ juce::ValueTree OrbitCabAudioProcessor::buildStateTree (bool forPreset)
         addPreamp (apvts.state);                                // live (its preampSel == captureLive()'s)
         if (! forPreset)
             for (int i = 0; i < kNumSnapshots; ++i)
-                if (snapshots[(size_t) i].has_value())
-                    addPreamp (snapshots[(size_t) i]->params);
+                if (const auto& rt = history.registerTree (i); rt.has_value())
+                    addPreamp (orbitcab::state::soundFromTree (*rt).params);
 
         // Materialise any referenced preamp not pooled yet (selected then saved before the reload poll).
         for (const auto& id : preampIds)
@@ -1738,13 +1676,18 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
         if (auto ws = root.getChildWithName ("Workspace"); ws.isValid())
         {
-            applyWorkspace (orbitcab::state::workspaceFromTree (ws));   // v4 session
+            // v4 session — the engine parses the <Workspace> envelope. v1.1 validates BEFORE
+            // mutating: false = corrupt envelope (nothing applied, prior state kept) or a newer
+            // schema (best-effort load). Neither is a programming error on a host-supplied blob.
+            if (! history.fromTree (ws))
+                DBG ("OrbitCab: <Workspace> envelope rejected (corrupt) or newer schema (best-effort)");
         }
         else if (auto sound = root.getChildWithName ("Sound"); sound.isValid())
         {
             orbitcab::state::Workspace w;                              // v4 portable preset (live only) →
             w.live = orbitcab::state::soundFromTree (sound);           // reset the compare registers (bug B)
-            applyWorkspace (w);
+            [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            jassert (ok);   // locally built envelope — always well-formed, current schema
         }
         else
         {
@@ -1789,7 +1732,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
                 }
             }
             migratedLegacy = true;
-            applyWorkspace (w);
+            [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+            jassert (ok);   // locally built envelope — always well-formed, current schema
         }
     }
     else if (xml->hasTagName (apvts.state.getType()))
@@ -1803,7 +1747,8 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
         orbitcab::state::Workspace w;
         w.live.params = root.createCopy();
         migratedLegacy = true;
-        applyWorkspace (w);
+        [[maybe_unused]] const bool ok = history.fromTree (orbitcab::state::toTree (w, /*portable*/ false));
+        jassert (ok);   // locally built envelope — always well-formed, current schema
     }
 
     // Migration: HEAD trim was per-slot params (headOnA/B, default off) through 1.0.x; it's
@@ -1814,6 +1759,11 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
     // The IR re-trim is deferred to the reload poll, which reads getHeadTrim() after this returns.
     if (! apvts.state.hasProperty ("headTrim"))
     {
+        // Suppressed: fromTree() above reseeded the undo baseline EAGERLY, so this post-load
+        // fix-up would otherwise settle into a phantom undo step — and undoing it would REMOVE
+        // the property, silently flipping HEAD back on (the exact regression this migration
+        // guards against). Suppressed writes still apply, they just record no history.
+        const felitronics::appkit::CompareHistory::ScopedSuppress ss (history);
         apvts.state.setProperty ("headTrim", false, nullptr);   // pre-1.1: HEAD was off by default
         // resolveSlot already trimmed with HEAD defaulting ON — re-trim both now it's known off.
         if (isSlotALoaded()) applyTrimAndLoad (true);
@@ -1828,13 +1778,12 @@ void OrbitCabAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
     userIRRev.fetch_add (1, std::memory_order_relaxed);   // editor rebuilds the shared recents menus
 
-    // A loaded session/preset is a fresh starting point — drop undo history and re-seed
-    // the baseline (lazily, on the next undoTick) so you can't undo past the load.
-    undoStack.clear();
-    redoStack.clear();
-    undoBaseline = juce::ValueTree();
-    undoPrev     = juce::ValueTree();
-    undoSettle   = 0;
+    // A loaded session/preset is a fresh starting point — you can't undo past the load. Every load
+    // path above routes through history.fromTree(), which clears the undo/redo history and re-seeds
+    // the baseline EAGERLY, so no explicit clear is needed here. The suppressed migrations above
+    // marked the serial dirty (by contract — suppression is never falsely clean); a freshly loaded
+    // session must still read clean, so re-baseline the saved marker as the final word.
+    history.markSaved();
 }
 
 //==============================================================================

@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.22)
 
 # Version = numeric MAJOR.MINOR.PATCH, no prerelease labels. Keep in sync with the
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
-project(OrbitCab VERSION 2.4.0 LANGUAGES C CXX)
+project(OrbitCab VERSION 2.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -155,7 +155,7 @@ FetchContent_MakeAvailable(felitronics_core)
 # a thin adapter over it (the in-tree implementation was PROMOTED there, consolidated with TabbyEQ's
 # copy and crew-hardened). Same hybrid consumption as felitronics-core above; header-only INTERFACE
 # target — it never links JUCE itself (we supply juce_events/juce_data_structures transitively).
-set(ORBITCAB_APPKIT_TAG "v0.2.1" CACHE STRING "felitronics-appkit release tag (fetched when no local checkout)")
+set(ORBITCAB_APPKIT_TAG "v0.4.0" CACHE STRING "felitronics-appkit release tag (fetched when no local checkout)")
 set(ORBITCAB_APPKIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-appkit" CACHE PATH "Local felitronics-appkit checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_APPKIT_DIR AND EXISTS "${ORBITCAB_APPKIT_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-appkit: local checkout — ${ORBITCAB_APPKIT_DIR}")

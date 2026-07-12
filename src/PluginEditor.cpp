@@ -135,8 +135,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         b.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xff8a8a92));
         b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black);
         b.setColour (OrbitCabLookAndFeel::accentBorderColourId, juce::Colour (OrbitCabLookAndFeel::kNeutral));
-        b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1) + ")");
-        b.onClick = [this, i] { switchSnapshot (i); };
+        b.setTooltip ("Snapshot " + juce::String (snapNames[i]) + "  (key " + juce::String (i + 1)
+                      + ")   ·  right-click: copy / paste   ·  drag onto another to copy");
+        b.setRegisterIndex (i);
+        b.onClick    = [this, i] { switchSnapshot (i); };
+        b.onPopup    = [this, i] { showSnapshotMenu (i); };
+        b.onCopyDrop = [this] (int from, int to) { applySnapshotCopy (from, to); };
         addAndMakeVisible (b);
     }
     updateSnapshotButtons();
@@ -583,6 +587,30 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
     pushFiltersToWave();
     refreshPresets();
 
+    // Gesture brackets (engine B1): wrap EVERY slider drag in beginGesture/endGesture, so one
+    // drag commits as exactly ONE labelled undo step — even a slow drag that outlives the settle
+    // window, or a drag grabbed within 0.4 s of a prior tweak (the pre-drag burst flushes first
+    // instead of merging in). A recursive walk at ctor end reaches the SlotComponents' sliders
+    // too; hooks are CHAINED in case a slider already had onDragStart/onDragEnd. Custom drag
+    // surfaces (waveform TRIM, EqCurve corners) stay on plain settle coalescing.
+    {
+        std::function<void (juce::Component&)> wireGestures = [this, &wireGestures] (juce::Component& parent)
+        {
+            for (auto* child : parent.getChildren())
+            {
+                if (auto* s = dynamic_cast<juce::Slider*> (child))
+                {
+                    s->onDragStart = [this, s, prev = std::move (s->onDragStart)]
+                    { ++openParamGestures; processorRef.beginParamGesture (s->getName()); if (prev) prev(); };
+                    s->onDragEnd   = [this, prev = std::move (s->onDragEnd)]
+                    { if (openParamGestures > 0) { --openParamGestures; processorRef.endParamGesture(); } if (prev) prev(); };
+                }
+                wireGestures (*child);
+            }
+        };
+        wireGestures (*this);
+    }
+
     // Seed the revision caches to the current values so the first timer tick doesn't re-sync
     // what the ctor just synced (only genuine later changes trip the poll).
     lastSoundRev     = processorRef.soundRevision();
@@ -598,6 +626,12 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 OrbitCabAudioProcessorEditor::~OrbitCabAudioProcessorEditor()
 {
     stopTimer();
+
+    // Drain any slider gesture still open (window destroyed mid-drag: the slider dies without
+    // its onDragEnd). The engine outlives the editor in the processor — a leaked refcount would
+    // stop EVERY future drag from committing an undo step until the next nav call force-heals.
+    while (openParamGestures > 0) { --openParamGestures; processorRef.endParamGesture(); }
+
     processorRef.setSpectrumActive (false);   // editor gone → stop feeding the analyser
     processorRef.setBlendTintActive (false);  // …and stop recomputing the MIX tint
     preampBox.setLookAndFeel (nullptr);        // detach the custom popup L&F before it is destroyed
@@ -683,8 +717,17 @@ void OrbitCabAudioProcessorEditor::timerCallback()
     }
 
     processorRef.undoTick();                       // coalesce edits into undo steps
-    undoBtn.setEnabled (processorRef.canUndo());
-    redoBtn.setEnabled (processorRef.canRedo());
+
+    // History UI (undo/redo enablement + the A/B/C/D "modified" dots) re-syncs only when the
+    // engine reports a change — onHistoryChanged bumps historyRevision() on every commit / undo /
+    // redo / switch / copy / clear / load. No more per-tick canUndo/registerEdited rescans.
+    if (const auto r = processorRef.historyRevision(); r != lastHistoryRev)
+    {
+        lastHistoryRev = r;
+        undoBtn.setEnabled (processorRef.canUndo());
+        redoBtn.setEnabled (processorRef.canRedo());
+        updateSnapshotButtons();
+    }
 
     // Catch processor-side state changes WITHOUT a push callback (revision-counter poll): a
     // host-driven setStateInformation, or any path that didn't already re-sync the editor.
@@ -1467,7 +1510,11 @@ void OrbitCabAudioProcessorEditor::updateSnapshotButtons()
 {
     const int a = processorRef.getActiveSnapshot();
     for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
+    {
         snapBtn[i].setToggleState (i == a, juce::dontSendNotification);
+        snapBtn[i].getProperties().set ("orbitDirty", processorRef.snapshotEdited (i));   // "modified since dialed" dot
+        snapBtn[i].repaint();
+    }
 }
 
 void OrbitCabAudioProcessorEditor::switchSnapshot (int i)
@@ -1481,16 +1528,116 @@ void OrbitCabAudioProcessorEditor::switchSnapshot (int i)
     updateSnapshotButtons();
 }
 
+//==============================================================================
+// A/B/C/D register copy — right-click menu / drag-n-drop / system clipboard.
+// Every path lands in the engine (copyRegister / applyEdit): ONE discrete undoable
+// edit in the TARGET register's own history, a no-op copy records nothing.
+//==============================================================================
+void OrbitCabAudioProcessorEditor::showSnapshotMenu (int i)
+{
+    // Sources for "copy here from": ONLY content-bearing registers (the active one or a stored
+    // snapshot) — copying from a never-visited slot is meaningless. Targets are unrestricted.
+    juce::PopupMenu from, to;
+    for (int j = 0; j < OrbitCabAudioProcessor::kNumSnapshots; ++j)
+    {
+        if (j == i) continue;
+        const auto name = snapBtn[j].getButtonText();
+        if (processorRef.snapshotHasContent (j))
+            from.addItem (100 + j, name);
+        to.addItem (200 + j, name);
+    }
+
+    // The ⌘C/⌘V hints are true only for the ACTIVE register (the shortcuts act on it); a
+    // right-click on a sibling shows the same items unhinted.
+    const bool active = (i == processorRef.getActiveSnapshot());
+    const auto hasContent = processorRef.snapshotHasContent (i);
+    juce::PopupMenu m;
+    m.addSectionHeader ("Snapshot " + snapBtn[i].getButtonText());
+    m.addSubMenu ("Copy here from", from, from.getNumItems() > 0);
+    m.addSubMenu ("Copy this to",   to,   hasContent);
+    m.addSeparator();
+    const auto hint = [] (juce::juce_wchar c)
+    {
+        return "  (" + juce::KeyPress (c, juce::ModifierKeys::commandModifier, 0)
+                           .getTextDescriptionWithIcons() + ")";
+    };
+    m.addItem (1, "Copy sound" + (active ? hint ('c') : juce::String()), hasContent);
+    {
+        // Enablement uses the SAME predicate the paste itself enforces — a hollow or foreign
+        // <Sound> must show as disabled, not as an enabled item that silently no-ops.
+        const auto clip = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
+        m.addItem (2, "Paste sound" + (active ? hint ('v') : juce::String()),
+                   processorRef.canPasteSound (clip));
+    }
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapBtn[i]),
+        [this, safe = juce::Component::SafePointer<OrbitCabAudioProcessorEditor> (this), i] (int r)
+        {
+            if (safe == nullptr || r == 0) return;
+            if      (r == 1)        copySnapshotToClipboard (i);
+            else if (r == 2)        pasteSnapshotFromClipboard (i);
+            else if (r >= 200)      applySnapshotCopy (i, r - 200);   // "copy this to" → i is the source
+            else if (r >= 100)      applySnapshotCopy (r - 100, i);   // "copy here from" → i is the target
+        });
+}
+
+void OrbitCabAudioProcessorEditor::applySnapshotCopy (int from, int to)
+{
+    if (from == to) return;
+    processorRef.copySnapshot (from, to);
+    afterUndoRedo();   // live may have changed (copy INTO the active register); markers always
+}
+
+void OrbitCabAudioProcessorEditor::copySnapshotToClipboard (int i)
+{
+    // The register's whole <Sound> (params + both IR slot identities) as XML. IR audio is NOT
+    // inlined — a paste re-resolves by ref/path with the usual MISSING fallback, so a cross-
+    // instance paste works whenever the IR is bundled, on disk, or in the target's session pool.
+    if (const auto t = processorRef.snapshotSound (i); t.isValid())
+        if (const auto xml = t.createXml())
+            juce::SystemClipboard::copyTextToClipboard (xml->toString());
+}
+
+bool OrbitCabAudioProcessorEditor::pasteSnapshotFromClipboard (int toReg)
+{
+    // The clipboard is untrusted input: accept only a well-formed <Sound> whose <Params>
+    // payload IS this plugin's parameter tree (one shared predicate — see canPasteSound).
+    const auto t = juce::ValueTree::fromXml (juce::SystemClipboard::getTextFromClipboard());
+    if (! processorRef.canPasteSound (t))
+        return false;
+    processorRef.pasteSound (toReg, t);
+    afterUndoRedo();
+    return true;
+}
+
 bool OrbitCabAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 {
+    // While a slider gesture is open (mouse mid-drag), history NAVIGATION shortcuts are inert:
+    // a register switch or a paste would reach the engine's gesture×nav misuse path (force-commit
+    // + debug assert). Swallow them — acting mid-drag was never meaningful. ⌘C stays live (read-only).
+    const bool midGesture = openParamGestures > 0;
+
     // 1/2/3/4 → snapshot A/B/C/D. Only the digit row (no modifiers) so it won't fight typing
     // in a text field (a modal name prompt grabs focus anyway) or common host shortcuts.
     for (int i = 0; i < OrbitCabAudioProcessor::kNumSnapshots; ++i)
         if (key == juce::KeyPress ((juce::juce_wchar) ('1' + i)))
         {
-            switchSnapshot (i);
+            if (! midGesture)
+                switchSnapshot (i);
             return true;
         }
+
+    // ⌘C/⌘V (Ctrl on Windows) — copy/paste the ACTIVE register's sound via the system clipboard
+    // (the right-click menu reaches any register). An unrecognised clipboard falls through to
+    // the host (return false), so a stray ⌘V doesn't get swallowed.
+    if (key == juce::KeyPress ('c', juce::ModifierKeys::commandModifier, 0))
+    {
+        copySnapshotToClipboard (processorRef.getActiveSnapshot());
+        return true;
+    }
+    if (key == juce::KeyPress ('v', juce::ModifierKeys::commandModifier, 0))
+        return ! midGesture && pasteSnapshotFromClipboard (processorRef.getActiveSnapshot());
+
     return false;
 }
 

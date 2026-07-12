@@ -305,7 +305,12 @@ int main()
         OrbitCabAudioProcessor b; b.prepareToPlay (sr, block);   // fresh defaults headTrim ON
         b.setStateInformation (oldState.getData(), (int) oldState.getSize());
         pump (60);
+        for (int i = 0; i < 20; ++i) b.undoTick();            // let any phantom burst settle
         const bool migOk = ! b.getHeadTrim();                 // absent on load → migrated to OFF
+        // The migration write is SUPPRESSED (post-fromTree fix-up): a freshly loaded old session
+        // must read clean — no phantom undo step whose undo would flip HEAD back on, no dirty.
+        const bool migClean = ! b.canUndo() && ! b.hasUnsavedChanges()
+                           && ! b.undo() && ! b.getHeadTrim();
 
         OrbitCabAudioProcessor c; c.prepareToPlay (sr, block); c.setHeadTrim (true);
         juce::MemoryBlock newState; c.getStateInformation (newState);
@@ -314,11 +319,11 @@ int main()
         pump (60);
         const bool keepOk = d.getHeadTrim();                  // present → preserved ON
 
-        const bool migrateOk = migOk && keepOk;
+        const bool migrateOk = migOk && migClean && keepOk;
         allPass &= migrateOk;
-        std::printf ("MIGRATION TEST: old(no headTrim)->off=%d  new(on)->on=%d\n", migOk, keepOk);
-        std::printf ("RESULT: %s\n", migrateOk ? "HEADTRIM MIGRATION WORKS (absent -> off, present -> kept)"
-                                               : "HEADTRIM MIGRATION BROKEN");
+        std::printf ("MIGRATION TEST: old(no headTrim)->off=%d clean=%d  new(on)->on=%d\n", migOk, (int) migClean, keepOk);
+        std::printf ("RESULT: %s\n", migrateOk ? "HEADTRIM MIGRATION WORKS (absent -> off, clean load, present -> kept)"
+                                               : "HEADTRIM MIGRATION BROKEN (or the migration left a phantom undo step)");
     }
 
     // ---- preset-centric model: factory default + dirty tracking + persistence ----
@@ -564,32 +569,165 @@ int main()
         std::printf ("RESULT: %s\n", ok ? "PRESET LOAD RESETS A/B/C/D" : "BUG B REGRESSED (stale register recalled)");
     }
 
-    // ---- BUG C: a snapshot switch is undoable — undo restores BOTH the live sound AND the
-    //      active-register index (the chosen fully-reversible compare model).
+    // ---- BUG C (PerRegister): every A/B/C/D register keeps its OWN undo/redo history and a
+    //      register switch is NOT an undo step (its inverse is re-selecting the slot). Undo/redo
+    //      act on the active register only and never teleport the selector — the old
+    //      whole-workspace model did exactly that, silently reverting a keeper register.
     {
         OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
         auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
         auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
         auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
-        setG (0.20f); ticks (20);                          // register 0 settles
+        const float g0 = getG();                           // register 0's pristine sound
+        setG (0.20f); ticks (20);                          // settles into register 0's OWN track
         const float reg0 = getG();
-        p.switchToSnapshot (1); ticks (20);                // switch is one undo step
-        setG (0.85f); ticks (20);                          // edit is another
+        p.switchToSnapshot (1); ticks (20);                // NOT an undo step; fresh slot inherits live
+        const bool bornClean = ! p.canUndo() && std::abs (getG() - reg0) < 1e-4f
+                             && p.getActiveSnapshot() == 1;
+        setG (0.85f); ticks (20);                          // register 1's own first step
         const float reg1 = getG();
-        const int activeBefore = p.getActiveSnapshot();
-        p.undo();                                          // undo the edit
-        p.undo();                                          // undo the switch itself
-        const int   activeAfter = p.getActiveSnapshot();
-        const float soundAfter  = getG();
-        // gain is stored in dB (getG is the raw value), so assert the INVARIANT, not a 0..1
-        // literal: the two registers differ, and undo restores BOTH reg0's sound and active=0.
-        const bool ok = std::abs (reg1 - reg0) > 1.0f && activeBefore == 1
-                      && activeAfter == 0 && std::abs (soundAfter - reg0) < 1e-2f;
+        const bool undoEdit  = p.undo() && std::abs (getG() - reg0) < 1e-2f
+                             && p.getActiveSnapshot() == 1;            // reverts reg1's edit in place
+        const bool undoFloor = ! p.undo() && p.getActiveSnapshot() == 1
+                             && std::abs (getG() - reg0) < 1e-2f;      // no-op: NO selector teleport
+        const bool redoEdit  = p.redo() && std::abs (getG() - reg1) < 1e-2f
+                             && p.getActiveSnapshot() == 1;            // no-op undo didn't eat redo
+        p.switchToSnapshot (0); ticks (20);                // back to A — its history must be intact
+        const bool undoA     = p.undo() && std::abs (getG() - g0) < 1e-2f
+                             && p.getActiveSnapshot() == 0;            // reg0's own step survives
+        // gain is stored in dB (getG is the raw value), so assert INVARIANTS, not 0..1 literals.
+        const bool ok = std::abs (reg1 - reg0) > 1.0f
+                      && bornClean && undoEdit && undoFloor && redoEdit && undoA;
         allPass &= ok;
-        std::printf ("BUG-C TEST: reg0=%.2f reg1=%.2f activeBefore=%d → activeAfter=%d sound=%.2f\n",
-                     reg0, reg1, activeBefore, activeAfter, soundAfter);
-        std::printf ("RESULT: %s\n", ok ? "SNAPSHOT SWITCH IS UNDOABLE (sound + active index)"
-                                        : "BUG C REGRESSED (undo ignores the register)");
+        std::printf ("BUG-C TEST (PerRegister): reg0=%.2f reg1=%.2f bornClean=%d undoEdit=%d undoFloor=%d redo=%d undoA=%d\n",
+                     reg0, reg1, (int) bornClean, (int) undoEdit, (int) undoFloor, (int) redoEdit, (int) undoA);
+        std::printf ("RESULT: %s\n", ok ? "PER-REGISTER UNDO (own history per slot; a switch is not a step)"
+                                        : "BUG C REGRESSED (undo crosses registers / teleports the selector)");
+    }
+
+    // ---- COPY/PASTE (register copy): every UI gesture (menu / drag / clipboard) lands in the
+    //      same engine primitives, so assert the CONTRACT here: a copy is ONE undoable edit in
+    //      the TARGET register's own track (live untouched when the target is stored), the
+    //      clipboard payload is a <Sound>, and a junk tree is refused without a phantom step.
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        // Only the active register bears content until others are visited or copied into.
+        const bool seed = p.snapshotHasContent (0) && ! p.snapshotHasContent (1)
+                        && ! p.snapshotHasContent (2) && ! p.snapshotHasContent (3);
+        setG (0.20f); ticks (20);
+        const float gx = getG();
+        const auto  clip = p.snapshotSound (0);            // "⌘C" surrogate: the active <Sound>
+        const bool  clipOk = clip.hasType ("Sound");
+        p.switchToSnapshot (1); ticks (20);                // birth B (inherits X)
+        setG (0.85f); ticks (20);
+        const float gy = getG();
+        p.switchToSnapshot (0); ticks (20);
+        p.copySnapshot (0, 1);                             // A → stored B: live must NOT move
+        const bool liveKept = p.getActiveSnapshot() == 0 && std::abs (getG() - gx) < 1e-2f
+                            && p.snapshotHasContent (1);
+        p.switchToSnapshot (1); ticks (20);
+        const bool copied   = std::abs (getG() - gx) < 1e-2f;              // B now sounds like A
+        const bool undone   = p.undo() && std::abs (getG() - gy) < 1e-2f;  // one step, B's OWN track
+        const bool redone   = p.redo() && std::abs (getG() - gx) < 1e-2f;
+        setG (0.40f); ticks (20);
+        const float gz = getG();
+        p.pasteSound (1, juce::ValueTree ("Junk"));        // refused: not a <Sound>
+        const bool junkOut  = std::abs (getG() - gz) < 1e-4f;
+        p.pasteSound (1, clip);                            // "⌘V": one undoable step onto B
+        const bool pasted   = std::abs (getG() - gx) < 1e-2f && p.getActiveSnapshot() == 1;
+        const bool pasteUndo = p.undo() && std::abs (getG() - gz) < 1e-2f; // and junk left no phantom
+        const bool ok = seed && clipOk && liveKept && copied && undone && redone
+                      && junkOut && pasted && pasteUndo;
+        allPass &= ok;
+        std::printf ("COPY TEST: seed=%d clip=%d liveKept=%d copied=%d undo=%d redo=%d junkOut=%d pasted=%d pasteUndo=%d\n",
+                     (int) seed, (int) clipOk, (int) liveKept, (int) copied, (int) undone,
+                     (int) redone, (int) junkOut, (int) pasted, (int) pasteUndo);
+        std::printf ("RESULT: %s\n", ok ? "REGISTER COPY/PASTE (one undoable edit in the target's track)"
+                                        : "COPY/PASTE BROKEN (live moved / phantom step / junk accepted)");
+    }
+
+    // ---- v1.1 HISTORY API: gesture brackets (a drag = ONE step, even across a settle pause;
+    //      an unsettled pre-drag tweak flushes as its OWN step), the saved/clean marker (clean at
+    //      a preset boundary, NEVER falsely clean after undo-past-save — conservative, unlike the
+    //      content-true preset fingerprint), and the event-driven history revision (quiet on a
+    //      no-op undo at the floor).
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        const bool startClean = ! p.canUndo() && ! p.hasUnsavedChanges();
+        const float g0 = getG();
+        p.beginParamGesture ("gain");                    // (a) one slow drag, mid-drag pause > settle
+        setG (0.30f); ticks (20);
+        setG (0.60f);
+        p.endParamGesture(); ticks (2);
+        const float gA = getG();
+        const bool dragOneStep = p.undo() && std::abs (getG() - g0) < 1e-2f && ! p.canUndo();
+        const auto rFloor = p.historyRevision();
+        const bool noopQuiet = ! p.undo() && p.historyRevision() == rFloor;   // no-op undo: no event
+        const auto rRedo = p.historyRevision();
+        const bool redoBumps = p.redo() && std::abs (getG() - gA) < 1e-2f && p.historyRevision() != rRedo;
+        setG (0.25f); ticks (2);                         // (b) tweak, NOT settled (settle = 12 ticks)
+        const float gTweak = getG();
+        p.beginParamGesture ("gain");                    // grab within the window → tweak flushes
+        setG (0.90f);
+        p.endParamGesture(); ticks (2);
+        const bool grabTwoSteps = p.undo() && std::abs (getG() - gTweak) < 1e-2f
+                               && p.undo() && std::abs (getG() - gA) < 1e-2f;
+        p.captureBaseline();                             // (c) preset boundary at gA
+        const bool cleanAtSave   = ! p.hasUnsavedChanges() && ! p.isPresetDirty();
+        const bool dirtyPastSave = p.undo() && p.hasUnsavedChanges() && p.isPresetDirty();
+        // redo back to the EXACT saved content: the serial marker stays conservative (unsaved),
+        // the fingerprint is content-true (clean) — the two markers differ BY DESIGN here.
+        const bool markersSplit  = p.redo() && std::abs (getG() - gA) < 1e-2f
+                                && p.hasUnsavedChanges() && ! p.isPresetDirty();
+        const bool ok = startClean && dragOneStep && noopQuiet && redoBumps
+                      && grabTwoSteps && cleanAtSave && dirtyPastSave && markersSplit;
+        allPass &= ok;
+        std::printf ("V1.1 API TEST: start=%d dragOne=%d noopQuiet=%d redoBump=%d grabTwo=%d cleanSave=%d pastSave=%d split=%d\n",
+                     (int) startClean, (int) dragOneStep, (int) noopQuiet, (int) redoBumps,
+                     (int) grabTwoSteps, (int) cleanAtSave, (int) dirtyPastSave, (int) markersSplit);
+        std::printf ("RESULT: %s\n", ok ? "V1.1 HISTORY API (gestures, saved marker, quiet no-ops)"
+                                        : "V1.1 API BROKEN (gesture split/merged / marker wrong / noisy no-op)");
+    }
+
+    // ---- v1.1 edge interleavings (crew round): an UNSETTLED edit flushes into the LEAVING
+    //      register's own track on a switch; pasting into a never-used register is a BIRTH
+    //      (content lands, live untouched, NO undo entry — the switch-birth rule); a byte-equal
+    //      no-op copy records nothing and stays clean.
+    {
+        OrbitCabAudioProcessor p; p.prepareToPlay (sr, block);
+        auto setG  = [&] (float v) { if (auto* q = p.apvts.getParameter ("gain")) q->setValueNotifyingHost (v); };
+        auto getG  = [&] { return p.apvts.getRawParameterValue ("gain")->load(); };
+        auto ticks = [&] (int n) { for (int i = 0; i < n; ++i) p.undoTick(); };
+        const float g0 = getG();
+        setG (0.20f);                                      // NOT settled (no ticks)…
+        const float gx = getG();
+        p.switchToSnapshot (1); ticks (20);                // …the switch flushes it into reg0's track
+        p.switchToSnapshot (0); ticks (20);
+        const bool flushed = std::abs (getG() - gx) < 1e-2f
+                          && p.undo() && std::abs (getG() - g0) < 1e-2f;   // one step, not lost
+        p.redo(); ticks (2);                               // back to gx
+        const auto clip = p.snapshotSound (0);             // the active <Sound> (gx)
+        const bool wasEmpty = ! p.snapshotHasContent (3);
+        p.pasteSound (3, clip);                            // paste-BIRTH into never-used D
+        const bool birthQuiet = p.getActiveSnapshot() == 0 && p.snapshotHasContent (3)
+                             && std::abs (getG() - gx) < 1e-2f;            // live untouched
+        p.switchToSnapshot (3); ticks (20);
+        const bool birth = std::abs (getG() - gx) < 1e-2f && ! p.canUndo();   // birth pushes NO step
+        p.captureBaseline();                               // clean boundary…
+        p.copySnapshot (0, 3);                             // …then a byte-equal no-op copy onto D
+        const bool noopClean = ! p.hasUnsavedChanges() && ! p.canUndo();
+        const bool ok = flushed && wasEmpty && birthQuiet && birth && noopClean;
+        allPass &= ok;
+        std::printf ("EDGE TEST: flushOnSwitch=%d wasEmpty=%d birthQuiet=%d birth=%d noopClean=%d\n",
+                     (int) flushed, (int) wasEmpty, (int) birthQuiet, (int) birth, (int) noopClean);
+        std::printf ("RESULT: %s\n", ok ? "V1.1 EDGES (switch flushes; paste-birth quiet; no-op copy clean)"
+                                        : "V1.1 EDGES BROKEN (lost burst / noisy birth / dirty no-op)");
     }
 
     // ---- BUG F: a state whose external IR has no embedded bytes AND no file on disk must

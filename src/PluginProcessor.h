@@ -6,6 +6,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <felitronics/appkit/CompareHistory.h>
+
 #include "core/CabEngine.h"
 #include "AppPreferences.h"
 #include "PowerampLibrary.h"
@@ -99,7 +101,10 @@ public:
     // a DAW session reload. All message-thread (editor / state restore).
     void applyFactoryDefault();                            // first-start / reset: load the bundled default (Roche Limit)
     void loadFactoryPresetState (const void* data, int size);   // load a bundled read-only factory preset (editor Factory section)
-    void captureBaseline()        { presetBaselineFingerprint = stateFingerprint(); }
+    // Flush the pending edit burst BEFORE recording the saved serial — else an unsettled edit
+    // commits right after the save and a just-saved state reads unsaved. No UI path can save
+    // mid-slider-drag (flush inside an open gesture is engine misuse), so flush() is safe here.
+    void captureBaseline()        { history.flush(); presetBaselineFingerprint = stateFingerprint(); history.markSaved(); }
     bool isPresetDirty()          { return presetBaselineFingerprint.isNotEmpty() && stateFingerprint() != presetBaselineFingerprint; }
     void ensureBaselineCaptured() { if (presetBaselineFingerprint.isEmpty()) captureBaseline(); }
     bool isPresetFactory() const  { return presetIsFactory; }
@@ -253,16 +258,72 @@ public:
     // is saved in the DAW session. Called on the message thread (button click).
     static constexpr int kNumSnapshots = 4;
     void switchToSnapshot (int index);
-    int  getActiveSnapshot() const { return activeSnapshot; }
+    int  getActiveSnapshot() const { return history.active(); }
+    // "Modified since you dialed it in" marker for the A/B/C/D buttons: has this register
+    // accumulated edits (its own undo history is non-empty)?
+    bool snapshotEdited (int i) const { return history.registerEdited (i); }
+    // A register "has content" (a valid copy SOURCE) if it is the active/live one or holds a stored
+    // snapshot. Drives the copy menu (only content-bearing registers are offered as sources).
+    bool snapshotHasContent (int i) const { return i == history.active() || history.registerTree (i).has_value(); }
 
-    // Undo / redo — a stack of full ref-only state snapshots (reuses capture/applyStateTree).
-    // The editor pumps undoTick() on its timer; a burst of edits coalesces into one step
-    // once the state settles. undo()/redo() apply a step (the editor then re-syncs its UI).
-    void undoTick();
-    bool undo();
-    bool redo();
-    bool canUndo() const { return ! undoStack.empty(); }
-    bool canRedo() const { return ! redoStack.empty(); }
+    // Copy the whole sound of one A/B/C/D register into another — one discrete undoable edit in the
+    // target (drag a button onto another, or the copy menu). The clipboard paste path shares the
+    // engine's applyEdit primitive: capture the live/register <Sound> for Copy, apply an external
+    // <Sound> for Paste (the editor validates it is a <Sound> before applying).
+    void copySnapshot (int from, int to)
+    {
+        if (juce::isPositiveAndBelow (from, kNumSnapshots) && juce::isPositiveAndBelow (to, kNumSnapshots))
+            history.copyRegister (from, to);
+    }
+    juce::ValueTree snapshotSound (int i)         // the <Sound> of register i (active -> live), for the clipboard
+    {
+        if (! juce::isPositiveAndBelow (i, kNumSnapshots)) return {};
+        return i == history.active() ? orbitcab::state::toTree (captureLive(), false)
+                                     : history.registerTree (i).value_or (juce::ValueTree());
+    }
+    // One paste-validation predicate for every consumer (menu enablement, ⌘V, pasteSound itself):
+    // a well-formed <Sound> whose <Params> payload IS this plugin's APVTS root type. Anything
+    // less lets a crafted clipboard replaceState() a foreign-typed tree into the live params.
+    bool canPasteSound (const juce::ValueTree& sound) const
+    {
+        return sound.hasType ("Sound")
+            && sound.getChildWithName ("Params").getChild (0).hasType (apvts.state.getType());
+    }
+    void pasteSound (int toReg, const juce::ValueTree& sound)
+    {
+        if (! juce::isPositiveAndBelow (toReg, kNumSnapshots) || ! canPasteSound (sound))
+            return;                              // clipboard is untrusted input
+        history.applyEdit (toReg, sound);
+    }
+
+    // Undo / redo — the shared felitronics-appkit CompareHistory engine, PerRegister mode: each
+    // A/B/C/D register has its OWN undo/redo history, and a register SWITCH is NOT an undo step (its
+    // inverse is re-selecting the slot). Undo/redo act only on the active register. The editor pumps
+    // undoTick() on its timer; a burst of edits coalesces into one step once the state settles.
+    void undoTick() { history.tick(); }
+    bool undo()     { return history.undo(); }
+    bool redo()     { return history.redo(); }
+    bool canUndo() const { return history.canUndo(); }
+    bool canRedo() const { return history.canRedo(); }
+
+    // Saved/clean marker (engine B6): has ANY register's history moved since the last preset
+    // boundary (captureBaseline → markSaved)? Never falsely clean — undoing back to the saved
+    // CONTENT still reads unsaved. The preset combo's ' *' stays fingerprint-based on purpose:
+    // it is content-true and reacts mid-burst (as the knob moves), which the commit-level
+    // serial cannot; this marker is the cheap history-level probe for save prompts.
+    bool hasUnsavedChanges() const { return history.hasUnsavedChanges(); }
+
+    // Gesture brackets (engine B1) — the editor wraps every slider drag, so one drag commits as
+    // ONE labelled undo step and a pre-drag burst is flushed first instead of merging into it.
+    void beginParamGesture (const juce::String& label) { history.beginGesture (label); }
+    void endParamGesture()                             { history.endGesture(); }
+
+    // Event-driven history revision (engine B5): onHistoryChanged bumps the counter on every
+    // commit / undo / redo / switch / copy / clear / load. The editor polls the COUNTER on its
+    // timer instead of rescanning canUndo/canRedo/registerEdited each tick — push-computed,
+    // poll-delivered, because hosts may call setStateInformation off the message thread and a
+    // direct UI callback from inside the engine could then touch components cross-thread.
+    juce::uint32 historyRevision() const { return historyRev.load (std::memory_order_relaxed); }
 
     // Embedded IR bytes for a path, if this session carries them — lets the editor
     // draw the waveform from the embedded copy when the original file is gone.
@@ -471,8 +532,6 @@ private:
     void resolveSlot           (int slotIdx, orbitcab::state::SlotIR target);   // load `target` into the engine + commit to slotState
     orbitcab::state::SoundState captureLive();                                  // live params + both slots' identity (copyState mutates → non-const)
     void                        applyLive (const orbitcab::state::SoundState&); // restore params + resolve both slots
-    orbitcab::state::Workspace  currentWorkspace();                             // live + active + the 4 registers
-    void                        applyWorkspace (const orbitcab::state::Workspace&);
     static juce::String computeBlobId (const juce::MemoryBlock& canonicalWav);  // "ir-<hex>" content id of the embedded WAV
     juce::MemoryBlock  canonicalWavForSlot (int slotIdx) const;                 // the embedded 24-bit WAV (original SR) of the loaded original
 
@@ -495,15 +554,16 @@ private:
     std::map<juce::String, juce::MemoryBlock> embeddedPreamps;
     juce::CriticalSection preampPoolLock;     // guards embeddedPreamps (same threads as powerampPoolLock)
 
-    // A/B/C/D compare registers (message-thread only), each a full orbitcab::state::SoundState.
-    // Inactive A/B/C/D registers (the active one IS the live state, so it's stored as
-    // nullopt — `currentWorkspace`/`applyWorkspace` enforce that invariant). nullopt = a
-    // never-used register that inherits the current sound on first switch.
-    std::optional<orbitcab::state::SoundState> snapshots[kNumSnapshots];
-    int activeSnapshot = 0;
+    // Undo/redo + the A/B/C/D compare registers — the shared felitronics-appkit engine, in
+    // PerRegister mode (each register keeps its OWN undo/redo track; a register switch is NOT an
+    // undo step). It owns the registers, the settle-timer coalescing
+    // and the <Workspace> persistence envelope; captureLive/applyLive (below) are the opaque
+    // <Sound> payload seam. Declared AFTER apvts + slotState (captureLive reads them at the
+    // engine's construction-time capture-stability assert). Message-thread only.
+    felitronics::appkit::CompareHistory history;
 
     // Monotonic editor-sync counters (see the public *Revision() getters).
-    std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 };
+    std::atomic<juce::uint32> soundRev { 0 }, workspaceRev { 0 }, userIRRev { 0 }, historyRev { 0 };
     void bumpSound()     { soundRev.fetch_add     (1, std::memory_order_relaxed); }
     void bumpWorkspace() { workspaceRev.fetch_add (1, std::memory_order_relaxed); }
 
@@ -528,13 +588,7 @@ private:
     juce::String stateFingerprint();           // hash of captureStateTree() — cheap dirty probe
     void         loadFactoryDefaultIR();        // bundled IR #16 into slot A (the factory Default cab)
 
-    // Undo/redo state (message-thread only). Snapshots are ref-only (no embedded bytes —
-    // those live in embeddedIRs for the instance), so the stacks stay tiny.
-    std::vector<juce::ValueTree> undoStack, redoStack;
-    juce::ValueTree undoBaseline, undoPrev;
-    int undoSettle = 0;
-    static constexpr int kMaxUndo        = 64;
-    static constexpr int kUndoSettleTicks = 12;   // ~0.4 s of no change @ 30 Hz → commit
+    // (undo/redo + A/B/C/D live in `history`, above — the shared appkit CompareHistory engine)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrbitCabAudioProcessor)
 };
