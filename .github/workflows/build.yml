@@ -30,20 +30,49 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 45          # safety cap for a hung build (NAM/Eigen add cold-compile time)
+    env:
+      SCCACHE_GHA_ENABLED: "true"   # sccache uses the GitHub Actions cache as its object store
     steps:
       - uses: actions/checkout@v7
 
+      # Ninja invokes cl.exe directly, so it needs the MSVC toolchain on PATH (what the VS/MSBuild
+      # generator sets up itself). arch pinned explicitly — one less surprise if the runner image changes.
+      - name: MSVC dev environment (vcvars for Ninja)
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756   # v1.13.0
+        with:
+          arch: x64
+
+      # Compiler cache. MUST precede Configure, not just Build: JUCE builds its `juceaide` host tool at
+      # configure time and passes this compiler launcher through to that sub-build, so `sccache` has to
+      # be on PATH already when we configure.
+      - name: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696   # v0.0.10
+
+      # Sources only (FetchContent checkouts + the juceaide sub-build tree) — not objects; sccache caches
+      # objects. The generator is in the key so a stale MSBuild-era cache can't be restored under
+      # -G Ninja (its cached CMakeCache would mismatch the generator and fail configure).
       - name: Cache JUCE (FetchContent)
         uses: actions/cache@v6
         with:
           path: build/_deps
-          key: juce-windows-${{ hashFiles('CMakeLists.txt') }}
+          key: juce-windows-ninja-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
+      # single-config Ninja: no --config, and Ninja parallelises by default (drop --parallel).
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build
+
+      # Cache health on every run: warm runs should show a high hit rate and (the classic MSVC trap)
+      # ~0 non-cacheable. Release emits no /Zi here, so non-cacheable should read ~0; if it ever doesn't,
+      # add `-DCMAKE_POLICY_DEFAULT_CMP0141=NEW -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded` to
+      # Configure (a bare -D…FORMAT is a silent no-op at cmake_minimum_required(3.22) — CMP0141 OLD).
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats
 
       # Headless unit tests for the cab:: DSP core (links core/ only). Hard gate —
       # the runner returns non-zero on any failed UnitTest.
