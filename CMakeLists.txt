@@ -92,10 +92,12 @@ FetchContent_MakeAvailable(nam_core_src)
 # NamCodec so the bytes are identical. Header-only; SOURCE_SUBDIR points at include/ (no CMakeLists there)
 # so we populate the header WITHOUT building namz's project (which would fetch a second nlohmann). OrbitCab's
 # src/core/NamCodec is now a thin juce adapter over it; nlohmann comes from nam_core's vendored copy.
-# Pinned PAST v1.0.0 to the namz::rig merge (PR #10 + #11): namz_rig.h (device model / selection
-# policy) + namz_rig_load.h (the .orbitrig rig.json reader) — the metadata-first PREAMP selector.
+# Pinned at v1.1.0 — the rig layer both ways: namz_rig.h + namz_rig_load.h (the device model /
+# selection policy / rig.json reader behind the metadata-first PREAMP selector), namz_rig_write.h
+# (the capture-side writer), and conformance/rig/ — the golden .orbitrig pack RigConformanceTests
+# reads (OrbitCab's READER duty of the shared contract).
 # Same HYBRID consumption as felitronics-core below: a local checkout if present, else the pin.
-set(ORBITCAB_NAMZ_TAG "214d3ed8e2c94832e3af644d4d789690e429a00f" CACHE STRING "namz commit/tag (fetched when no local checkout)")
+set(ORBITCAB_NAMZ_TAG "v1.1.0" CACHE STRING "namz release tag (fetched when no local checkout)")
 set(ORBITCAB_NAMZ_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../namz" CACHE PATH "Local namz checkout (used if present); else the pin is fetched")
 if(ORBITCAB_NAMZ_DIR AND EXISTS "${ORBITCAB_NAMZ_DIR}/include/namz.h")
     message(STATUS "namz: local checkout — ${ORBITCAB_NAMZ_DIR}")
@@ -106,7 +108,7 @@ else()
         namz_src
         GIT_REPOSITORY https://github.com/darwinscat/namz.git
         GIT_TAG        ${ORBITCAB_NAMZ_TAG}
-        GIT_SHALLOW    FALSE          # a SHA pin — shallow fetch of an arbitrary commit is unreliable
+        GIT_SHALLOW    TRUE           # a tag pin — shallow fetch is fine
         SOURCE_SUBDIR  include        # no CMakeLists there → populate the header WITHOUT building namz's project
     )
 endif()
@@ -811,6 +813,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via namz::rig (legacy fallback, ≥2-rule, resolve)
     tests/RigPackTests.cpp         # orbitcab::readRigPack — .orbitrig zip/folder reader (zip-slip, size cap, manifest)
+    tests/RigConformanceTests.cpp  # READER duty vs namz's golden .orbitrig pack (conformance/rig) — the shared contract
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)
@@ -827,6 +830,7 @@ target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #includ
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
     ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # real .nam (router align) + factory IRs (IR norm)
+    ORBITCAB_NAMZ_CONFORMANCE_DIR="${namz_src_SOURCE_DIR}/conformance"   # the golden .orbitrig pack (RigConformanceTests)
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
