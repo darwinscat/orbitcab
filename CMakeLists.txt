@@ -92,12 +92,12 @@ FetchContent_MakeAvailable(nam_core_src)
 # NamCodec so the bytes are identical. Header-only; SOURCE_SUBDIR points at include/ (no CMakeLists there)
 # so we populate the header WITHOUT building namz's project (which would fetch a second nlohmann). OrbitCab's
 # src/core/NamCodec is now a thin juce adapter over it; nlohmann comes from nam_core's vendored copy.
-# Pinned at v1.1.0 — the rig layer both ways: namz_rig.h + namz_rig_load.h (the device model /
+# Pinned at the rig-layer release — the contract both ways: namz_rig.h + namz_rig_load.h (the device model /
 # selection policy / rig.json reader behind the metadata-first PREAMP selector), namz_rig_write.h
 # (the capture-side writer), and conformance/rig/ — the golden .orbitrig pack RigConformanceTests
 # reads (OrbitCab's READER duty of the shared contract).
 # Same HYBRID consumption as felitronics-core below: a local checkout if present, else the pin.
-set(ORBITCAB_NAMZ_TAG "v1.1.0" CACHE STRING "namz release tag (fetched when no local checkout)")
+set(ORBITCAB_NAMZ_TAG "v1.1.1" CACHE STRING "namz release tag (fetched when no local checkout)")
 set(ORBITCAB_NAMZ_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../namz" CACHE PATH "Local namz checkout (used if present); else the pin is fetched")
 if(ORBITCAB_NAMZ_DIR AND EXISTS "${ORBITCAB_NAMZ_DIR}/include/namz.h")
     message(STATUS "namz: local checkout — ${ORBITCAB_NAMZ_DIR}")
