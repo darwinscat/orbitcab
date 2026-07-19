@@ -283,6 +283,7 @@ private:
     void updatePreampRow();                      // show/hide the revealed row + resize the editor
     void syncPreampSelector();                   // reflect "preampSel" → highlight + contextual controls + tubes
     void rebuildPreampControls (const orbitcab::PreampRig::View& v);   // (re)create the widget groups for a new shape
+    void importRigPack (const juce::File& pack); // install an .orbitrig zip/folder + rescan both NAM selectors
     // (the resolution + visibility policy lives in orbitcab::PreampRig; these are thin bindings.)
 
     juce::Rectangle<int>  preampRowBounds;       // painted panel region of the revealed preamp row

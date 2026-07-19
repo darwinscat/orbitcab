@@ -810,6 +810,7 @@ target_sources(OrbitCab_Tests PRIVATE
     #  OrbitCab keeps only the CabEngine END-TO-END gate + leveler-hold integration tests, in CabEngineTests.)
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
     tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via namz::rig (legacy fallback, ≥2-rule, resolve)
+    tests/RigPackTests.cpp         # orbitcab::readRigPack — .orbitrig zip/folder reader (zip-slip, size cap, manifest)
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)

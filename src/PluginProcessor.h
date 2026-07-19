@@ -197,6 +197,15 @@ public:
     juce::File   importPreamp (const juce::File& src);                     // copy a .nam into preampDir; {} on failure
     bool         removePreamp (const juce::String& id);                    // delete a USER model (factory: no-op → false)
 
+    // .orbitrig pack import — the capture-side counterpart writes one (see namz/NAMZ-FORMAT.md
+    // "The .orbitrig pack"): a zip (Device.orbitrig.zip) or an unpacked pack folder. Every .namz
+    // inside installs into the per-machine library, SLOT-routed by its header (`slot`/`gear_type`
+    // "poweramp" → powerampDir, everything else is a pre-slot device → preampDir). Same-name files
+    // are overwritten — re-importing an updated pack refreshes its models. rig.json (the manifest)
+    // is read for the pack's display name; the model files are authoritative either way.
+    struct RigImportReport { int installed = 0, failed = 0; juce::String rigName, error; };
+    RigImportReport importRig (const juce::File& zipOrFolder);             // message thread
+
     // Does an exported preset ACTUALLY carry embedded audio (vs only bundled refs)? Drives the
     // export heads-up. Keyed on the same pools buildStateTree embeds from, so they never disagree.
     bool         exportEmbedsIR()  const;                                  // live uses an external IR whose bytes are embedded

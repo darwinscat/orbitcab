@@ -5,6 +5,7 @@
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
+#include "RigPack.h"      // orbitcab::looksLikeRigPack — .orbitrig drag-drop interest check
 
 #include <algorithm>
 
@@ -1899,7 +1900,7 @@ void OrbitCabAudioProcessorEditor::importPreset()
 bool OrbitCabAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (const auto& f : files)
-        if (f.endsWithIgnoreCase (".orbitcab"))
+        if (f.endsWithIgnoreCase (".orbitcab") || orbitcab::looksLikeRigPack (juce::File (f)))
             return true;
     return false;
 }
@@ -1907,11 +1908,40 @@ bool OrbitCabAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArr
 void OrbitCabAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
 {
     for (const auto& f : files)
+    {
         if (f.endsWithIgnoreCase (".orbitcab"))
         {
             loadPresetFile (juce::File (f));   // updatePresetDisplay reflects the dropped preset's name
             break;
         }
+        if (orbitcab::looksLikeRigPack (juce::File (f)))
+        {
+            importRigPack (juce::File (f));
+            break;
+        }
+    }
+}
+
+// Install a dropped/picked .orbitrig pack and reflect it: models land slot-routed in the preamp /
+// poweramp libraries (processor), both selectors rescan, and the user hears what happened.
+void OrbitCabAudioProcessorEditor::importRigPack (const juce::File& pack)
+{
+    const auto rep = processorRef.importRig (pack);
+    if (rep.installed > 0)
+    {
+        rebuildPreampSelector();
+        updatePreampRow();
+        rebuildAmpSelector();      // a pack may carry poweramp captures (slot-routed)
+        updateAmpRow();
+    }
+    const auto title = rep.rigName.isNotEmpty() ? rep.rigName : pack.getFileNameWithoutExtension();
+    juce::NativeMessageBox::showMessageBoxAsync (
+        rep.installed > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
+        "Import rig",
+        rep.error.isNotEmpty()
+            ? rep.error
+            : title + ": installed " + juce::String (rep.installed) + " model(s)"
+              + (rep.failed > 0 ? ", " + juce::String (rep.failed) + " failed" : juce::String()) + ".");
 }
 
 void OrbitCabAudioProcessorEditor::applyDefaultPreset()

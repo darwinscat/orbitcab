@@ -18,7 +18,7 @@ struct PreampManagerTraits
 
     // Wording.
     static constexpr const char* title              = "Preamp library";
-    static constexpr const char* subtitle           = "Models the PREAMP selector lists. Drop .nam files here, or Add\xe2\x80\xa6";
+    static constexpr const char* subtitle           = "Models the PREAMP selector lists. Drop .nam/.namz files or an .orbitrig pack here, or Add\xe2\x80\xa6";
     static constexpr const char* addTooltip         = "Copy one or more .nam captures into your preamp library.";
     static constexpr const char* revealTooltipStart = "Open the per-machine preamp folder in ";
     static constexpr const char* getTooltip         = "Open tone3000.com to download preamp captures (.nam) you have the right to use.";
@@ -31,6 +31,13 @@ struct PreampManagerTraits
     static void               select      (OrbitCabAudioProcessor& p, const juce::String& id) { p.selectPreamp (id); }
     static juce::File         importModel (OrbitCabAudioProcessor& p, const juce::File& f)    { return p.importPreamp (f); }
     static bool               removeModel (OrbitCabAudioProcessor& p, const juce::String& id) { return p.removePreamp (id); }
+
+    // .orbitrig pack import — LibraryManager detects this hook and grows the "Import rig…" button
+    // + pack drag-drop. The processor slot-routes each model (poweramp captures land next door).
+    static OrbitCabAudioProcessor::RigImportReport importRig (OrbitCabAudioProcessor& p, const juce::File& f)
+    {
+        return p.importRig (f);
+    }
 
     // A compact descriptor of the variant's position in the device matrix ("Green · 12h · boost"),
     // pre-computed by PreampRig::build from the metadata (or the legacy filename grammar). Empty →
