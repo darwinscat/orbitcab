@@ -5,6 +5,7 @@
 #include "IRLibrary.h"    // bundled-IR enumeration (shared with the processor)
 #include "BinaryData.h"
 #include "core/AmpEq.h"   // cab::EqParams + cab::AmpEq::describe — feed the live EQ curve
+#include "RigPack.h"      // orbitcab::looksLikeRigPack — .orbitrig drag-drop interest check
 
 #include <algorithm>
 
@@ -304,64 +305,13 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
 
     addChildComponent (preampTubeDisplay);   // device glyph removed from the preamp strip — kept as a hidden child
 
-    // Contextual channel switch — shown only for the channels the selected NAME has (and only when ≥2
-    // exist). Each slot's caption, colour tint and channel value are data-driven in syncPreampSelector
-    // (a slot may be "CH 2" or a colour like "RED" that glows in the unit's channel colour). Param-free,
-    // no self-toggle; clicking a slot selects whatever channel it currently maps to.
-    for (int m = 0; m < 4; ++m)
-    {
-        preampChannelBtn[m].setClickingTogglesState (false);
-        preampChannelBtn[m].setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
-        preampChannelBtn[m].onClick = [this, m] { selectPreampChannel (preampChannelBtnCh[m]); };
-        addChildComponent (preampChannelBtn[m]);
-    }
-
-    // Contextual gain: a horizontal discrete slider snapping to the available "<N>h" positions of the
-    // current name+channel. One-for-one with the poweramp's hour slider, just labelled "gain".
-    // GAIN — an ORANGE discrete rotary (the brand's Slot-B orange, distinct from the violet EQ knobs),
-    // its stops the captured clock positions (7h…17h); the read-out shows the hour. "By the clock".
-    preampGainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    preampGainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);   // value ("12h") drawn in the dial centre
-    preampGainSlider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));
-    preampGainSlider.setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
-    preampGainSlider.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff3a3a40));
-    preampGainSlider.getProperties().set ("clockTicks", true);   // draw clock marks around the dial (one per gain stop)
-    preampGainSlider.setTooltip ("Preamp gain — the knob position the capture was taken at (o'clock).");
-    preampGainSlider.textFromValueFunction = [this] (double v)
-    {
-        const int i = (int) std::lround (v);
-        return juce::isPositiveAndBelow (i, (int) preampGainVals.size()) ? juce::String (preampGainVals[(size_t) i]) + "h" : juce::String();
-    };
-    preampGainSlider.valueFromTextFunction = [] (const juce::String& t) { return (double) t.getIntValue(); };   // unused (read-only)
-    preampGainSlider.onValueChange = [this]
-    {
-        const int i = (int) std::lround (preampGainSlider.getValue());
-        if (juce::isPositiveAndBelow (i, (int) preampGainVals.size()))
-            selectPreampGain (preampGainVals[(size_t) i]);
-    };
-    addChildComponent (preampGainSlider);
-
-    // Contextual boost toggle — shown only when the current name+channel+gain has BOTH an on- and an
-    // off-capture. Param-free (it switches between two captures, like the channel switch).
-    preampBoostBtn.setClickingTogglesState (false);
-    // Boost reads as an aggressive control: hot red — faint when idle, vivid when engaged.
-    {
-        const juce::Colour boostRed (0xffe23b3b);
-        preampBoostBtn.setColour (juce::TextButton::buttonColourId,   boostRed.withMultipliedSaturation (0.6f).withMultipliedBrightness (0.4f));
-        preampBoostBtn.setColour (juce::TextButton::buttonOnColourId, boostRed);
-    }
-    preampBoostBtn.setTooltip ("Boost — switch to the boosted (or clean) capture of this preamp.");
-    preampBoostBtn.onClick = [this]
-    {
-        if (auto* cur = preampSel.entryById (processorRef.selectedPreampId()))
-            selectPreampBoost (! cur->boost);
-    };
-    addChildComponent (preampBoostBtn);
+    // The contextual control widgets (channel radios / gain dial / boost toggle / generic switches)
+    // are built DYNAMICALLY from the selected device's control list — see rebuildPreampControls().
 
     // NAME picker — ONE combo listing model families and one-off singletons, grouped Factory / User.
-    // Picking a family resolves to its current channel/gain/boost variant (the contextual controls to the
-    // right then refine it); picking a singleton selects that capture directly. preampBoxTargets maps each
-    // 1-based item id to {isFamily, name|id}.
+    // Picking a family resolves to its closest captured variant (the contextual controls to the
+    // right then refine it); picking a singleton selects that capture directly. preampBoxTargets maps
+    // each 1-based item id to {isDevice, deviceKey|id}.
     preampBox.setTextWhenNothingSelected (juce::String::fromUTF8 ("Preamp\xe2\x80\xa6"));
     preampBox.setTooltip ("Preamp model — Factory (embedded) and your User captures.");
     preampBox.onChange = [this]
@@ -369,7 +319,7 @@ OrbitCabAudioProcessorEditor::OrbitCabAudioProcessorEditor (OrbitCabAudioProcess
         const int idx = preampBox.getSelectedId() - 1;            // item id (1-based) → preampBoxTargets index
         if (! juce::isPositiveAndBelow (idx, (int) preampBoxTargets.size())) return;
         const auto& t = preampBoxTargets[(size_t) idx];
-        if (t.first) selectPreampName (t.second);                 // a family → keep channel/gain/boost if they exist there
+        if (t.first) selectPreampDevice (t.second);               // a device → keep matching control values
         else { processorRef.selectPreamp (t.second); syncPreampSelector(); }   // a singleton's entry id
     };
     addChildComponent (preampBox);
@@ -1217,13 +1167,15 @@ void OrbitCabAudioProcessorEditor::selectTubeTopo (bool singleEnded)
 
 void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
 {
-    preampSel.lib = processorRef.preampLibrary();   // factory (PreampBinaryData) + user (preampDir), merged
-    hasPreamps    = ! preampSel.lib.empty() || processorRef.selectedPreampId().isNotEmpty();   // restored/pooled model shows even with an empty local library
+    preampRig  = processorRef.preampRig();   // factory (PreampBinaryData) + user (preampDir), metadata-first
+    hasPreamps = ! preampRig.entries.empty() || processorRef.selectedPreampId().isNotEmpty();   // restored/pooled model shows even with an empty local library
+    preampCtlSignature.clear();              // the widget groups re-shape against the fresh model
 
-    // Unified NAME combo: model families (a name shared by ≥2 captures) + one-off singletons, split into
-    // Factory and User sections. preampBoxTargets[itemId-1] records what each row selects:
-    //   {true,  name} → a family  (selecting it resolves to its current channel/gain/boost variant)
-    //   {false, id}   → a singleton entry (selected directly)
+    // Unified NAME combo: DEVICES (≥2 captures → a family with contextual controls) + one-off
+    // singletons, split into Factory and User sections. preampBoxTargets[itemId-1] records what each
+    // row selects:
+    //   {true,  deviceKey} → a device (selecting it resolves to its closest captured variant)
+    //   {false, id}        → a singleton entry (selected directly)
     preampBox.clear (juce::dontSendNotification);
     preampBoxTargets.clear();
     preampItemDevice.clear();
@@ -1234,42 +1186,48 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
         if (! spec.empty())
             preampItemDevice[itemText] = std::move (spec);
     };
-    auto repIdForName = [this] (const juce::String& nm) -> juce::String
+    auto firstId = [] (const namz::rig::Device& d) -> juce::String
     {
-        for (const auto& e : preampSel.lib) if (e.name == nm) return e.id;
-        return {};
+        return d.files.empty() ? juce::String()
+                               : juce::String (juce::CharPointer_UTF8 (d.files.front().id.c_str()));
     };
-    const auto groups = preampSel.groupNames();   // family names, first-seen order
-
-    auto familyIsFactory = [this] (const juce::String& nm)
+    auto displayName = [this, &firstId] (const namz::rig::Device& d) -> juce::String
     {
-        for (const auto& e : preampSel.lib) if (e.name == nm) return e.factory;   // a family's source = its first variant's
-        return true;
+        const auto* e = preampRig.entryById (firstId (d));   // entry name = family (base fallback)
+        return e != nullptr ? e->name : juce::String (juce::CharPointer_UTF8 (d.family.c_str()));
+    };
+    auto deviceIsFactory = [this, &firstId] (const namz::rig::Device& d)
+    {
+        const auto* e = preampRig.entryById (firstId (d));   // a device's source = its first file's
+        return e == nullptr || e->factory;
     };
     // Names treated as "clean"/near-transparent front-ends: curated to the BOTTOM next to BYPASS rather
     // than listed among the voiced amp models (they colour almost nothing). "ISA Studio Pre" = Focusrite
     // ISA Two studio pre — essentially flat. Prefix-matched so any ISA* label lands here. Singletons.
     auto isCleanName = [] (const juce::String& nm) { return preampNameIsClean (nm); };
 
-    auto addSection = [this, &groups, &familyIsFactory, &isCleanName, &storeDevice, &repIdForName] (bool factory, const char* header)
+    auto addSection = [&] (bool factory, const char* header)
     {
         bool wroteHeader = false;
         auto ensureHeader = [&] { if (! wroteHeader) { preampBox.addSectionHeading (header); wroteHeader = true; } };
-        for (const auto& nm : groups)
-            if (familyIsFactory (nm) == factory)
+        for (const auto& d : preampRig.devices)
+            if (preampRig.isGroup (d) && deviceIsFactory (d) == factory)
             {
                 ensureHeader();
-                preampBoxTargets.push_back ({ true, nm });
+                const auto nm = displayName (d);
+                preampBoxTargets.push_back ({ true, preampRig.deviceKey (d) });
                 preampBox.addItem (nm, (int) preampBoxTargets.size());
-                storeDevice (nm, repIdForName (nm));
+                storeDevice (nm, firstId (d));
             }
-        for (const auto& e : preampSel.lib)
-            if (e.factory == factory && ! preampSel.isGroupName (e.name) && ! isCleanName (e.name))
+        for (const auto& d : preampRig.devices)
+            if (! preampRig.isGroup (d) && deviceIsFactory (d) == factory
+                && ! isCleanName (displayName (d)) && ! d.files.empty())
             {
                 ensureHeader();
-                preampBoxTargets.push_back ({ false, e.id });
-                preampBox.addItem (e.name, (int) preampBoxTargets.size());
-                storeDevice (e.name, e.id);
+                const auto nm = displayName (d);
+                preampBoxTargets.push_back ({ false, firstId (d) });
+                preampBox.addItem (nm, (int) preampBoxTargets.size());
+                storeDevice (nm, firstId (d));
             }
     };
     addSection (true,  "Factory");
@@ -1281,12 +1239,13 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     // a standalone EQ (IR cab + tone). Sentinel id "bypass" (handled in applyPreamp).
     if (preampBox.getNumItems() > 0)
         preampBox.addSeparator();
-    for (const auto& e : preampSel.lib)
-        if (isCleanName (e.name))
+    for (const auto& d : preampRig.devices)
+        if (! preampRig.isGroup (d) && ! d.files.empty() && isCleanName (displayName (d)))
         {
-            preampBoxTargets.push_back ({ false, e.id });
-            preampBox.addItem (e.name, (int) preampBoxTargets.size());
-            storeDevice (e.name, e.id);
+            const auto nm = displayName (d);
+            preampBoxTargets.push_back ({ false, firstId (d) });
+            preampBox.addItem (nm, (int) preampBoxTargets.size());
+            storeDevice (nm, firstId (d));
         }
     preampBoxTargets.push_back ({ false, "bypass" });
     preampBox.addItem (juce::String::fromUTF8 ("BYPASS \xe2\x80\x94 EQ only"), (int) preampBoxTargets.size());
@@ -1294,49 +1253,140 @@ void OrbitCabAudioProcessorEditor::rebuildPreampSelector()
     preampPowerBtn.setVisible (hasPreamps);
 }
 
-// Each select* resolves a single-dimension change to a new id via the model, then commits + re-syncs.
-void OrbitCabAudioProcessorEditor::selectPreampName (const juce::String& name)
+// Each select* resolves a device/control change to a new id via the model, then commits + re-syncs.
+void OrbitCabAudioProcessorEditor::selectPreampDevice (const juce::String& deviceKey)
 {
-    const auto id = preampSel.resolveName (processorRef.selectedPreampId(), name);
+    const auto id = preampRig.resolveDevice (processorRef.selectedPreampId(),
+                                            preampRig.deviceIndexForKey (deviceKey));
     if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
 }
 
-void OrbitCabAudioProcessorEditor::selectPreampChannel (int channel)
+void OrbitCabAudioProcessorEditor::selectPreampControl (const juce::String& control, const juce::String& value)
 {
-    const auto id = preampSel.resolveChannel (processorRef.selectedPreampId(), channel);
-    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+    const auto id = preampRig.resolveControl (processorRef.selectedPreampId(), control, value);
+    if (id.isNotEmpty()) processorRef.selectPreamp (id);
+    syncPreampSelector();   // a sparse miss ("" — no capture carries that value) snaps the widgets back
 }
 
-void OrbitCabAudioProcessorEditor::selectPreampGain (int hours)
+// (Re)create the dynamic widget groups for a new control SHAPE (device switch / library rebuild).
+// One group per visible control, in capture order; the widget kind follows the control's role.
+// Values-only changes never land here (syncPreampSelector re-checks the shape signature first), so
+// a dial drag can't delete the slider under its own gesture.
+void OrbitCabAudioProcessorEditor::rebuildPreampControls (const orbitcab::PreampRig::View& v)
 {
-    const auto id = preampSel.resolveGain (processorRef.selectedPreampId(), hours);
-    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
+    preampCtls.clear();
+    for (const auto& cv : v.controls)
+    {
+        if (! cv.visible)
+            continue;
+        auto ctl = std::make_unique<PreampCtl>();
+        ctl->name   = cv.name;
+        ctl->role   = cv.role;
+        ctl->values = cv.values;
+
+        if (cv.role == namz::rig::Role::Gain)
+        {
+            // GAIN — an ORANGE discrete rotary (the brand's Slot-B orange, distinct from the violet EQ
+            // knobs), its stops the captured positions ("07h"…"17h" — or whatever the capturer wrote);
+            // the read-out shows the stop's value verbatim in the dial centre. "By the clock".
+            auto dial = std::make_unique<juce::Slider>();
+            dial->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            dial->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            dial->setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (OrbitCabLookAndFeel::kAccentB));
+            dial->setColour (juce::Slider::thumbColourId,            juce::Colour (OrbitCabLookAndFeel::kAccentB));
+            dial->setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff3a3a40));
+            dial->getProperties().set ("clockTicks", true);   // clock marks around the dial (one per stop)
+            dial->setTooltip ("Preamp " + ctl->name + " — the knob position the capture was taken at.");
+            dial->setRange (0.0, (double) juce::jmax (1, ctl->values.size() - 1), 1.0);
+            dial->textFromValueFunction = [c = ctl.get()] (double val)
+            {
+                const int i = (int) std::lround (val);
+                return juce::isPositiveAndBelow (i, c->values.size()) ? c->values[i] : juce::String();
+            };
+            dial->valueFromTextFunction = [] (const juce::String& t) { return (double) t.getIntValue(); };   // unused (read-only)
+            dial->onValueChange = [this, c = ctl.get()]
+            {
+                const int i = (int) std::lround (c->dial->getValue());
+                if (juce::isPositiveAndBelow (i, c->values.size()))
+                    selectPreampControl (c->name, c->values[i]);
+            };
+            addChildComponent (*dial);
+            ctl->dial = std::move (dial);
+        }
+        else if (cv.role == namz::rig::Role::Boost)
+        {
+            // Boost reads as an aggressive control: hot red — faint when idle, vivid when engaged.
+            // Param-free (it switches between two captures); the click selects the OTHER value.
+            auto btn = std::make_unique<juce::TextButton> (ctl->name.toUpperCase());
+            btn->setClickingTogglesState (false);
+            const juce::Colour boostRed (0xffe23b3b);
+            btn->setColour (juce::TextButton::buttonColourId,   boostRed.withMultipliedSaturation (0.6f).withMultipliedBrightness (0.4f));
+            btn->setColour (juce::TextButton::buttonOnColourId, boostRed);
+            btn->setTooltip ("Boost — switch to the boosted (or clean) capture of this preamp.");
+            btn->onClick = [this, c = ctl.get()]
+            {
+                juce::String on, off;   // first truthy / first falsy value of the control's pair
+                for (const auto& val : c->values)
+                {
+                    auto& slot = orbitcab::rigdetail::isTruthyValue (val) ? on : off;
+                    if (slot.isEmpty())
+                        slot = val;
+                }
+                const bool engaged = ! c->btns.empty() && c->btns.front()->getToggleState();
+                const auto target  = engaged ? off : on;
+                if (target.isNotEmpty())
+                    selectPreampControl (c->name, target);
+            };
+            addChildComponent (*btn);
+            ctl->btns.push_back (std::move (btn));
+        }
+        else   // Channel / Topology / Generic — a radio stack, one button per value
+        {
+            if (cv.role != namz::rig::Role::Channel)
+            {
+                // Non-channel stacks carry a small caption naming the switch ("MODE", "ULTRA-LO", …) —
+                // a channel stack is self-explanatory (its buttons are the channel names/colours).
+                ctl->caption.setText (ctl->name.toUpperCase(), juce::dontSendNotification);
+                ctl->caption.setJustificationType (juce::Justification::centred);
+                ctl->caption.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+                ctl->caption.setColour (juce::Label::textColourId, juce::Colour (0xff8a8a92));
+                ctl->caption.setInterceptsMouseClicks (false, false);
+                addChildComponent (ctl->caption);
+            }
+            for (const auto& val : cv.values)
+            {
+                auto btn = std::make_unique<juce::TextButton>();
+                btn->setClickingTogglesState (false);
+                btn->setColour (juce::TextButton::buttonOnColourId, juce::Colour (OrbitCabLookAndFeel::kAccent));
+                btn->onClick = [this, c = ctl.get(), val] { selectPreampControl (c->name, val); };
+                addChildComponent (*btn);
+                ctl->btns.push_back (std::move (btn));
+            }
+        }
+        preampCtls.push_back (std::move (ctl));
+    }
 }
 
-void OrbitCabAudioProcessorEditor::selectPreampBoost (bool boost)
-{
-    const auto id = preampSel.resolveBoost (processorRef.selectedPreampId(), boost);
-    if (id.isNotEmpty()) { processorRef.selectPreamp (id); syncPreampSelector(); }
-}
-
-// Reflect the "preampSel" selection onto the whole selector: highlight the name button (or the combo),
-// show the contextual channel switch / gain slider / boost toggle (each only when ≥2 values exist for
-// that dimension), plus the tube. The model decides WHAT to show; this binds it to the widgets.
+// Reflect the "preampSel" selection onto the whole selector: highlight the combo row, (re)shape the
+// dynamic control widgets when the device changed, push each control's current value onto its
+// widget, plus the tube. The model decides WHAT to show; this binds it to the widgets.
 void OrbitCabAudioProcessorEditor::syncPreampSelector()
 {
     preampSyncedId = processorRef.selectedPreampId();
     const bool on  = preampPowerBtn.getToggleState();
-    auto* cur = preampSel.entryById (preampSyncedId);
-    const auto v = preampSel.viewFor (preampSyncedId);
+    auto* cur = preampRig.entryById (preampSyncedId);
+    const auto v = preampRig.viewFor (preampSyncedId);
+    const auto* dev = v.deviceIndex >= 0 ? &preampRig.devices[(size_t) v.deviceIndex] : nullptr;
+    const auto devKey = dev != nullptr ? preampRig.deviceKey (*dev) : juce::String();
 
-    // unified NAME combo — reflect (or clear) the selection: a family selection matches its {true,name}
-    // target row, a singleton its {false,id} row, BYPASS its {false,"bypass"} sentinel row.
+    // unified NAME combo — reflect (or clear) the selection: a device selection matches its
+    // {true,deviceKey} target row, a singleton its {false,id} row, BYPASS its {false,"bypass"} row.
     int selItem = 0;
     for (int i = 0; i < (int) preampBoxTargets.size(); ++i)
     {
         const auto& t = preampBoxTargets[(size_t) i];
         const bool hit = preampSyncedId == "bypass" ? (! t.first && t.second == "bypass")
-                       : cur != nullptr ? (v.group ? (t.first && t.second == cur->name)
+                       : cur != nullptr ? (v.group ? (t.first && t.second == devKey)
                                                     : (! t.first && t.second == cur->id))
                        : false;
         if (hit) { selItem = i + 1; break; }
@@ -1370,57 +1420,75 @@ void OrbitCabAudioProcessorEditor::syncPreampSelector()
         preampDeviceStrip.setVisible (on && ! spec.empty());
     }
 
-    // contextual channel switch — one button per REAL channel the name has (channel 0 = "none" gets no
-    // button), shown only when ≥2 exist. Each slot is captioned + tinted from that channel's entry, so a
-    // colour channel (e.g. a red/green amp) reads and glows in its own colour; chN stays accent.
-    std::vector<int> chans;
-    for (int c : v.channels) if (c > 0) chans.push_back (c);
-    const bool showChannels = on && v.showChannels;
-    for (int m = 0; m < 4; ++m)
+    // Dynamic contextual controls — rebuild the widget groups only when the SHAPE changed (device /
+    // controls / values), then push the current values in place. A value-only sync (knob turn)
+    // keeps the existing widgets, so the slider under a drag gesture is never deleted.
+    juce::String sig = devKey;
+    for (const auto& cv : v.controls)
+        if (cv.visible)
+            sig << "|" << cv.name << ":" << (int) cv.role << "=" << cv.values.joinIntoString (",");
+    if (sig != preampCtlSignature)
     {
-        auto& btn = preampChannelBtn[m];
-        const bool used = m < (int) chans.size();
-        if (used)
+        rebuildPreampControls (v);
+        preampCtlSignature = sig;
+    }
+
+    const bool showCtls = on && v.group;
+    for (auto& cp : preampCtls)
+    {
+        auto* c = cp.get();
+        const orbitcab::PreampRig::ControlView* cv = nullptr;
+        for (const auto& x : v.controls) if (x.name == c->name) { cv = &x; break; }
+        const juce::String current = cv != nullptr ? cv->current : juce::String();
+
+        if (c->dial != nullptr)   // gain — snap the dial to the current stop
         {
-            const int channel = chans[(size_t) m];
-            preampChannelBtnCh[m] = channel;
-            const auto* e = cur != nullptr ? preampSel.anyEntryFor (cur->name, channel) : nullptr;
-
-            // Caption = the channel's TONE from the model metadata (CLEAN / CRUNCH / HI-GAIN), read
-            // cheaply from the .namz header; fall back to the colour word, then "Ch N".
-            const juce::String tone = (e != nullptr) ? processorRef.preampMetaFor (e->id).getValue ("tone_type", {})
-                                                     : juce::String();
-            const juce::String label = tone.isNotEmpty()                             ? tone
-                                     : (e != nullptr && e->channelLabel.isNotEmpty()) ? e->channelLabel
-                                     :                                                  ("Ch " + juce::String (channel));
-            btn.setButtonText (label.toUpperCase());
-
-            // Tint by the channel colour: faint when idle, vivid when active (green / orange / blue / red).
-            const juce::Colour chCol = (e != nullptr && e->channelColour != 0) ? juce::Colour (e->channelColour)
-                                                                               : juce::Colour (OrbitCabLookAndFeel::kAccent);
-            btn.setColour (juce::TextButton::buttonColourId,   chCol.withMultipliedSaturation (0.78f).withMultipliedBrightness (0.62f));
-            btn.setColour (juce::TextButton::buttonOnColourId, chCol);
-            btn.setTooltip ((e != nullptr && e->channelLabel.isNotEmpty() ? e->channelLabel + " channel" : juce::String ("Channel"))
-                            + (tone.isNotEmpty() ? juce::String (" — ") + tone : juce::String()));
-            btn.setToggleState (v.currentChannel == channel, juce::dontSendNotification);
+            const int idx = c->values.indexOf (current);
+            c->dial->setValue (idx >= 0 ? idx : 0, juce::dontSendNotification);
+            c->dial->setVisible (showCtls);
         }
-        btn.setVisible (showChannels && used);
+        else if (c->role == namz::rig::Role::Boost)
+        {
+            if (! c->btns.empty())
+            {
+                c->btns.front()->setToggleState (orbitcab::rigdetail::isTruthyValue (current), juce::dontSendNotification);
+                c->btns.front()->setVisible (showCtls);
+            }
+        }
+        else   // radio stack — caption + tint + tone caption per value (channels read their colour)
+        {
+            c->caption.setVisible (showCtls && c->caption.getText().isNotEmpty());
+            for (int i = 0; i < (int) c->btns.size() && i < c->values.size(); ++i)
+            {
+                auto& btn = *c->btns[(size_t) i];
+                const auto val = c->values[i];
+                if (c->role == namz::rig::Role::Channel)
+                {
+                    // Caption = the channel's TONE from the representative capture's metadata
+                    // (CLEAN / CRUNCH / HI-GAIN); fall back to the channel's own label ("Green",
+                    // "Ch 2"). Tint: the colour word's glow, accent for plain chN/word values.
+                    const auto repId = dev != nullptr ? preampRig.fileForValue (*dev, c->name, val) : juce::String();
+                    const auto tone  = repId.isNotEmpty() ? processorRef.preampMetaFor (repId).getValue ("tone_type", {})
+                                                          : juce::String();
+                    const auto chLabel = orbitcab::channelValueLabel (val);
+                    btn.setButtonText ((tone.isNotEmpty() ? tone : chLabel).toUpperCase());
+                    const auto argb  = orbitcab::channelValueColour (val);
+                    const juce::Colour chCol = argb != 0 ? juce::Colour (argb)
+                                                         : juce::Colour (OrbitCabLookAndFeel::kAccent);
+                    btn.setColour (juce::TextButton::buttonColourId,   chCol.withMultipliedSaturation (0.78f).withMultipliedBrightness (0.62f));
+                    btn.setColour (juce::TextButton::buttonOnColourId, chCol);
+                    btn.setTooltip (chLabel + " channel" + (tone.isNotEmpty() ? " — " + tone : juce::String()));
+                }
+                else
+                {
+                    btn.setButtonText (val.toUpperCase());
+                    btn.setTooltip (c->name + " — " + val);
+                }
+                btn.setToggleState (val == current, juce::dontSendNotification);
+                btn.setVisible (showCtls);
+            }
+        }
     }
-
-    // contextual gain slider — its discrete stops are this name+channel's positions (hidden when <2)
-    preampGainVals = v.showGain ? v.gains : std::vector<int>{};
-    if (preampGainVals.size() >= 2)
-    {
-        preampGainSlider.setRange (0.0, (double) (preampGainVals.size() - 1), 1.0);   // snaps to each stop
-        const int idx = (int) (std::find (preampGainVals.begin(), preampGainVals.end(), v.currentGain) - preampGainVals.begin());
-        preampGainSlider.setValue (juce::isPositiveAndBelow (idx, (int) preampGainVals.size()) ? idx : 0,
-                                   juce::dontSendNotification);
-    }
-    preampGainSlider.setVisible (on && v.showGain);
-
-    // contextual boost toggle — only when both an on- and an off-capture exist for name+channel+gain
-    preampBoostBtn.setVisible (on && v.showBoost);
-    preampBoostBtn.setToggleState (v.currentBoost, juce::dontSendNotification);
 
     // tube: a single slim preamp tube (12AX7-ish), glowing when on
     preampTubeDisplay.setSelection (2 /*slim silhouette*/, cur != nullptr ? 1 : 0, on);
@@ -1433,7 +1501,7 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     // Same as updateAmpRow: a restored/embedded preamp can be audible with an empty local library, so
     // reveal the UI when EITHER the library has models OR a selection is restored (re-evaluated here so
     // a host state-restore / snapshot / undo reveals it, not only on a library rebuild).
-    hasPreamps = ! preampSel.lib.empty() || processorRef.selectedPreampId().isNotEmpty();
+    hasPreamps = ! preampRig.entries.empty() || processorRef.selectedPreampId().isNotEmpty();
     preampPowerBtn.setVisible (hasPreamps);
 
     const bool on = hasPreamps && preampPowerBtn.getToggleState();
@@ -1447,11 +1515,11 @@ void OrbitCabAudioProcessorEditor::updatePreampRow()
     // the first library entry (never "on but silent"). Explicit ISA preference so the default doesn't
     // ride on library sort order. A restored session that already carries a valid "preampSel" keeps it;
     // "bypass" counts as a real (non-empty) selection, so it is preserved (standalone EQ).
-    if (on && ! preampSel.lib.empty() && processorRef.selectedPreampId().isEmpty())
+    if (on && ! preampRig.entries.empty() && processorRef.selectedPreampId().isEmpty())
     {
-        const auto clean = std::find_if (preampSel.lib.begin(), preampSel.lib.end(),
+        const auto clean = std::find_if (preampRig.entries.begin(), preampRig.entries.end(),
                                          [] (const auto& e) { return preampNameIsClean (e.name); });
-        processorRef.selectPreamp (clean != preampSel.lib.end() ? clean->id : preampSel.lib.front().id);
+        processorRef.selectPreamp (clean != preampRig.entries.end() ? clean->id : preampRig.entries.front().id);
     }
 
     preampTubeDisplay.setShowTubes (showTubesPref);   // "Show tubes" hides the tube but keeps the amp icon
@@ -1832,7 +1900,7 @@ void OrbitCabAudioProcessorEditor::importPreset()
 bool OrbitCabAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (const auto& f : files)
-        if (f.endsWithIgnoreCase (".orbitcab"))
+        if (f.endsWithIgnoreCase (".orbitcab") || orbitcab::looksLikeRigPack (juce::File (f)))
             return true;
     return false;
 }
@@ -1840,11 +1908,40 @@ bool OrbitCabAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArr
 void OrbitCabAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
 {
     for (const auto& f : files)
+    {
         if (f.endsWithIgnoreCase (".orbitcab"))
         {
             loadPresetFile (juce::File (f));   // updatePresetDisplay reflects the dropped preset's name
             break;
         }
+        if (orbitcab::looksLikeRigPack (juce::File (f)))
+        {
+            importRigPack (juce::File (f));
+            break;
+        }
+    }
+}
+
+// Install a dropped/picked .orbitrig pack and reflect it: models land slot-routed in the preamp /
+// poweramp libraries (processor), both selectors rescan, and the user hears what happened.
+void OrbitCabAudioProcessorEditor::importRigPack (const juce::File& pack)
+{
+    const auto rep = processorRef.importRig (pack);
+    if (rep.installed > 0)
+    {
+        rebuildPreampSelector();
+        updatePreampRow();
+        rebuildAmpSelector();      // a pack may carry poweramp captures (slot-routed)
+        updateAmpRow();
+    }
+    const auto title = rep.rigName.isNotEmpty() ? rep.rigName : pack.getFileNameWithoutExtension();
+    juce::NativeMessageBox::showMessageBoxAsync (
+        rep.installed > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
+        "Import rig",
+        rep.error.isNotEmpty()
+            ? rep.error
+            : title + ": installed " + juce::String (rep.installed) + " model(s)"
+              + (rep.failed > 0 ? ", " + juce::String (rep.failed) + " failed" : juce::String()) + ".");
 }
 
 void OrbitCabAudioProcessorEditor::applyDefaultPreset()
@@ -2288,30 +2385,56 @@ void OrbitCabAudioProcessorEditor::resized()
             }
             inner.removeFromLeft (12);
 
-            // GAIN dial with BOOST stacked directly UNDER it (one column) — orange rotary; square cell keeps it round
-            if (preampGainSlider.isVisible())
+            // Dynamic contextual controls, capture order, left → right. A visible GAIN dial pairs
+            // the boost toggle directly UNDER itself (the classic one-column look); a boost with no
+            // dial stands on its own; every other control is a vertical radio stack (channels get
+            // the tone-caption width, generic switches a caption line on top).
+            auto* dialCtl  = [this]() -> PreampCtl* {
+                for (auto& c : preampCtls) if (c->dial != nullptr && c->dial->isVisible()) return c.get();
+                return nullptr;
+            }();
+            auto* boostCtl = [this]() -> PreampCtl* {
+                for (auto& c : preampCtls)
+                    if (c->role == namz::rig::Role::Boost && ! c->btns.empty() && c->btns.front()->isVisible())
+                        return c.get();
+                return nullptr;
+            }();
+            for (auto& cp : preampCtls)
             {
-                auto gcol = inner.removeFromLeft (84);
-                if (preampBoostBtn.isVisible())
-                    preampBoostBtn.setBounds (gcol.removeFromBottom (24).withSizeKeepingCentre (74, 22));
-                preampGainSlider.setBounds (gcol.withSizeKeepingCentre (84, juce::jmin (gcol.getHeight(), 84)));
-                inner.removeFromLeft (10);
-            }
-            else if (preampBoostBtn.isVisible())   // no gain dial for this preamp → boost stands on its own
-            {
-                preampBoostBtn.setBounds (inner.removeFromLeft (74).withSizeKeepingCentre (74, 24));
-                inner.removeFromLeft (10);
-            }
-
-            // CHANNEL — vertical radio stack of the visible channel buttons (red/green glow)
-            int nc = 0; for (auto& b : preampChannelBtn) if (b.isVisible()) ++nc;
-            if (nc > 0)
-            {
-                auto colArea = inner.removeFromLeft (66);   // fits the tone captions (CLEAN / CRUNCH / HI-GAIN)
-                const int bh = juce::jlimit (18, 28, (colArea.getHeight() - (nc - 1) * 4) / nc);
-                auto stack = colArea.withSizeKeepingCentre (66, nc * bh + (nc - 1) * 4);
-                for (auto& b : preampChannelBtn) if (b.isVisible()) { b.setBounds (stack.removeFromTop (bh)); stack.removeFromTop (4); }
-                inner.removeFromLeft (10);
+                auto* c = cp.get();
+                if (c->dial != nullptr)
+                {
+                    if (! c->dial->isVisible())
+                        continue;
+                    auto gcol = inner.removeFromLeft (84);   // square cell keeps the rotary round
+                    if (c == dialCtl && boostCtl != nullptr)
+                        boostCtl->btns.front()->setBounds (gcol.removeFromBottom (24).withSizeKeepingCentre (74, 22));
+                    c->dial->setBounds (gcol.withSizeKeepingCentre (84, juce::jmin (gcol.getHeight(), 84)));
+                    inner.removeFromLeft (10);
+                }
+                else if (c->role == namz::rig::Role::Boost)
+                {
+                    if (c != boostCtl || dialCtl != nullptr)   // hidden, or already stacked under the dial
+                        continue;
+                    c->btns.front()->setBounds (inner.removeFromLeft (74).withSizeKeepingCentre (74, 24));
+                    inner.removeFromLeft (10);
+                }
+                else   // radio stack (channel / topology / generic)
+                {
+                    int n = 0; for (auto& b : c->btns) if (b->isVisible()) ++n;
+                    if (n == 0)
+                        continue;
+                    const int  w    = c->role == namz::rig::Role::Channel ? 66 : 72;   // 66 fits CLEAN/CRUNCH/HI-GAIN
+                    const int  capH = c->caption.isVisible() ? 12 : 0;
+                    auto colArea = inner.removeFromLeft (w);
+                    const int bh = juce::jlimit (18, 28, (colArea.getHeight() - capH - (n - 1) * 4) / n);
+                    auto stack = colArea.withSizeKeepingCentre (w, capH + n * bh + (n - 1) * 4);
+                    if (capH > 0)
+                        c->caption.setBounds (stack.removeFromTop (capH));
+                    for (auto& b : c->btns)
+                        if (b->isVisible()) { b->setBounds (stack.removeFromTop (bh)); stack.removeFromTop (4); }
+                    inner.removeFromLeft (10);
+                }
             }
         }
 

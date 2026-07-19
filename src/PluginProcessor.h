@@ -12,6 +12,7 @@
 #include "AppPreferences.h"
 #include "PowerampLibrary.h"
 #include "PreampLibrary.h"
+#include "PreampRig.h"
 #include "UpdateChecker.h"
 #include "Metadata.h"
 #include "StateModel.h"
@@ -185,12 +186,25 @@ public:
     // cab), gated by `preampOn`. Mirrors the poweramp exactly — a separate merged factory
     // (PreampBinaryData) + user (preampDir) library, the chosen entry's stable id persisted as
     // "preampSel", loaded off the audio thread (applyPreamp). Editor hides the UI when empty.
-    std::vector<orbitcab::PreampEntry> preampLibrary() const;              // factory + user, merged + sorted
-    bool         hasAnyPreamps() const { return ! preampLibrary().empty(); }
+    // The DEVICE model (families, controls, knob positions) is metadata-first via namz::rig:
+    // preampRig() reads each .namz header (ocnam::readMeta — cheap, no weight inflate) and falls
+    // back to the legacy filename grammar for files without metadata.
+    orbitcab::PreampRig preampRig() const;                                 // devices + display entries
+    std::vector<orbitcab::PreampEntry> preampLibrary() const { return preampRig().entries; }
+    bool         hasAnyPreamps() const { return ! preampSources().empty(); }
     juce::String selectedPreampId() const { return apvts.state.getProperty ("preampSel", juce::String()).toString(); }
     void         selectPreamp (const juce::String& id);                    // set "preampSel" + reload + bump (message thread)
     juce::File   importPreamp (const juce::File& src);                     // copy a .nam into preampDir; {} on failure
     bool         removePreamp (const juce::String& id);                    // delete a USER model (factory: no-op → false)
+
+    // .orbitrig pack import — the capture-side counterpart writes one (see namz/NAMZ-FORMAT.md
+    // "The .orbitrig pack"): a zip (Device.orbitrig.zip) or an unpacked pack folder. Every .namz
+    // inside installs into the per-machine library, SLOT-routed by its header (`slot`/`gear_type`
+    // "poweramp" → powerampDir, everything else is a pre-slot device → preampDir). Same-name files
+    // are overwritten — re-importing an updated pack refreshes its models. rig.json (the manifest)
+    // is read for the pack's display name; the model files are authoritative either way.
+    struct RigImportReport { int installed = 0, failed = 0; juce::String rigName, error; };
+    RigImportReport importRig (const juce::File& zipOrFolder);             // message thread
 
     // Does an exported preset ACTUALLY carry embedded audio (vs only bundled refs)? Drives the
     // export heads-up. Keyed on the same pools buildStateTree embeds from, so they never disagree.
@@ -485,6 +499,11 @@ private:
     // so a select-then-save before the reload poll still embeds the .nam).
     juce::MemoryBlock powerampBytesFor (const juce::String& id) const;
     juce::MemoryBlock preampBytesFor   (const juce::String& id) const;
+
+    // The raw preamp FILE list (factory enumeration + user-folder scan), metadata NOT yet read —
+    // the cheap id → file/factory map behind preampBytesFor/removePreamp. preampRig() reads each
+    // file's .namz header on top of this before building devices.
+    std::vector<orbitcab::PreampSource> preampSources() const;
 
 public:
     // Cheap display-metadata for a preamp id (tone_type / boost / gear_* / modeled_by …), read from

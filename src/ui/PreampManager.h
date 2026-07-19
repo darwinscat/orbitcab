@@ -18,7 +18,7 @@ struct PreampManagerTraits
 
     // Wording.
     static constexpr const char* title              = "Preamp library";
-    static constexpr const char* subtitle           = "Models the PREAMP selector lists. Drop .nam files here, or Add\xe2\x80\xa6";
+    static constexpr const char* subtitle           = "Models the PREAMP selector lists. Drop .nam/.namz files or an .orbitrig pack here, or Add\xe2\x80\xa6";
     static constexpr const char* addTooltip         = "Copy one or more .nam captures into your preamp library.";
     static constexpr const char* revealTooltipStart = "Open the per-machine preamp folder in ";
     static constexpr const char* getTooltip         = "Open tone3000.com to download preamp captures (.nam) you have the right to use.";
@@ -32,15 +32,19 @@ struct PreampManagerTraits
     static juce::File         importModel (OrbitCabAudioProcessor& p, const juce::File& f)    { return p.importPreamp (f); }
     static bool               removeModel (OrbitCabAudioProcessor& p, const juce::String& id) { return p.removePreamp (id); }
 
-    // A compact descriptor of the variant's parsed sub-dimensions (channel / gain / boost), shown
-    // as faint text to the right of the name. Empty → an em-dash (a plain, single-variant model).
+    // .orbitrig pack import — LibraryManager detects this hook and grows the "Import rig…" button
+    // + pack drag-drop. The processor slot-routes each model (poweramp captures land next door).
+    static OrbitCabAudioProcessor::RigImportReport importRig (OrbitCabAudioProcessor& p, const juce::File& f)
+    {
+        return p.importRig (f);
+    }
+
+    // A compact descriptor of the variant's position in the device matrix ("Green · 12h · boost"),
+    // pre-computed by PreampRig::build from the metadata (or the legacy filename grammar). Empty →
+    // an em-dash (a plain, single-variant model).
     static juce::String describeVariant (const Entry& e)
     {
-        juce::StringArray parts;
-        if (e.channel > 0) parts.add (e.channelLabel.isNotEmpty() ? e.channelLabel : "ch" + juce::String (e.channel));
-        if (e.hours   > 0) parts.add (juce::String (e.hours) + "h");
-        if (e.boost)       parts.add ("boost");
-        return parts.isEmpty() ? juce::String::fromUTF8 ("\xe2\x80\x94") : parts.joinIntoString (" ");
+        return e.variant.isEmpty() ? juce::String::fromUTF8 ("\xe2\x80\x94") : e.variant;
     }
 
     // Row badge: the variant descriptor (channel / gain / boost).

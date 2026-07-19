@@ -22,7 +22,7 @@
 #include "ui/PreampManager.h"
 #include "ui/EqCurve.h"
 #include "ui/PerfBadge.h"
-#include "PreampSelector.h"   // pure resolve/view-model behind the PREAMP row (GUI-free, unit-tested)
+#include "PreampRig.h"        // metadata-first device model behind the PREAMP row (GUI-free, unit-tested)
 #include "PresetManager.h"
 #include "FactoryPresets.h"   // bundled read-only factory presets (combo "Factory" section)
 
@@ -242,33 +242,49 @@ private:
     int  tubeSimRowH() const { return showTubesPref ? 118 : 92; }   // taller than captures: display + type/topo + labelled knobs
 
     // PREAMP (NAM): the SECOND stage's selector — an exact sibling of the poweramp block above,
-    // against the preamp library (channel / gain / boost dimensions instead of PP-SE / hours). Its
-    // revealed row stacks ABOVE the poweramp row (signal order: input → preamp → poweramp → cab).
+    // but METADATA-FIRST: the device model (families, controls, knob positions) comes from
+    // orbitcab::PreampRig / namz::rig, and the row's contextual widgets are built DYNAMICALLY from
+    // the selected device's control list (any names, any values — generic switches included), not
+    // from a fixed channel/gain/boost trio. Its revealed row stacks ABOVE the poweramp row
+    // (signal order: input → preamp → poweramp → cab).
     juce::ToggleButton    preampPowerBtn { "PREAMP" };
     std::unique_ptr<BAtt> preampPowerAtt;
     TubeDisplay           preampTubeDisplay;
-    orbitcab::PreampSelector                       preampSel;          // pure resolve/view-model (owns the merged library snapshot)
+    orbitcab::PreampRig   preampRig;             // devices + display entries (rebuilt on library change)
     orbitcab::ui::PreampMenuLNF preampMenuLnf;   // draws device glyphs in the combo popup (declared BEFORE preampBox → outlives it)
     juce::Label           preampGearLabel;       // ABOVE the combo — "what gear is this" (from metadata gear_make/model)
     juce::ComboBox        preampBox;             // unified NAME picker: families + singletons, grouped Factory / User
     orbitcab::ui::DeviceStrip preampDeviceStrip; // BELOW the combo — N tube / PNP / FET schematic glyphs (from metadata)
     std::map<juce::String, orbitcab::ui::DeviceSpec> preampItemDevice;   // combo item text → device spec (may be hybrid)
-    // What each preampBox item id selects: {true,name} = a model family (→ resolveName); {false,id} = a singleton entry.
+    // What each preampBox item id selects: {true,deviceKey} = a device/family (→ resolveDevice);
+    // {false,id} = a singleton's entry id (selected directly; "bypass" = the sentinel row).
     std::vector<std::pair<bool, juce::String>> preampBoxTargets;   // index = item id - 1
-    juce::TextButton      preampChannelBtn[4];   // contextual channel switch (up to 4; chN or colour-tinted; shown when ≥2 exist) — stacked vertically as radios
-    int                   preampChannelBtnCh[4] {};   // channel value each switch slot currently maps to (set in syncPreampSelector)
-    juce::Slider          preampGainSlider;      // contextual gain — orange discrete rotary over the available <N>h (clock positions)
-    std::vector<int>      preampGainVals;        // gain hour at each stop (sorted; snaps to these)
-    juce::TextButton      preampBoostBtn { "BOOST" };   // contextual boost toggle (shown when both on+off variants exist)
 
-    void rebuildPreampSelector();                // rescan library → groups/singletons → (re)create controls
-    void selectPreampName    (const juce::String& name);   // pick a group (keep channel/gain/boost if they exist there)
-    void selectPreampChannel (int channel);                // switch channel within the current name
-    void selectPreampGain    (int hours);                  // switch gain position within the current name+channel
-    void selectPreampBoost   (bool boost);                 // switch boost within the current name+channel+gain
+    // One dynamically-built widget group per control of the selected device (capture order). The
+    // widget kind follows the control's ROLE: gain → a discrete rotary over the value stops,
+    // boost → one toggle, channel → a tinted radio stack, topology/generic → a captioned radio
+    // stack. Rebuilt only when the SHAPE changes (device/controls/values — preampCtlSignature), so
+    // a drag never deletes the slider under its own gesture; value-only syncs update in place.
+    struct PreampCtl
+    {
+        juce::String      name;                                  // the control's spec name
+        namz::rig::Role   role = namz::rig::Role::Generic;
+        juce::StringArray values;                                // presentation order (= view order)
+        juce::Label       caption;                               // topology/generic stacks only
+        std::vector<std::unique_ptr<juce::TextButton>> btns;     // radio stack / the single boost toggle
+        std::unique_ptr<juce::Slider> dial;                      // gain rotary (one stop per value)
+    };
+    std::vector<std::unique_ptr<PreampCtl>> preampCtls;
+    juce::String preampCtlSignature;             // device key + controls shape of the current widgets
+
+    void rebuildPreampSelector();                // rescan library → devices → combo rows
+    void selectPreampDevice  (const juce::String& deviceKey);          // pick a device (keep matching control values, default the rest)
+    void selectPreampControl (const juce::String& control, const juce::String& value);   // turn ONE control
     void updatePreampRow();                      // show/hide the revealed row + resize the editor
     void syncPreampSelector();                   // reflect "preampSel" → highlight + contextual controls + tubes
-    // (the resolution + visibility policy lives in orbitcab::PreampSelector; these are thin bindings.)
+    void rebuildPreampControls (const orbitcab::PreampRig::View& v);   // (re)create the widget groups for a new shape
+    void importRigPack (const juce::File& pack); // install an .orbitrig zip/folder + rescan both NAM selectors
+    // (the resolution + visibility policy lives in orbitcab::PreampRig; these are thin bindings.)
 
     juce::Rectangle<int>  preampRowBounds;       // painted panel region of the revealed preamp row
     juce::String preampSyncedId;                 // last selection reflected (timer re-syncs only on change)

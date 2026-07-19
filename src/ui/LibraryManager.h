@@ -5,6 +5,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../PluginProcessor.h"
+#include "../RigPack.h"           // orbitcab::looksLikeRigPack — pack drops on a rig-capable stage
 #include "OrbitCabLookAndFeel.h"
 
 #include <functional>
@@ -38,6 +39,11 @@ class LibraryManager final : public juce::Component,
                              public juce::FileDragAndDropTarget
 {
     using Entry = typename Traits::Entry;
+
+    // A stage whose traits expose importRig (the preamp) grows an "Import rig…" button, accepts
+    // .orbitrig pack drops, and widens for the extra toolbar button; the poweramp stays .nam-only.
+    static constexpr bool hasRigImport =
+        requires (OrbitCabAudioProcessor& p, const juce::File& f) { Traits::importRig (p, f); };
 
 public:
     LibraryManager (OrbitCabAudioProcessor& processor, std::function<void()> onLibraryChanged)
@@ -82,6 +88,15 @@ public:
         getBtn.onClick = [this] { Traits::showGetModelsMenu (getBtn); };
         addAndMakeVisible (getBtn);
 
+        if constexpr (hasRigImport)
+        {
+            rigBtn.setButtonText (juce::String::fromUTF8 ("Import rig\xe2\x80\xa6"));
+            rigBtn.setTooltip (juce::String::fromUTF8 (
+                "Install a whole modeled rig \xe2\x80\x94 an .orbitrig.zip pack (or its unpacked folder)."));
+            rigBtn.onClick = [this] { rigClicked(); };
+            addAndMakeVisible (rigBtn);
+        }
+
         rebuild();   // populate rows + size the panel
     }
 
@@ -100,6 +115,11 @@ public:
         revealBtn.setBounds (toolbar.removeFromLeft (104));
         toolbar.removeFromLeft (6);
         getBtn.setBounds    (toolbar.removeFromLeft (100));
+        if constexpr (hasRigImport)
+        {
+            toolbar.removeFromLeft (6);
+            rigBtn.setBounds (toolbar.removeFromLeft (96));
+        }
         r.removeFromBottom (8);
 
         viewport.setBounds (r);
@@ -126,12 +146,18 @@ public:
     }
 
     //==============================================================================
-    // FileDragAndDropTarget — drop .nam files anywhere on the panel to import them.
+    // FileDragAndDropTarget — drop .nam/.namz files anywhere on the panel to import them (and, on
+    // a rig-capable stage, a whole .orbitrig pack — the zip or its unpacked folder).
     bool isInterestedInFileDrag (const juce::StringArray& files) override
     {
         for (const auto& f : files)
+        {
             if (f.endsWithIgnoreCase (".nam") || f.endsWithIgnoreCase (".namz"))
                 return true;
+            if constexpr (hasRigImport)
+                if (isRigPack (juce::File (f)))
+                    return true;
+        }
         return false;
     }
 
@@ -304,11 +330,39 @@ private:
         for (const auto& p : paths)
         {
             const juce::File f (p);
+            if constexpr (hasRigImport)
+                if (isRigPack (f))
+                {
+                    if (Traits::importRig (proc, f).installed > 0)
+                        any = true;
+                    continue;
+                }
             if (f.existsAsFile() && f.hasFileExtension ("nam;namz") && Traits::importModel (proc, f) != juce::File())
                 any = true;
         }
         if (any)
             refresh();                    // editor rebuilds its selector (library grew → the stage's UI appears)
+    }
+
+    static bool isRigPack (const juce::File& f) { return orbitcab::looksLikeRigPack (f); }
+
+    void rigClicked()
+    {
+        // Same FileChooser lifetime contract as addClicked() above. Folders count (the unpacked pack).
+        chooser = std::make_unique<juce::FileChooser> ("Import an .orbitrig pack",
+                                                       juce::File(), "*.zip");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectDirectories,
+            [this] (const juce::FileChooser& fc)
+            {
+                if constexpr (hasRigImport)
+                {
+                    const auto f = fc.getResult();
+                    if (f != juce::File() && Traits::importRig (proc, f).installed > 0)
+                        refresh();
+                }
+            });
     }
 
     void removeId (const juce::String& id)
@@ -318,7 +372,7 @@ private:
     }
 
     //==============================================================================
-    static constexpr int kWidth       = 380;
+    static constexpr int kWidth       = hasRigImport ? 470 : 380;   // the extra toolbar button needs room
     static constexpr int kRowH        = 30;
     static constexpr int kVisibleRows = 7;    // taller libraries scroll inside the viewport
 
@@ -329,7 +383,7 @@ private:
     juce::Viewport   viewport;
     juce::Component  listContent;                  // sized to rows; lives inside the viewport
     std::vector<std::unique_ptr<Row>> rows;
-    juce::TextButton addBtn, revealBtn, getBtn;
+    juce::TextButton addBtn, revealBtn, getBtn, rigBtn;   // rigBtn shows only when hasRigImport
     std::unique_ptr<juce::FileChooser> chooser;
     bool             dragOver = false;
 
