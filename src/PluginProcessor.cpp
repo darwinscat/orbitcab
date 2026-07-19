@@ -873,11 +873,12 @@ juce::MemoryBlock OrbitCabAudioProcessor::powerampBytesFor (const juce::String& 
 // above, against a SEPARATE library (PreampBinaryData factory + preampDir user), the "preampSel"
 // state property, and the engine.*Preamp* forwarders. Message thread.
 //==============================================================================
-std::vector<orbitcab::PreampEntry> OrbitCabAudioProcessor::preampLibrary() const
+std::vector<orbitcab::PreampSource> OrbitCabAudioProcessor::preampSources() const
 {
-    // FACTORY first (embedded .nam in PreampBinaryData — a namespace separate from the poweramp's
-    // BinaryData, so the two factory sets never bleed into each other), then the USER folder.
-    std::vector<orbitcab::PreampEntry> out;
+    // FACTORY first (embedded .nam/.namz in PreampBinaryData — a namespace separate from the
+    // poweramp's BinaryData, so the two factory sets never bleed into each other), then the USER
+    // folder. Metadata stays empty here — preampRig() fills it; byte lookups don't need it.
+    std::vector<orbitcab::PreampSource> out;
 
     for (int i = 0; i < PreampBinaryData::namedResourceListSize; ++i)
     {
@@ -886,23 +887,55 @@ std::vector<orbitcab::PreampEntry> OrbitCabAudioProcessor::preampLibrary() const
         if      (fn.endsWithIgnoreCase (".namz")) base = fn.dropLastCharacters (5);
         else if (fn.endsWithIgnoreCase (".nam"))  base = fn.dropLastCharacters (4);
         else                                      continue;
-        orbitcab::PreampEntry e;
-        e.factory = true;
-        e.id = "fp:" + base;
-        orbitcab::parsePreampName (base, e.name, e.channel, e.hours, e.boost, e.channelLabel, e.channelColour);
-        out.push_back (std::move (e));
+        orbitcab::PreampSource s;
+        s.factory = true;
+        s.base    = base;
+        s.id      = "fp:" + base;
+        out.push_back (std::move (s));
     }
     std::sort (out.begin(), out.end(), [] (const auto& a, const auto& b)
     {
-        if (const int c = a.name.compareIgnoreCase (b.name); c != 0) return c < 0;
-        if (a.channel != b.channel) return a.channel < b.channel;
-        if (a.hours   != b.hours)   return a.hours   < b.hours;
-        return (int) a.boost < (int) b.boost;
+        return a.base.compareIgnoreCase (b.base) < 0;
     });
 
     auto user = orbitcab::scanPreampLibrary (appPreferencesInstance->preampDir());   // already sorted
     out.insert (out.end(), std::make_move_iterator (user.begin()), std::make_move_iterator (user.end()));
     return out;
+}
+
+orbitcab::PreampRig OrbitCabAudioProcessor::preampRig() const
+{
+    // The device model: each file's .namz display metadata (controls/settings.*/rig_id/gear_*) is
+    // read cheaply from its header — user .nam files (raw imports) carry none and fall back to the
+    // legacy filename grammar inside namz::rig. Message thread; called on library rebuilds only.
+    auto sources = preampSources();
+    for (auto& s : sources)
+    {
+        if (s.factory)
+        {
+            for (int i = 0; i < PreampBinaryData::namedResourceListSize; ++i)
+            {
+                const juce::String rn (PreampBinaryData::originalFilenames[i]);
+                if (rn == s.base + ".namz")   // .nam factory blobs are pre-conversion → no header meta
+                {
+                    int sz = 0;
+                    if (const char* d = PreampBinaryData::getNamedResource (PreampBinaryData::namedResourceList[i], sz); d != nullptr && sz > 0)
+                        s.meta = ocnam::readMeta (d, (size_t) sz);
+                    break;
+                }
+            }
+        }
+        else if (s.file.hasFileExtension ("namz")
+                 && s.file.getSize() <= (juce::int64) kMaxEmbeddedNamBytes)   // same oversize guard as the byte path
+        {
+            juce::MemoryBlock mb;
+            if (s.file.loadFileAsData (mb))
+                s.meta = ocnam::readMeta (mb.getData(), mb.getSize());
+        }
+    }
+    orbitcab::PreampRig rig;
+    rig.build (sources);
+    return rig;
 }
 
 void OrbitCabAudioProcessor::selectPreamp (const juce::String& id)
@@ -928,7 +961,7 @@ bool OrbitCabAudioProcessor::removePreamp (const juce::String& id)
     // USER models only (factory ids "fp:…" are embedded — nothing to delete). Moves to the Trash.
     if (! id.startsWith ("up:"))
         return false;
-    for (const auto& e : preampLibrary())
+    for (const auto& e : preampSources())
         if (e.id == id && ! e.factory && e.file.existsAsFile())
         {
             const bool gone = e.file.moveToTrash();
@@ -991,7 +1024,7 @@ juce::MemoryBlock OrbitCabAudioProcessor::preampBytesFor (const juce::String& id
     // Raw .nam bytes for a preamp id, from the library: factory → embedded PreampBinaryData; user → the
     // file (size-capped). {} if the id isn't in the library or is oversized. Pure read (no pool write).
     juce::MemoryBlock mb;
-    for (const auto& e : preampLibrary())
+    for (const auto& e : preampSources())
         if (e.id == id)
         {
             if (e.factory)

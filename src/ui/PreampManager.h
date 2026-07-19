@@ -32,15 +32,12 @@ struct PreampManagerTraits
     static juce::File         importModel (OrbitCabAudioProcessor& p, const juce::File& f)    { return p.importPreamp (f); }
     static bool               removeModel (OrbitCabAudioProcessor& p, const juce::String& id) { return p.removePreamp (id); }
 
-    // A compact descriptor of the variant's parsed sub-dimensions (channel / gain / boost), shown
-    // as faint text to the right of the name. Empty → an em-dash (a plain, single-variant model).
+    // A compact descriptor of the variant's position in the device matrix ("Green · 12h · boost"),
+    // pre-computed by PreampRig::build from the metadata (or the legacy filename grammar). Empty →
+    // an em-dash (a plain, single-variant model).
     static juce::String describeVariant (const Entry& e)
     {
-        juce::StringArray parts;
-        if (e.channel > 0) parts.add (e.channelLabel.isNotEmpty() ? e.channelLabel : "ch" + juce::String (e.channel));
-        if (e.hours   > 0) parts.add (juce::String (e.hours) + "h");
-        if (e.boost)       parts.add ("boost");
-        return parts.isEmpty() ? juce::String::fromUTF8 ("\xe2\x80\x94") : parts.joinIntoString (" ");
+        return e.variant.isEmpty() ? juce::String::fromUTF8 ("\xe2\x80\x94") : e.variant;
     }
 
     // Row badge: the variant descriptor (channel / gain / boost).

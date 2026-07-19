@@ -809,8 +809,7 @@ target_sources(OrbitCab_Tests PRIVATE
     # (cab::NoiseGate unit tests moved to felitronics-core modules/dynamics — the gate math lives there now;
     #  OrbitCab keeps only the CabEngine END-TO-END gate + leveler-hold integration tests, in CabEngineTests.)
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
-    tests/PreampLibraryTests.cpp   # orbitcab::PreampLibrary — filename → channel/gain/boost parse + scan
-    tests/PreampSelectorTests.cpp  # orbitcab::PreampSelector — contextual resolve/visibility (≥2-rule, keep-else-default)
+    tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via namz::rig (legacy fallback, ≥2-rule, resolve)
     tests/WaveformMathTests.cpp
     tests/MetadataTests.cpp     # orbitcab::Metadata — preset <meta> schema (juce_core only)
     tests/StateModelTests.cpp   # orbitcab::state — slot/sound/workspace model + (de)serialise (juce_core only)

@@ -12,6 +12,7 @@
 #include "AppPreferences.h"
 #include "PowerampLibrary.h"
 #include "PreampLibrary.h"
+#include "PreampRig.h"
 #include "UpdateChecker.h"
 #include "Metadata.h"
 #include "StateModel.h"
@@ -185,8 +186,12 @@ public:
     // cab), gated by `preampOn`. Mirrors the poweramp exactly — a separate merged factory
     // (PreampBinaryData) + user (preampDir) library, the chosen entry's stable id persisted as
     // "preampSel", loaded off the audio thread (applyPreamp). Editor hides the UI when empty.
-    std::vector<orbitcab::PreampEntry> preampLibrary() const;              // factory + user, merged + sorted
-    bool         hasAnyPreamps() const { return ! preampLibrary().empty(); }
+    // The DEVICE model (families, controls, knob positions) is metadata-first via namz::rig:
+    // preampRig() reads each .namz header (ocnam::readMeta — cheap, no weight inflate) and falls
+    // back to the legacy filename grammar for files without metadata.
+    orbitcab::PreampRig preampRig() const;                                 // devices + display entries
+    std::vector<orbitcab::PreampEntry> preampLibrary() const { return preampRig().entries; }
+    bool         hasAnyPreamps() const { return ! preampSources().empty(); }
     juce::String selectedPreampId() const { return apvts.state.getProperty ("preampSel", juce::String()).toString(); }
     void         selectPreamp (const juce::String& id);                    // set "preampSel" + reload + bump (message thread)
     juce::File   importPreamp (const juce::File& src);                     // copy a .nam into preampDir; {} on failure
@@ -485,6 +490,11 @@ private:
     // so a select-then-save before the reload poll still embeds the .nam).
     juce::MemoryBlock powerampBytesFor (const juce::String& id) const;
     juce::MemoryBlock preampBytesFor   (const juce::String& id) const;
+
+    // The raw preamp FILE list (factory enumeration + user-folder scan), metadata NOT yet read —
+    // the cheap id → file/factory map behind preampBytesFor/removePreamp. preampRig() reads each
+    // file's .namz header on top of this before building devices.
+    std::vector<orbitcab::PreampSource> preampSources() const;
 
 public:
     // Cheap display-metadata for a preamp id (tone_type / boost / gear_* / modeled_by …), read from
