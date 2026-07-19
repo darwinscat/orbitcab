@@ -87,10 +87,13 @@ inline std::vector<PreampSource> scanPreampLibrary (const juce::File& dir)
     if (! dir.isDirectory())
         return out;
 
-    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.nam");      // raw captures
-    files.addArray (dir.findChildFiles (juce::File::findFiles, false, "*.namz")); // + packed captures
-    for (const auto& f : files)
+    // ONE enumeration, extension-filtered in code: two wildcard passes ("*.nam" + "*.namz") list a
+    // .namz twice on Windows — FindFirstFile also matches the 8.3 SHORT name, whose extension is
+    // truncated to "NAM" (a latent double-listing this scan used to inherit).
+    for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*"))
     {
+        if (! f.hasFileExtension ("nam;namz"))
+            continue;
         PreampSource s;
         s.factory = false;
         s.file    = f;
