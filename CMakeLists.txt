@@ -15,6 +15,10 @@ project(OrbitCab VERSION 2.5.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Auto-install built plug-ins into the user's plug-in folders (the everyday dev loop). Turn OFF for
+# CI / secondary worktree builds so an experimental branch never overwrites the installed plugins.
+option(ORBITCAB_COPY_PLUGIN "Copy built plug-ins to the user plug-in folders after build" ON)
+
 # ----------------------------------------------------------------------------
 # Generated headers dir. The build-version stamp (OrbitCabVersion.h) lands here — its generator is
 # wired below, AFTER felitronics-core is resolved, so the stamp can also name the core version.
@@ -88,13 +92,24 @@ FetchContent_MakeAvailable(nam_core_src)
 # NamCodec so the bytes are identical. Header-only; SOURCE_SUBDIR points at include/ (no CMakeLists there)
 # so we populate the header WITHOUT building namz's project (which would fetch a second nlohmann). OrbitCab's
 # src/core/NamCodec is now a thin juce adapter over it; nlohmann comes from nam_core's vendored copy.
-FetchContent_Declare(
-    namz_src
-    GIT_REPOSITORY https://github.com/darwinscat/namz.git
-    GIT_TAG        v1.0.0
-    GIT_SHALLOW    TRUE
-    SOURCE_SUBDIR  include        # no CMakeLists there → populate the header WITHOUT building namz's project
-)
+# Pinned PAST v1.0.0 to the namz::rig merge (PR #10 + #11): namz_rig.h (device model / selection
+# policy) + namz_rig_load.h (the .orbitrig rig.json reader) — the metadata-first PREAMP selector.
+# Same HYBRID consumption as felitronics-core below: a local checkout if present, else the pin.
+set(ORBITCAB_NAMZ_TAG "214d3ed8e2c94832e3af644d4d789690e429a00f" CACHE STRING "namz commit/tag (fetched when no local checkout)")
+set(ORBITCAB_NAMZ_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../namz" CACHE PATH "Local namz checkout (used if present); else the pin is fetched")
+if(ORBITCAB_NAMZ_DIR AND EXISTS "${ORBITCAB_NAMZ_DIR}/include/namz.h")
+    message(STATUS "namz: local checkout — ${ORBITCAB_NAMZ_DIR}")
+    FetchContent_Declare(namz_src SOURCE_DIR "${ORBITCAB_NAMZ_DIR}" SOURCE_SUBDIR include)
+else()
+    message(STATUS "namz: fetching ${ORBITCAB_NAMZ_TAG} from GitHub")
+    FetchContent_Declare(
+        namz_src
+        GIT_REPOSITORY https://github.com/darwinscat/namz.git
+        GIT_TAG        ${ORBITCAB_NAMZ_TAG}
+        GIT_SHALLOW    FALSE          # a SHA pin — shallow fetch of an arbitrary commit is unreliable
+        SOURCE_SUBDIR  include        # no CMakeLists there → populate the header WITHOUT building namz's project
+    )
+endif()
 FetchContent_MakeAvailable(namz_src)
 
 add_library(nam_core STATIC
@@ -276,7 +291,7 @@ juce_add_plugin(OrbitCab
     # installer/standalone.entitlements). The plug-in formats don't need this (they run in the host).
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT  "OrbitCab needs audio input to process your signal."
-    COPY_PLUGIN_AFTER_BUILD     TRUE   # auto-install to the user plug-in folders during dev
+    COPY_PLUGIN_AFTER_BUILD     ${ORBITCAB_COPY_PLUGIN}   # auto-install to the user plug-in folders during dev
 )
 
 # Wrap the same JUCE plugin as a CLAP (.clap) — one extra format, no source changes.
