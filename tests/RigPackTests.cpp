@@ -46,28 +46,32 @@ struct RigPackTest : juce::UnitTest
             const auto zipFile = dir.getChildFile ("Revolt.orbitrig.zip");
             {
                 juce::ZipFile::Builder b;
-                auto add = [&b] (const juce::String& path, const juce::String& text)
+                auto add = [&b] (const juce::String& path, const juce::String& text, int compression)
                 {
                     b.addEntry (std::make_unique<juce::MemoryInputStream> (text.toRawUTF8(),
                                                                            (size_t) text.getNumBytesAsUTF8(), true),
-                                5, path, juce::Time::getCurrentTime());
+                                compression, path, juce::Time::getCurrentTime());
                 };
-                add ("ReVolt Guitar.orbitrig/ReVolt-green-07h.namz", "gggg");
-                add ("../evil.namz", "evil");                        // path escape attempt → basename only
-                add ("ReVolt Guitar.orbitrig/rig.json", "{\"format\":\"orbitrig\",\"name\":\"X\"}");
-                add ("notes/readme.txt", "ignore");
+                add ("ReVolt Guitar.orbitrig/ReVolt-green-07h.namz", "gggg", 5);
+                add ("ReVolt Guitar.orbitrig/ReVolt-red-12h.namz", "rrrr", 0);   // STORED — what the capturer ships today
+                add ("../evil.namz", "evil", 5);                     // path escape attempt → basename only
+                add ("ReVolt Guitar.orbitrig/rig.json", "{\"format\":\"orbitrig\",\"name\":\"X\"}", 5);
+                add ("notes/readme.txt", "ignore", 5);
                 juce::FileOutputStream os (zipFile);
                 expect (os.openedOk() && b.writeToStream (os, nullptr));
             }
 
             const auto pack = readRigPack (zipFile, 1 << 20);
-            expect (pack.models.size() == 2 && pack.failed == 0);
+            expect (pack.models.size() == 3 && pack.failed == 0);
             for (const auto& [name, bytes] : pack.models)
                 expect (! name.containsChar ('/') && ! name.startsWith (".."));   // basenames only
-            bool sawFlattened = false;
+            bool sawDeflated = false, sawStored = false;
             for (const auto& [name, bytes] : pack.models)
-                if (name == "ReVolt-green-07h.namz") sawFlattened = true;
-            expect (sawFlattened);
+            {
+                if (name == "ReVolt-green-07h.namz") sawDeflated = bytes.toString() == "gggg";
+                if (name == "ReVolt-red-12h.namz")   sawStored   = bytes.toString() == "rrrr";
+            }
+            expect (sawDeflated && sawStored);   // both entry methods round-trip byte-exact
             expect (pack.manifestText.contains ("\"name\":\"X\""));
             dir.deleteRecursively();
         }
