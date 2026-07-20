@@ -868,6 +868,13 @@ target_link_libraries(orbitcab_coreconv_golden PRIVATE
     juce::juce_dsp                          # juce_core (juce::Thread::sleep) for the reload poll
     juce::juce_recommended_config_flags)
 target_compile_features(orbitcab_coreconv_golden PRIVATE cxx_std_20)
+# A plain add_executable() has no JUCE `_artefacts/<CONFIG>` folder. Pin the Release output to
+# build/Release/ via the PER-CONFIG property so the path is identical on multi-config MSBuild (which
+# appends /<CONFIG> to the GENERIC RUNTIME_OUTPUT_DIRECTORY but uses the per-config one verbatim) and
+# single-config Ninja (which honours _RELEASE for CMAKE_BUILD_TYPE=Release). No CI step runs this golden
+# today; pin it so one can be added without tripping over the generator-dependent output path.
+set_target_properties(orbitcab_coreconv_golden PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release")
 
 # ----------------------------------------------------------------------------
 # Headless golden for the white-box tube poweramp CORE (block 2): cab::poweramp::TubePowerAmp —
@@ -879,6 +886,11 @@ add_executable(orbitcab_poweramp_core_golden tests/PowerAmpCoreGolden.cpp src/po
 target_include_directories(orbitcab_poweramp_core_golden PRIVATE src)
 target_link_libraries(orbitcab_poweramp_core_golden PRIVATE felitronics::saturation felitronics::oversampling felitronics::eq)
 target_compile_features(orbitcab_poweramp_core_golden PRIVATE cxx_std_20)
+# CI runs this golden (.github/workflows/build.yml) from build/Release/. Under single-config Ninja a
+# plain add_executable() would land in build/ (no Release/), breaking that hardcoded path — pin the
+# Release output so it stays build/Release/ on both generators (see orbitcab_coreconv_golden above).
+set_target_properties(orbitcab_poweramp_core_golden PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release")
 
 # Real-material proof: JUCE (cab::Convolver) vs core (cab::CoreConvolver) nulled on REAL cab IRs + a
 # real sweep. Takes WAV paths on argv (so it links juce_audio_formats + juce_dsp + the core convolver).
