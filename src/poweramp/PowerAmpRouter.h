@@ -5,10 +5,9 @@
 
 #include <juce_dsp/juce_dsp.h>          // AudioBuffer scratch + SmoothedValue fade
 #include "TubePowerAmp.h"
+#include "../core/AmpStage.h"           // cab::AmpStage compatibility alias (cannot be class-forward-declared)
 #include "../core/Params.h"             // cab::PowerAmpMode
 #include "../core/DryAligner.h"         // cab::DryAligner — latency-aligned dry for the OFF path
-
-namespace cab { class AmpStage; }       // forward-decl — the NAM capture, owned by CabEngine
 
 //==============================================================================
 // cab::poweramp::PowerAmpRouter — the SINGLE poweramp seam. Picks the active power-amp at the
