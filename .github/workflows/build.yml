@@ -4,7 +4,8 @@ name: build
 # locally; this workflow covers the build we can't make locally: Windows (to hand a
 # tester or cross-check). The universal macOS build happens only in release.yml, on a tag.
 #
-# Runs on demand or on a PR that touches code — not on every commit.
+# Runs on a PR that touches code, on demand, and a weekly cron that seeds main's sccache cache
+# (and doubles as a between-release Windows smoke of main) — never on every commit.
 
 on:
   pull_request:
@@ -16,6 +17,14 @@ on:
       - 'tests/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
+
+  # Weekly seed of the main-branch sccache scope. GHA caches are ref-scoped: a pull_request run reads
+  # its PR-merge scope PLUS the default-branch scope, so keeping main's scope warm is what makes each
+  # new PR's *first* run warm (not just its 2nd+ run). GHA evicts caches unused for 7 days; active PR
+  # reads keep the scope alive, and this cron covers quiet weeks. schedule always runs on the default
+  # branch, so it seeds main and Windows-smokes it between release tags.
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays 04:17 UTC (off the top-of-hour scheduler rush)
 
 concurrency:
   group: build-${{ github.ref }}
