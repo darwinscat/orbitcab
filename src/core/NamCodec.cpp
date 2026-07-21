@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 //
-// Thin juce adapter over the `namz` library (github.com/darwinscat/namz v1.0.0, MIT). The codec is the
-// library's single header `namz.h`; here we only convert at the juce boundary so OrbitCab keeps its
-// juce-only surface and nlohmann stays confined to this translation unit (mirrors AmpStage's pImpl).
+// Thin juce adapter over the `namz` library (github.com/darwinscat/namz v1.1.1, MIT). felitronics-core's
+// NAM module compiles the single implementation; here we only convert at the juce boundary so OrbitCab
+// keeps its juce-only surface and nlohmann stays confined to this translation unit.
 
 #include "NamCodec.h"
 
 #include <cstdint>
 #include <vector>
 
-#define NAMZ_IMPLEMENTATION
-#include <namz.h>          // the extracted library; brings <nlohmann/json.hpp> (via nam_core's vendored copy)
+#include <namz.h>          // declarations; implementation symbols are supplied by felitronics::nam
 
 namespace ocnam
 {

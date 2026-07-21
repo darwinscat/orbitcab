@@ -42,37 +42,38 @@ The bundled content (IRs, font) is ledgered in
 ### NeuralAmpModelerCore (NAM — neural amp/poweramp inference)
 - **License:** MIT.
 - **Copyright:** © Steven Atkinson and the Neural Amp Modeler contributors.
-- **Source:** https://github.com/sdatkinson/NeuralAmpModelerCore — fetched via CMake
-  `FetchContent` at a pinned commit (see `ORBITCAB_NAM_TAG` in [`CMakeLists.txt`](CMakeLists.txt));
-  the `NAM/*.cpp` sources are compiled into a `nam_core` static library. Used for the
-  optional amp stage that runs in front of the cab. Bundles no `.nam` models — those are
-  user-supplied captures with their own licenses.
-- **Bundled deps it pulls in:**
+- **Source:** https://github.com/sdatkinson/NeuralAmpModelerCore — consumed transitively through
+  felitronics-core v0.13.0's opt-in `felitronics::nam` module. felitronics-core fetches NAM at a
+  pinned commit and compiles its sources into the backend used for the optional amp stages in front
+  of the cab. OrbitCab bundles no user-supplied `.nam` models; captures retain their own licenses.
+- **Dependencies fetched at felitronics-core's pins:**
   - **Eigen** (linear algebra, header-only) — **MPL-2.0** — © the Eigen authors —
     https://gitlab.com/libeigen/eigen (NAM git submodule).
   - **nlohmann/json** (`json.hpp`, header-only) — **MIT** — © Niels Lohmann —
     https://github.com/nlohmann/json (vendored in the NAM repo).
 
-### felitronics-core (shared JUCE-free DSP core — the amp tone stack + the analyser tap)
+### felitronics-core (shared JUCE-free DSP core)
 - **License:** GNU AGPLv3-or-later (same as OrbitCab; AGPL-compatible by identity).
 - **Copyright:** © Darwin's Cat — Oleh Tsymaienko and Alisa Lafoks. First-party, but a
   **separately versioned** sibling library (the shared JUCE-free DSP core), so it's recorded here.
 - **Source:** https://github.com/darwinscat/felitronics-core — fetched via CMake `FetchContent`
   at a pinned release tag (`ORBITCAB_FCORE_TAG` in [`CMakeLists.txt`](CMakeLists.txt)), or a local
-  sibling checkout for core co-development. Header-only, JUCE-free. Linked as `teq::core` (the
-  matched-EQ engine via the `<teq/*.h>` compat shim; used by `cab::AmpEq`), `felitronics::analysis`
-  (the lock-free `SpectrumTap` used by `cab::CabEngine`), and `felitronics::convolution` (the JUCE-free cab
-  IR convolver `MatrixConvolverNupc`, backing `cab::Convolver`).
+  sibling checkout for core co-development. OrbitCab consumes v0.13.0's header-only DSP modules plus
+  the opt-in compiled `felitronics::nam` module: `teq::core` (the matched-EQ engine used by
+  `cab::AmpEq`), `felitronics::analysis` (the lock-free `SpectrumTap`),
+  `felitronics::convolution` (`CabConvolver`, aliased as `cab::Convolver`), `felitronics::core`
+  (`StreamResampler`), and `felitronics::nam` (`NamStage`, aliased as `cab::AmpStage`).
 
 ### namz (lossless .nam ↔ .namz codec)
 - **License:** MIT.
 - **Copyright:** © Darwin's Cat — Oleh Tsymaienko and Alisa Lafoks. First-party, but a
   **separately versioned** sibling library — extracted from OrbitCab's own codec (byte-identical) and
   released under **MIT** so other tools can reuse it, so it's recorded here.
-- **Source:** https://github.com/darwinscat/namz — fetched via CMake `FetchContent` at a pinned tag
-  (`namz_src` in [`CMakeLists.txt`](CMakeLists.txt)); header-only (`namz.h`, populated without building the
-  project). Backs the JUCE adapter `src/core/NamCodec.{h,cpp}` — the lossless `.nam` (JSON weights) ↔
-  `.namz` (float32-packed, DEFLATE) round-trip for the bundled/imported captures.
+- **Source:** https://github.com/darwinscat/namz — consumed transitively through felitronics-core
+  v0.13.0's `felitronics::nam` module, which pins namz v1.1.1 by immutable commit. `NamStage.cpp` in
+  that module compiles `NAMZ_IMPLEMENTATION` exactly once and exports the declarations and symbols to
+  OrbitCab. It backs `src/core/NamCodec.{h,cpp}` and the rig readers: the lossless `.nam` (JSON
+  weights) ↔ `.namz` (float32-packed) round-trip for bundled/imported captures.
 
 ### pffft (SIMD FFT backend for the cab convolution — vendored in felitronics-core)
 - **License:** BSD-style (FFTPACK5 / UCAR) — AGPL-compatible.

@@ -12,6 +12,8 @@ cmake_minimum_required(VERSION 3.22)
 # release git tag vX.Y.Z. This feeds JucePlugin_VersionString (what the update check reports).
 project(OrbitCab VERSION 2.5.0 LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -68,89 +70,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(clap-juce-extensions)
 
 # ----------------------------------------------------------------------------
-# NeuralAmpModelerCore (NAM) — neural amp inference for the two stages in front of the cab
-# (input → PREAMP → POWERAMP → cab). Pinned to a commit like
-# JUCE/CLAP. Only the `eigen` submodule is needed — AudioDSPTools is plugin-only and never
-# referenced by the core sources; nlohmann/json is vendored in the repo. The repo ships no
-# usable library target, so we compile NAM/*.cpp into our own static lib `nam_core`.
-# NAM_SAMPLE_FLOAT makes NAM run in float (matches JUCE's buffers — no double conversion).
-# Licences are all AGPL-compatible: NAM = MIT, Eigen = MPL-2.0, nlohmann/json = MIT
-# (recorded in THIRD_PARTY_NOTICES.md).
-# ----------------------------------------------------------------------------
-set(ORBITCAB_NAM_TAG "b5a68c3ebed5035a91d9207219346c81e8e3ce8e" CACHE STRING "NeuralAmpModelerCore commit to build against")
-FetchContent_Declare(
-    nam_core_src
-    GIT_REPOSITORY https://github.com/sdatkinson/NeuralAmpModelerCore.git
-    GIT_TAG        ${ORBITCAB_NAM_TAG}
-    GIT_SUBMODULES "Dependencies/eigen"        # eigen only — skip the AudioDSPTools submodule
-    GIT_SHALLOW    FALSE                        # a SHA checkout + submodule needs full history
-    SOURCE_SUBDIR  Dependencies/nlohmann       # no CMakeLists there → populate sources WITHOUT building NAM's own project
-)
-FetchContent_MakeAvailable(nam_core_src)
-
-# namz — the lossless .nam<->.namz codec (github.com/darwinscat/namz, MIT), extracted from OrbitCab's own
-# NamCodec so the bytes are identical. Header-only; SOURCE_SUBDIR points at include/ (no CMakeLists there)
-# so we populate the header WITHOUT building namz's project (which would fetch a second nlohmann). OrbitCab's
-# src/core/NamCodec is now a thin juce adapter over it; nlohmann comes from nam_core's vendored copy.
-# Pinned at the rig-layer release — the contract both ways: namz_rig.h + namz_rig_load.h (the device model /
-# selection policy / rig.json reader behind the metadata-first PREAMP selector), namz_rig_write.h
-# (the capture-side writer), and conformance/rig/ — the golden .orbitrig pack RigConformanceTests
-# reads (OrbitCab's READER duty of the shared contract).
-# Same HYBRID consumption as felitronics-core below: a local checkout if present, else the pin.
-set(ORBITCAB_NAMZ_TAG "v1.1.1" CACHE STRING "namz release tag (fetched when no local checkout)")
-set(ORBITCAB_NAMZ_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../namz" CACHE PATH "Local namz checkout (used if present); else the pin is fetched")
-if(ORBITCAB_NAMZ_DIR AND EXISTS "${ORBITCAB_NAMZ_DIR}/include/namz.h")
-    message(STATUS "namz: local checkout — ${ORBITCAB_NAMZ_DIR}")
-    FetchContent_Declare(namz_src SOURCE_DIR "${ORBITCAB_NAMZ_DIR}" SOURCE_SUBDIR include)
-else()
-    message(STATUS "namz: fetching ${ORBITCAB_NAMZ_TAG} from GitHub")
-    FetchContent_Declare(
-        namz_src
-        GIT_REPOSITORY https://github.com/darwinscat/namz.git
-        GIT_TAG        ${ORBITCAB_NAMZ_TAG}
-        GIT_SHALLOW    TRUE           # a tag pin — shallow fetch is fine
-        SOURCE_SUBDIR  include        # no CMakeLists there → populate the header WITHOUT building namz's project
-    )
-endif()
-FetchContent_MakeAvailable(namz_src)
-
-add_library(nam_core STATIC
-    ${nam_core_src_SOURCE_DIR}/NAM/activations.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/container.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/conv1d.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/convnet.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/dsp.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/get_dsp.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/linear.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/lstm.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/ring_buffer.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/util.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/a2_fast.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/model.cpp
-    ${nam_core_src_SOURCE_DIR}/NAM/wavenet/slimmable.cpp
-)
-target_compile_features(nam_core PUBLIC cxx_std_20)
-set_target_properties(nam_core PROPERTIES POSITION_INDEPENDENT_CODE ON)   # linked into the shared plugin
-target_compile_definitions(nam_core PUBLIC NAM_SAMPLE_FLOAT)              # float pipeline, propagated to consumers
-# SYSTEM so OrbitCab's strict warning flags don't fire inside the Eigen / NAM headers.
-target_include_directories(nam_core SYSTEM PUBLIC
-    ${nam_core_src_SOURCE_DIR}
-    ${nam_core_src_SOURCE_DIR}/NAM
-    ${nam_core_src_SOURCE_DIR}/NAM/wavenet
-    ${nam_core_src_SOURCE_DIR}/Dependencies/eigen
-    ${nam_core_src_SOURCE_DIR}/Dependencies/nlohmann
-    ${nam_core_src_SOURCE_DIR}/Dependencies         # parent → lets namz.h resolve <nlohmann/json.hpp>
-    ${namz_src_SOURCE_DIR}/include                  # namz.h — the codec behind src/core/NamCodec (juce adapter)
-)
-
-# ----------------------------------------------------------------------------
-# felitronics-core — the shared, JUCE-free, header-only DSP core. OrbitCab consumes `teq::core`
-# (the amp tone stack cab::AmpEq, via the transitional `<teq/*.h>` compat shim — src/ unchanged) and
-# `felitronics::analysis` (the cab::CabEngine SpectrumTap). Public, AGPL, pinned by tag like JUCE.
+# felitronics-core — the shared, JUCE-free DSP core. OrbitCab consumes `teq::core` (the amp tone
+# stack cab::AmpEq, via the transitional `<teq/*.h>` compat shim), `felitronics::analysis` (the
+# cab::CabEngine SpectrumTap), convolution, and the opt-in compiled NAM/.namz backend.
+# Public, AGPL, pinned by tag like JUCE.
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.9.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.13.1" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -166,7 +93,12 @@ endif()
 # configured — the cab convolver (cab::Convolver → MatrixConvolverNupc) runs its audio FFT on it. Must be
 # set before MakeAvailable so modules/fftpffft is actually built and the felitronics::fftpffft alias exists.
 set(FELITRONICS_WITH_PFFFT ON CACHE BOOL "OrbitCab uses the pffft SIMD FFT backend for the cab convolver" FORCE)
+set(FELITRONICS_WITH_NAM ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(felitronics_core)
+# The NAM module owns namz's FetchContent declaration. Recover its populated source path only for
+# OrbitCab's reader-conformance fixture; headers, implementation symbols AND the nlohmann usage
+# requirement of namz_rig*.h all travel via felitronics::nam (core >= v0.13.1).
+FetchContent_GetProperties(namz_src SOURCE_DIR ORBITCAB_NAMZ_SOURCE_DIR)
 
 # felitronics-appkit — the family's shared APP-SIDE JUCE infrastructure. src/UpdateChecker.h is now
 # a thin adapter over it (the in-tree implementation was PROMOTED there, consolidated with TabbyEQ's
@@ -186,7 +118,7 @@ else()
 endif()
 FetchContent_MakeAvailable(felitronics_appkit)
 # Treat teq's headers as SYSTEM so OrbitCab's strict warning flags don't fire inside them
-# (same posture as nam_core / Eigen above).
+# (same posture as felitronics-core's NAM / Eigen dependency above).
 get_target_property(_teq_inc teq_core INTERFACE_INCLUDE_DIRECTORIES)
 if(_teq_inc)
     set_target_properties(teq_core PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_teq_inc}")
@@ -323,7 +255,6 @@ target_sources(OrbitCab PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp        # headless DSP core (cab::) — D24
-    src/core/AmpStage.cpp      # NAM amp/poweramp stage (prototype)
     src/core/NamCodec.cpp      # .nam <-> .namz — juce adapter over the namz lib (weights as float32, store)
     src/poweramp/TubePowerAmp.cpp    # white-box tube poweramp (scaffold) — src/poweramp/PLAN.md
     src/poweramp/PowerAmpRouter.cpp  # poweramp seam: NAM capture <-> tube, click-free
@@ -425,18 +356,13 @@ target_compile_definitions(OrbitCab PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0   # JUCE 8 has no splash requirement on any tier, incl. AGPLv3
-    FELITRONICS_WITH_PFFFT=1       # cab::Convolver picks the pffft SIMD FFT backend (must match the link above)
 )
 
 target_link_libraries(OrbitCab PRIVATE
     OrbitCabData                # the embedded IR(s) + factory poweramps — BinaryData::* symbols
     OrbitCabPreampData          # the embedded factory preamps — PreampBinaryData::* symbols
     OrbitCabReverbData          # the embedded spring-reverb IRs — ReverbBinaryData::* symbols
-    # NAM (prototype amp stage). WHOLE_ARCHIVE keeps NAM's architecture self-registration:
-    # wavenet/lstm/convnet register via static initializers, and a plain static-lib link drops
-    # those (unreferenced) objects, so get_dsp() finds no architecture and every load fails.
-    # CMake 3.24+ maps this to -force_load (Apple) / --whole-archive (GNU) / /WHOLEARCHIVE (MSVC).
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"
+    felitronics::nam            # NAM/.namz backend; propagates NAM whole-archive registration
     teq::core                   # matched-EQ DSP core for the amp tone stack (cab::AmpEq)
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis       # SPSC SpectrumTap capture in cab::CabEngine + offline blend-interference curves
@@ -447,7 +373,7 @@ target_link_libraries(OrbitCab PRIVATE
     felitronics::oversampling   # alias-free 4x OS for the tube nonlinearity
     felitronics::eq             # min-phase presence/depth shelves (block 3)
     felitronics::dynamics       # in-amp noise gate (cab::NoiseGate = felitronics::dynamics::NoiseGate)
-    felitronics::neural         # swap-safe NeuralStage holder for cab::AmpStage (NAM backend stays local)
+    felitronics::neural         # swap-safe NeuralStage holder used by felitronics::nam
     juce::juce_audio_utils      # pulls in audio_processors / audio_basics / gui_basics ...
     juce::juce_dsp              # Convolution / ProcessorChain / Oversampling later
     juce::juce_recommended_config_flags
@@ -473,7 +399,6 @@ target_sources(orbitcab_dsp_test PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -488,7 +413,7 @@ target_link_libraries(orbitcab_dsp_test PRIVATE
     OrbitCabData
     OrbitCabPreampData                          # factory preamps (PreampBinaryData) — preamp-embed test
     OrbitCabReverbData                          # embedded spring-reverb IRs (ReverbBinaryData)
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # keep NAM arch self-registration (SlimmableContainer) — matches the plugin link, so the poweramp-embed test can load a .nam
+    felitronics::nam            # NAM/.namz backend; whole-archive registration comes from core
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
@@ -523,7 +448,6 @@ target_sources(orbitcab_fade_measure PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -538,7 +462,7 @@ target_link_libraries(orbitcab_fade_measure PRIVATE
     OrbitCabData
     OrbitCabPreampData
     OrbitCabReverbData
-    nam_core
+    felitronics::nam
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
@@ -574,7 +498,6 @@ target_sources(orbitcab_tube_audition PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -589,7 +512,7 @@ target_link_libraries(orbitcab_tube_audition PRIVATE
     OrbitCabData
     OrbitCabPreampData
     OrbitCabReverbData
-    nam_core
+    felitronics::nam
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
@@ -624,7 +547,6 @@ target_sources(orbitcab_poweramp_toggle_probe PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -639,7 +561,7 @@ target_link_libraries(orbitcab_poweramp_toggle_probe PRIVATE
     OrbitCabData
     OrbitCabPreampData
     OrbitCabReverbData
-    nam_core
+    felitronics::nam
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
@@ -669,7 +591,6 @@ target_sources(orbitcab_switch_probe PRIVATE
     tools/dsp-test/switch_probe.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -680,7 +601,7 @@ target_compile_definitions(orbitcab_switch_probe PRIVATE
     JUCE_MODAL_LOOPS_PERMITTED=1
 )
 target_link_libraries(orbitcab_switch_probe PRIVATE
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # NAM arch self-registration (static-init TUs)
+    felitronics::nam            # NAM/.namz backend; whole-archive registration comes from core
     teq::core
     felitronics::analysis
     felitronics::measurement
@@ -697,9 +618,9 @@ target_link_libraries(orbitcab_switch_probe PRIVATE
 )
 
 # ----------------------------------------------------------------------------
-# namz codec — offline CLI packer + a focused unit-test gate. Both link ONLY nam_core
-# (for the vendored nlohmann/json include) + juce_core, so they build the `.nam`<->`.namz`
-# codec in isolation — independent of the cab DSP / felitronics-core.
+# namz codec — offline CLI packer + a focused unit-test gate. Both link only felitronics::nam
+# (which exports namz declarations and the single implementation) + juce_core, so they build the
+# `.nam`<->`.namz` JUCE adapter independently of the cab DSP.
 #   orbitcab_namz            : the CLI (tools/namz) — pack/unpack/pack-dir/verify a library
 #   orbitcab_namz_test       : NamCodecTests round-trip (fast CI gate for the codec)
 # ----------------------------------------------------------------------------
@@ -713,7 +634,7 @@ target_compile_definitions(orbitcab_namz PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 target_link_libraries(orbitcab_namz PRIVATE
-    nam_core                       # vendored nlohmann/json include (header-only use)
+    felitronics::nam               # namz declarations + implementation symbols
     juce::juce_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
@@ -730,7 +651,7 @@ target_compile_definitions(orbitcab_namz_test PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 target_link_libraries(orbitcab_namz_test PRIVATE
-    nam_core                       # vendored nlohmann/json include
+    felitronics::nam               # namz declarations + implementation symbols
     juce::juce_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
@@ -756,7 +677,6 @@ target_sources(orbitcab_latency_pdc_test PRIVATE
     src/ui/WaveformDisplay.cpp
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -771,7 +691,7 @@ target_link_libraries(orbitcab_latency_pdc_test PRIVATE
     OrbitCabData
     OrbitCabPreampData
     OrbitCabReverbData
-    nam_core
+    felitronics::nam
     teq::core
     felitronics::appkit         # shared UpdateChecker/UpdateCompare (header-only; JUCE comes from us)
     felitronics::analysis
@@ -821,7 +741,6 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/IrNormalizationTests.cpp # load-time IR reference-unity normalization — factory-cab acceptance gate
     src/core/CabEngine.cpp
     src/core/IRSlot.cpp
-    src/core/AmpStage.cpp
     src/core/NamCodec.cpp
     src/poweramp/TubePowerAmp.cpp
     src/poweramp/PowerAmpRouter.cpp
@@ -830,10 +749,10 @@ target_include_directories(OrbitCab_Tests PRIVATE src)   # so tests/ can #includ
 target_compile_definitions(OrbitCab_Tests PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
     ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"   # real .nam (router align) + factory IRs (IR norm)
-    ORBITCAB_NAMZ_CONFORMANCE_DIR="${namz_src_SOURCE_DIR}/conformance"   # the golden .orbitrig pack (RigConformanceTests)
+    ORBITCAB_NAMZ_CONFORMANCE_DIR="${ORBITCAB_NAMZ_SOURCE_DIR}/conformance"   # core-pinned namz golden .orbitrig pack (RigConformanceTests)
 )
 target_link_libraries(OrbitCab_Tests PRIVATE
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>"   # AmpStage.cpp + NAM arch self-registration
+    felitronics::nam              # aliased AmpStage + namz; core propagates NAM whole-archive registration
     teq::core                     # cab::AmpEq (AmpEqTests)
     felitronics::analysis         # cab::CabEngine SpectrumTap capture + offline blend curves
     felitronics::measurement      # xcorrAlign (cab::blend auto-polarity — BlendAnalysisTests)
@@ -906,3 +825,26 @@ target_link_libraries(orbitcab_realir PRIVATE
     juce::juce_dsp
     juce::juce_audio_formats
     juce::juce_recommended_config_flags)
+
+# Register every automated headless gate with CTest. Diagnostics that require user-supplied audio
+# remain build-only. Isolate the processor gates' macOS Application Support writes inside the build.
+if(BUILD_TESTING)
+    set(ORBITCAB_CTEST_USER_HOME "${CMAKE_BINARY_DIR}/ctest-user-home")
+    file(MAKE_DIRECTORY "${ORBITCAB_CTEST_USER_HOME}/processor-dsp"
+                        "${ORBITCAB_CTEST_USER_HOME}/mute-envelope")
+
+    add_test(NAME OrbitCabCoreTests COMMAND OrbitCab_Tests)
+    add_test(NAME NamzCodecTests COMMAND orbitcab_namz_test)
+    add_test(NAME LatencyPdcTest COMMAND orbitcab_latency_pdc_test)
+    add_test(NAME CoreConvolverGolden COMMAND orbitcab_coreconv_golden)
+    add_test(NAME PowerAmpCoreGolden COMMAND orbitcab_poweramp_core_golden)
+    add_test(NAME CoreConvolverRealIr COMMAND orbitcab_realir
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/ir/01-cookie-monster.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/ir/02-darth-genocider.wav")
+    add_test(NAME ProcessorDspTests COMMAND orbitcab_dsp_test)
+    set_tests_properties(ProcessorDspTests PROPERTIES
+        ENVIRONMENT "CFFIXED_USER_HOME=${ORBITCAB_CTEST_USER_HOME}/processor-dsp")
+    add_test(NAME MuteAutoLevelEnvelope COMMAND orbitcab_fade_measure)
+    set_tests_properties(MuteAutoLevelEnvelope PROPERTIES
+        ENVIRONMENT "CFFIXED_USER_HOME=${ORBITCAB_CTEST_USER_HOME}/mute-envelope")
+endif()
