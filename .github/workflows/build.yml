@@ -55,7 +55,7 @@ jobs:
       # configure time and passes this compiler launcher through to that sub-build, so `sccache` has to
       # be on PATH already when we configure.
       - name: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696   # v0.0.10
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.11
 
       # Sources only (FetchContent checkouts + the juceaide sub-build tree) — not objects; sccache caches
       # objects. The generator is in the key so a stale MSBuild-era cache can't be restored under
