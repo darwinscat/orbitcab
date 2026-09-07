@@ -222,7 +222,19 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 if (ok)
                 {
                     const int Ln = nam.latencySamples();
+                    // 🔴 THIS ONE READS A NUMBER felitronics-core OWNS, and it is the only expectation in
+                    // this repository that does. It is 6 at 96 kHz on a core that carries the measured
+                    // geometry (PR #148) and 9 on one that still carries `ceil(3*hostSR/48000) + 3`. If
+                    // it reads 9, the tree is being built against a core from BEFORE that fix — check
+                    // ORBITCAB_FCORE_TAG, which is what a clean build and CI fetch. The answer is to
+                    // move that pin forward, NOT to put the old formula back: it over-reported by 2.16
+                    // samples at 44.1 kHz and 3.00 at 96, and this repository delays its dry/bypass path
+                    // by exactly this number, so the error was a comb notch at ~10.2 kHz, not a rounding.
                     expectEquals (Ln, rateMatchLatency (sr));                       // the rate-match GEOMETRY = 6 @ 96k
+                    if (Ln != rateMatchLatency (sr))
+                        logMessage ("core reports " + juce::String (Ln) + " where the geometry is "
+                                    + juce::String (rateMatchLatency (sr))
+                                    + " — this tree's felitronics-core predates the latency fix (#148)");
                     const auto in  = distinctSignal (8000);
                     const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64, sr);
                     expect (isDelayedBy (out, in, Ln), "capture off = dry delayed by EXACTLY the reported latency");
