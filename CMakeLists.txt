@@ -726,6 +726,7 @@ target_sources(OrbitCab_Tests PRIVATE
     tests/AutoLevelerTests.cpp
     tests/AmpStageTests.cpp       # cab::AmpStage + StreamResampler (rate-match) — CI gate
     tests/PowerAmpRouterAlignTests.cpp # PowerAmpRouter dry-path latency alignment (no gap/jump on toggle) — CI gate
+    tests/IslandRateMatchTests.cpp     # the front section's SINGLE host<->model rate match: 48k null, no-capture null, one-round-trip droop — CI gate
     tests/PowerAmpSwitchLevelTest.cpp  # capture<->tube mode switch: AutoLeveler must not swell (~0.5 s volume rise) — CI gate
     tests/AmpEqTests.cpp          # cab::AmpEq (teq tone stack) — passthrough / boost / cut — CI gate
     # (cab::NoiseGate unit tests moved to felitronics-core modules/dynamics — the gate math lives there now;
@@ -764,6 +765,46 @@ target_link_libraries(OrbitCab_Tests PRIVATE
     felitronics::neural           # swap-safe NeuralStage holder consumed by cab::AmpStage
     juce::juce_dsp                # pulls juce_audio_basics / juce_audio_formats / juce_core
     juce::juce_data_structures    # juce::ValueTree for orbitcab::state (StateModel.h)
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# ----------------------------------------------------------------------------
+# THE 48 kHz NULL DUMP. Renders cab::CabEngine with every stage hot and writes raw float32, so the
+# revision BEFORE a front-section change and the revision AFTER it can be compared byte for byte at
+# the rate where nothing is converted. Not a ctest gate (it proves nothing about a single build) —
+# it is the instrument the change itself is measured with.
+# ----------------------------------------------------------------------------
+juce_add_console_app(orbitcab_island_null_dump PRODUCT_NAME "OrbitCabIslandNullDump")
+if(MSVC)
+    target_link_options(orbitcab_island_null_dump PRIVATE /STACK:8388608)
+endif()
+target_sources(orbitcab_island_null_dump PRIVATE
+    tests/IslandNullDump.cpp
+    src/core/CabEngine.cpp
+    src/core/IRSlot.cpp
+    src/core/NamCodec.cpp
+    src/poweramp/TubePowerAmp.cpp
+    src/poweramp/PowerAmpRouter.cpp
+)
+target_include_directories(orbitcab_island_null_dump PRIVATE src)
+target_compile_definitions(orbitcab_island_null_dump PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    ORBITCAB_RES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"
+)
+target_link_libraries(orbitcab_island_null_dump PRIVATE
+    felitronics::nam
+    teq::core
+    felitronics::analysis
+    felitronics::measurement
+    felitronics::convolution
+    felitronics::saturation
+    felitronics::oversampling
+    felitronics::eq
+    felitronics::dynamics
+    felitronics::neural
+    juce::juce_dsp
+    juce::juce_data_structures
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )

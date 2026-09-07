@@ -655,7 +655,9 @@ void OrbitCabAudioProcessorEditor::timerCallback()
         updateEqRow();
     if (eqPowerBtn.getToggleState())                       // row open → keep the response curve live
     {
-        const double sr = processorRef.getSampleRate();
+        // The DESIGN rate, not the host's: with a NAM capture armed the tone stack runs inside the
+        // engine's model-rate island, and the drawn curve must be the one being heard.
+        const double sr = processorRef.eqDesignRate();
         eqCurve.sampleRate = sr > 0.0 ? sr : 48000.0;
         // Push the live HPF/LPF on-state + freq + ranges so the curve's draggable corners track the params.
         auto& ap = processorRef.apvts;

@@ -1105,21 +1105,20 @@ juce::StringPairArray OrbitCabAudioProcessor::preampMetaFor (const juce::String&
 
 void OrbitCabAudioProcessor::updateLatency()
 {
-    // Rate-match PDC; 0 at 48k / stage off. The two NAM stages each rate-match independently, so
-    // their latencies SUM (possible future optimisation: keep the signal at the model rate between
-    // them and rate-match only once — a single round-trip instead of two).
+    // Rate-match PDC. The two NAM stages no longer each rate-match: the front section runs AT the
+    // model rate and converts ONCE for the whole chain (CabEngine's island), so what the host must
+    // compensate is that single round trip — `lround(2 + 2*hostSR/48000)`, i.e. 4 samples at 44.1 kHz
+    // where the two independent stages used to sum to 8, and 0 at 48 kHz where nothing converts.
+    // It is reported whenever a NAM capture is ARMED, not when it is powered, exactly as before: the
+    // island runs on the same condition and CabEngine delays the bypass/off paths inside it, so
+    // toggling either stage's power never changes PDC (no host re-sync gap).
     const bool tubeMode = ampModeParam != nullptr && ampModeParam->load() > 0.5f;
-    // Poweramp latency follows the selected MODE, not the power toggle — for BOTH modes. The router
-    // reports the active stage's latency (Tube = its oversampling; Capture = the NAM rate-match, 0 at
-    // 48 kHz) whether the poweramp is powered on OR off, and delays the dry/off path by that same
-    // amount, so toggling the power never changes PDC (no host re-sync gap, no crossfade misalignment).
-    // A capture↔tube MODE switch still re-reports (deliberate).
-    const int pwrLat = tubeMode ? engine.tubePowerAmpLatencySamples()
-                                : engine.ampLatencySamples();
-    // Preamp: its rate-match latency whenever a model is ARMED (loaded), NOT gated on the power toggle —
-    // CabEngine delays the bypass by the same amount, so the preamp's power toggle never changes PDC
-    // either. preampLatencySamples() is already 0 with no model / at 48 kHz. The two NAM stages sum.
-    const int lat = pwrLat + engine.preampLatencySamples();
+    const int  frontLat = engine.frontRateMatchLatencySamples (/*captureMode*/ ! tubeMode);
+    // The white-box tube is NOT inside the island — it is not a rate-locked model and its latency is
+    // an integer number of HOST samples there, which is the only place it can stay one. So in tube
+    // mode its oversampling latency adds to the front section's, and a capture↔tube MODE switch still
+    // re-reports (deliberate).
+    const int  lat = frontLat + (tubeMode ? engine.tubePowerAmpLatencySamples() : 0);
     setLatencySamples (lat);
 }
 

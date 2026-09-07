@@ -15,6 +15,7 @@
 #include "AmpEq.h"
 #include "AutoLeveler.h"
 #include "NoiseGate.h"                           // cab::NoiseGate — in-amp gate: detector on the clean input, VCA after EQ
+#include "StreamResampler.h"                     // cab::StreamResampler — the ONE host<->model rate match of the front section
 #include "../poweramp/PowerAmpRouter.h"          // the poweramp seam: NAM capture <-> white-box tube
 #include <felitronics/analysis/SpectrumTap.h>   // shared DSP: the SPSC capture tap (was cab::SpectrumTap)
 #include <felitronics/core/Smoother.h>          // JUCE-free LinearSmoother — bit-exact juce::SmoothedValue<float,Linear> drop-in
@@ -125,6 +126,37 @@ public:
     int    ampLatencySamples()   const                  { return amp.latencySamples(); }
     int    tubePowerAmpLatencySamples() const           { return powerAmpRouter.tubeLatencySamples(); }
 
+    //--- the MODEL-RATE ISLAND ----------------------------------------------------
+    // The front section (preamp NAM -> volume -> EQ -> gate -> spring -> capture seam) runs at the
+    // NAM run rate, so the chain rate-matches ONCE instead of once per NAM stage. See the note on
+    // `islandPossible_` below for what that costs and buys.
+    //
+    // ENGAGED is not a setting: it is exactly "a NAM stage that would be CALLED this block has a
+    // model". Anything else keeps the front section on the host rate, so a rig with no capture
+    // armed — which is what OrbitCab boots as (`ampOn`/`preampOn` default false, so applyPreamp /
+    // applyPoweramp never load) — is bit-identical to the code before the island existed.
+    bool islandEngagedFor (bool captureMode) const noexcept
+    {
+        return islandPossible_ && (preamp.hasModel() || (amp.hasModel() && captureMode));
+    }
+    // Host-rate PDC of the front section's single rate match: the island's round trip, or 0.
+    // The two NAM stages contribute NOTHING of their own any more — they are prepared AT the model
+    // rate, so their own rate-matchers never engage (`NamStage.cpp` gates on |hostSR - modelRunSR|).
+    int  frontRateMatchLatencySamples (bool captureMode) const noexcept
+    {
+        return islandEngagedFor (captureMode) ? islandRoundTrip_ : 0;
+    }
+    bool islandPossible() const noexcept { return islandPossible_; }
+    double islandRate()   const noexcept { return islandRate_; }
+    // The rate cab::AmpEq's coefficients are designed from right now — which is the island's when it
+    // runs, not the host's. The GUI curve has to draw the filter that is audible, not a neighbouring
+    // one: the two differ by at most 0.0116 dB across the tone knobs but by up to 0.689 dB on the
+    // LPF's own skirt above 15 kHz, and drawing the wrong one there is drawing a lie.
+    double eqDesignRate (bool captureMode) const noexcept
+    {
+        return islandEngagedFor (captureMode) ? islandRate_ : hostRate_;
+    }
+
     // Same identical-bytes guard as the poweramp.
     bool   loadPreampModelBytes (const void* data, std::size_t size, float trimDb = 0.0f)
     {
@@ -171,6 +203,36 @@ private:
         for (std::size_t i = 0; i < size; ++i) { h ^= p[i]; h *= 1099511628211ull; }
         return h != 0 ? h : 1;   // 0 is the "nothing loaded" sentinel
     }
+
+    //--- the model-rate island ----------------------------------------------------
+    // ONE host->model conversion at the front section's INPUT and ONE model->host at its OUTPUT,
+    // instead of one round trip per NAM stage. Measured cost of the second round trip this removes,
+    // at 17.64 kHz and a 44.1 kHz host: coherent carrier -4.17 -> -9.03 dB and BEST interpolation
+    // phase -0.61 -> -5.20, i.e. today the top octave is attenuated at EVERY phase rather than some.
+    //
+    // What moves onto the model rate with it: the tone stack, the gate (both phases), the spring
+    // send/return and the capture seam. The EQ was the thing worth measuring before doing this —
+    // teq's matched biquads shift by at most 0.0116 dB across the whole tone-knob range and 0.689 dB
+    // for the LPF (and only above ~15 kHz), and they move TOWARD the analog prototype they are fitted
+    // to: the LPF's own error against it falls 1.7314 -> 1.0451 dB, which is exactly the shift.
+    //
+    // What does NOT move: the white-box tube. It is not a rate-locked model, its 31-sample latency
+    // would become a fractional 28.48 host samples inside the island, and in tube mode there is no
+    // second NAM stage to save a round trip on anyway — so in tube mode the router is called AFTER
+    // the island instead of inside it. A capture<->tube switch is already a deliberate hard cut with
+    // a PDC re-report (PowerAmpRouter), so no crossfade ever spans the rate change.
+    double      hostRate_       = 48000.0;   // the stream's rate
+    double      islandRate_     = 48000.0;   // the NAM run rate — the only rate a model may be loaded at
+    bool        islandPossible_ = false;     // |hostRate - islandRate| > 0.5: at a 48 kHz host there is no island at all
+    bool        islandRunning_  = false;     // last block's engagement, so a flip can re-tune the rate-designed stages
+    int         hostMaxBlock_   = 0;
+    int         islandMaxBlock_ = 0;         // ceil(hostMax * islandRate/hostRate) + 16, == hostMax when there is no island
+    int         frontMaxBlock_  = 0;         // max of the two — what every stage INSIDE the front section is prepared for
+    int         islandRoundTrip_= 0;         // lround(2 + 2*hostRate/islandRate), the geometry (0 without an island)
+    StreamResampler inDown[2], outUp[2];     // the island boundary, per channel
+    StreamResampler revDown, revUp;          // the spring tank stays at the HOST rate — mono send/return detour
+    juce::AudioBuffer<float> islandBuf;      // front-rate scratch the island body runs in
+    juce::AudioBuffer<float> revHostBuf;     // host-rate mono scratch for the tank while the island runs
 
     AmpStage    preamp;                    // optional NAM preamp, runs first (feeds the EQ → poweramp)
     DryAligner  preampBypassAlign;         // delays the dry to the preamp's PDC while it's OFF → toggling

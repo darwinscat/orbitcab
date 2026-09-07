@@ -61,7 +61,7 @@ namespace
     // Run `in` through the router in fixed `block`-sized chunks (mono duplicated to stereo) on the OFF
     // path (ampOn = false), so ONLY the alignment delay is exercised. Returns channel-0 output.
     std::vector<float> runOff (PowerAmpRouter& r, AmpStage& nam, PowerAmpMode mode,
-                               const std::vector<float>& in, int block)
+                               const std::vector<float>& in, int block, double rate)
     {
         std::vector<float> out (in.size(), 0.0f);
         cab::TubeParams tp;                       // defaults; the off path never touches the tube
@@ -71,7 +71,7 @@ namespace
             const int n = (int) juce::jmin ((size_t) block, in.size() - off);
             for (int i = 0; i < n; ++i) { L[(size_t) i] = in[off + (size_t) i]; R[(size_t) i] = L[(size_t) i]; }
             float* io[2] = { L.data(), R.data() };
-            r.process (io, 2, n, /*ampOn*/ false, mode, tp, nam);
+            r.process (io, 2, n, /*ampOn*/ false, mode, tp, nam, rate);
             for (int i = 0; i < n; ++i) out[off + (size_t) i] = L[(size_t) i];
         }
         return out;
@@ -172,11 +172,11 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
         beginTest ("tube-mode OFF delays the dry by EXACTLY the tube latency (bit-exact)");
         {
             PowerAmpRouter r; AmpStage nam;
-            r.prepare (sr, prepBlock, 2); nam.prepare (sr, prepBlock);
+            r.prepare (sr, prepBlock, prepBlock, 2); nam.prepare (sr, prepBlock);
             const int Lt = r.tubeLatencySamples();
             expect (Lt > 0, "tube must report real (oversampling) latency");
             const auto in  = distinctSignal (8000);
-            const auto out = runOff (r, nam, PowerAmpMode::tube, in, 64);
+            const auto out = runOff (r, nam, PowerAmpMode::tube, in, 64, sr);
             expect (isDelayedBy (out, in, Lt),     "off = dry delayed by exactly the tube latency");
             expect (! isDelayedBy (out, in, Lt - 1), "delay is not L-1 (off-by-one guard)");
             expect (! isDelayedBy (out, in, Lt + 1), "delay is not L+1 (off-by-one guard)");
@@ -185,23 +185,23 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
         beginTest ("capture-mode OFF with no model is a bit-identical passthrough (tap 0)");
         {
             PowerAmpRouter r; AmpStage nam;                 // no model loaded → latency 0
-            r.prepare (sr, prepBlock, 2); nam.prepare (sr, prepBlock);
+            r.prepare (sr, prepBlock, prepBlock, 2); nam.prepare (sr, prepBlock);
             expect (nam.latencySamples() == 0);
             const auto in  = distinctSignal (4000);
-            const auto out = runOff (r, nam, PowerAmpMode::capture, in, 100);
+            const auto out = runOff (r, nam, PowerAmpMode::capture, in, 100, sr);
             expect (isDelayedBy (out, in, 0), "a 0-latency capture off path must be exact identity");
         }
 
         beginTest ("tube-mode OFF delay holds across ragged block sizes (ring-wrap stress)");
         {
             PowerAmpRouter r; AmpStage nam;
-            r.prepare (sr, prepBlock, 2); nam.prepare (sr, prepBlock);
+            r.prepare (sr, prepBlock, prepBlock, 2); nam.prepare (sr, prepBlock);
             const int Lt = r.tubeLatencySamples();
             const auto in = distinctSignal (6000);
             for (int blk : { 1, 3, 7, 32, 63, 128, 200 })
             {
                 r.reset();                                  // cold ring per run
-                const auto out = runOff (r, nam, PowerAmpMode::tube, in, blk);
+                const auto out = runOff (r, nam, PowerAmpMode::tube, in, blk, sr);
                 expect (isDelayedBy (out, in, Lt), "exact delay must survive block size " + juce::String (blk));
             }
         }
@@ -215,7 +215,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
             {
                 juce::MemoryBlock mb; nf.loadFileAsData (mb);
                 PowerAmpRouter r; AmpStage nam;
-                r.prepare (sr, prepBlock, 2);
+                r.prepare (sr, prepBlock, prepBlock, 2);
                 nam.prepare (sr, prepBlock);                // sets the 48k default run-rate + resampling@96k
                 const bool ok = nam.loadModelFromMemory (mb.getData(), mb.getSize());   // 48k model → accepted
                 expect (ok, "a 48k factory .nam must load");
@@ -224,7 +224,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                     const int Ln = nam.latencySamples();
                     expectEquals (Ln, rateMatchLatency (sr));                       // the rate-match GEOMETRY = 6 @ 96k
                     const auto in  = distinctSignal (8000);
-                    const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64);
+                    const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64, sr);
                     expect (isDelayedBy (out, in, Ln), "capture off = dry delayed by EXACTLY the reported latency");
                 }
             }
@@ -245,7 +245,11 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 p.preampOn = false; p.ampOn = false;                            // preamp bypassed, poweramp off
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "preamp model loads");
-                const int L = e.preampLatencySamples();
+                // The FRONT SECTION rate-matches once for the whole chain now, so the number that
+                // aligns the bypass is the island's round trip — not the preamp stage's own, which is
+                // 0 because the stage is prepared AT the model rate and never converts anything.
+                expectEquals (e.preampLatencySamples(), 0);
+                const int L = e.frontRateMatchLatencySamples (/*captureMode*/ true);
                 expectEquals (L, rateMatchLatency (sr));                         // 6 @ 96k
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);
@@ -265,7 +269,8 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 p.preampOn = false; p.ampOn = false; p.powerAmpMode = cab::PowerAmpMode::capture;
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadAmpModelBytes (bytes.getData(), bytes.getSize()), "capture model loads");
-                const int L = e.ampLatencySamples();
+                expectEquals (e.ampLatencySamples(), 0);                         // same: the stage runs AT the model rate
+                const int L = e.frontRateMatchLatencySamples (/*captureMode*/ true);
                 expectEquals (L, rateMatchLatency (sr));
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);

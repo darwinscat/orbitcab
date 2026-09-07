@@ -14,6 +14,12 @@ namespace
 {
     constexpr double kRampSeconds = 0.03;          // live tweaks / automation glide
 
+    // The rate every NAM capture runs at. It is not a preference: felitronics::nam::NamStage decides
+    // its run rate from the LIVE model and refuses to install one whose native rate differs, and with
+    // no model live that rate is 48 kHz — so 48 kHz is the only rate a capture can ever be loaded at,
+    // at any host rate. That makes it the island's rate too.
+    constexpr double kModelRunRate = 48000.0;
+
     // Encode the poweramp/preamp signal ROUTE as a small int; any change means the spectrum feeding
     // the cab (hence the leveler's wet/dry match) stepped. preamp on/off shifts it too (it's upstream).
     int routeCode (const Params& p) noexcept
@@ -28,15 +34,53 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
 {
     currentSampleRate = sampleRate;
 
-    preamp.prepare (sampleRate, maxBlock);
-    // Dry-alignment for the preamp bypass: 256-sample capacity covers any NAM rate-match latency
-    // (≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin — matches the router.
-    preampBypassAlign.prepare (numChannels, maxBlock, 256);
-    noiseGate.prepare (sampleRate, maxBlock, numChannels);
+    // ---- the model-rate island: sizes and rates, decided once, here -------------------------
+    // There is an island only when the host is off the model's rate. At 48 kHz nothing below
+    // changes a single call, a single size or a single sample against the code that had no island.
+    hostRate_       = sampleRate;
+    islandRate_     = kModelRunRate;
+    islandPossible_ = std::abs (hostRate_ - islandRate_) > 0.5;
+    hostMaxBlock_   = juce::jmax (1, maxBlock);
+    // A host block of N becomes at most ceil(N * islandRate/hostRate) model frames. +16 is NamStage's
+    // own margin for the same quantity (NamStage.cpp) and covers the resampler's leading history.
+    // With no island this MUST stay exactly the host's block: NAM::Reset() is sized from it, so a
+    // different number would re-shape the network's own buffers and the 48 kHz null test with it.
+    islandMaxBlock_ = islandPossible_
+                        ? (int) std::ceil (hostMaxBlock_ * (islandRate_ / hostRate_)) + 16
+                        : hostMaxBlock_;
+    frontMaxBlock_  = juce::jmax (hostMaxBlock_, islandMaxBlock_);
+    // The geometry, not a guess: StreamResampler::reset() leaves 3 leading zeros with pos = 1, so
+    // output k reads input position k*inPerOut - 2 — each leg delays by 2 of ITS OWN input samples,
+    // and the round trip by 2 host + 2 model samples (3.8375 at 44.1 kHz, 6.0000 at 96 kHz).
+    islandRoundTrip_ = islandPossible_ ? (int) std::lround (2.0 + 2.0 * hostRate_ / islandRate_) : 0;
+    islandRunning_   = false;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        inDown[ch].reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
+        outUp [ch].reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
+    }
+    revDown.reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);   // spring send: island -> host tank
+    revUp  .reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);   // spring return: host tank -> island
+    islandBuf .setSize (numChannels, islandMaxBlock_, false, false, true);
+    revHostBuf.setSize (1,           hostMaxBlock_,   false, false, true);
+
+    // Both NAM stages are prepared AT the model rate, so their own rate-matchers never engage and the
+    // island owns the one round trip. That is safe precisely because a stage with a model is only ever
+    // CALLED while the island runs — see islandEngagedFor().
+    preamp.prepare (islandRate_, islandMaxBlock_);
+    // Dry-alignment for the preamp bypass: 256-sample capacity covers any stage latency with wide
+    // margin — matches the router. Inside the island the preamp's own latency is 0, so this is a pure
+    // copy there; it still runs, because it is what the OFF branch reads.
+    preampBypassAlign.prepare (numChannels, frontMaxBlock_, 256);
+    // Rate-DESIGNED stages inside the front section. They are prepared for whichever rate the section
+    // is running at right now and re-tuned on the (rare, and already audible) block where that flips —
+    // both prepares are allocation-free after this one: teq::EqEngine with maxBlock 0 allocates
+    // nothing at all, and the gate's curve is sized once, here, for the larger of the two blocks.
+    noiseGate.prepare (sampleRate, frontMaxBlock_, numChannels);
     noiseGate.seedEnabled (initial.gate.on);   // seed the on/off crossfade from the restored on-state (no fade-in leak)
-    ampEq.prepare (sampleRate, maxBlock, numChannels);
-    amp.prepare (sampleRate, maxBlock);
-    powerAmpRouter.prepare (sampleRate, maxBlock, numChannels);
+    ampEq.prepare (sampleRate, frontMaxBlock_, numChannels);
+    amp.prepare (islandRate_, islandMaxBlock_);
+    powerAmpRouter.prepare (sampleRate, hostMaxBlock_, frontMaxBlock_, numChannels);
 
     for (int i = 0; i < 2; ++i)
         slot[i].prepare (sampleRate, maxBlock, numChannels);
@@ -81,8 +125,13 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // Reverb: a MONO convolver (½ the CPU of stereo, no false width — "not a stereo reverb") with the
     // reference-unity RMS normalization DISABLED (the spring IRs are peak-normalized at bundle time). The
     // default 4 s NUPC schedule covers the ≤ 3.5 s spring tails. reverbScratch is the mono send/return buffer.
-    reverbConv.prepare (sampleRate, maxBlock, 1, 4.0, /*normalize*/ false);
-    reverbScratch.setSize (1, maxBlock, false, false, true);
+    // The tank stays at the HOST rate whether or not the island runs: its IR is resampled to the
+    // prepared rate at load, which is a message-thread job, and keeping it here means a NAM arm or
+    // disarm never has to re-prepare a partitioned convolver under a running audio thread. When the
+    // island runs, the mono send/return crosses the boundary through revDown/revUp — and that costs
+    // nothing against today, because the wet already passed through BOTH NAM stages' round trips.
+    reverbConv.prepare (sampleRate, hostMaxBlock_, 1, 4.0, /*normalize*/ false);
+    reverbScratch.setSize (1, frontMaxBlock_, false, false, true);
 }
 
 void CabEngine::reset()
@@ -94,6 +143,16 @@ void CabEngine::reset()
     amp.reset();
     powerAmpRouter.reset();
     reverbConv.reset();
+    // The island's four resamplers are stream state: reset them TOGETHER (a leg cleared without its
+    // partner shifts the steady-state lag and makes produceExact pad silence mid-stream).
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        inDown[ch].reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
+        outUp [ch].reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
+    }
+    revDown.reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
+    revUp  .reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
+    islandRunning_ = false;
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
     autoLeveler.reset();
@@ -212,6 +271,48 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     mixABSmoothed.setTargetValue (abTarget);
     muteGateSmoothed.setTargetValue ((aOn || bOn) ? 1.0f : 0.0f);
 
+    // ================= THE MODEL-RATE ISLAND — decide it once, here =========================
+    // The front section runs at the NAM run rate whenever a NAM stage that would actually be CALLED
+    // this block has a model, so the chain rate-matches ONCE instead of once per stage. When nothing
+    // in it is a rate-locked model — which is what OrbitCab boots as — it runs at the host rate and
+    // not one sample is converted, exactly as before the island existed.
+    const bool captureMode = (p.powerAmpMode != PowerAmpMode::tube);
+    const bool island      = islandEngagedFor (captureMode);
+    const double frontRate = island ? islandRate_ : hostRate_;
+    if (island != islandRunning_)
+    {
+        // The rate-DESIGNED stages follow the section. Both prepares are allocation-free here (the EQ
+        // engine is built with maxBlock 0 and the gate's curve was sized in prepare() for the larger
+        // of the two blocks), and both reset their own state — which is why this is only ever done on
+        // a block that is already a hard step: a capture arming, a capture clearing, or a
+        // capture<->tube cut. Nothing else can move this flag.
+        islandRunning_ = island;
+        const int prepCh = dryBuffer.getNumChannels();
+        ampEq.prepare (frontRate, frontMaxBlock_, prepCh);
+        noiseGate.prepare (frontRate, frontMaxBlock_, prepCh);
+        noiseGate.seedEnabled (p.gate.on);            // prepare() clears the on/off crossfade — restore it
+        const float revHeld = reverbMixSm.getCurrentValue();
+        reverbMixSm.reset (frontRate, kRampSeconds);  // the wet ramp is counted in the samples it sees
+        reverbMixSm.setCurrentAndTargetValue (revHeld);
+    }
+
+    // Island IN: one host->model conversion for the whole front section. Every lane is converted, not
+    // just the frontCh ones, so the two resamplers never diverge when p.monoAmp flips mid-stream.
+    int    fN = numSamples;
+    float* frontPtrs[felitronics::core::kMaxChannels] {};
+    for (int ch = 0; ch < numCh; ++ch)
+        frontPtrs[ch] = island ? islandBuf.getWritePointer (ch) : buffer.getWritePointer (ch);
+    if (island)
+    {
+        for (int ch = 0; ch < numCh; ++ch)
+        {
+            inDown[ch].feed (buffer.getReadPointer (ch), numSamples);
+            const int got = inDown[ch].produceAvailable (frontPtrs[ch], islandMaxBlock_);
+            fN = (ch == 0) ? got : juce::jmin (fN, got);   // identical ratio + priming => identical counts
+        }
+    }
+    juce::AudioBuffer<float> front (frontPtrs, numCh, fN);
+
     // --- front stages (PREAMP → AMP EQ → POWERAMP): two nonlinear NAM stages plus the tone
     // stack between them, in signal order. They run on the signal BEFORE the dry tap, so their
     // output becomes the "dry" reference for both the per-slot Dry/Wet blend and the auto-level
@@ -219,23 +320,24 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // off or no model is loaded; the EQ is a bit-exact passthrough when eq.on is false. The EQ
     // sits between the stages so its cuts shape what the poweramp distorts. ---
     { const auto a = PerfClock::now();
-      // Latency-aligned preamp gate. The preamp has host-rate latency when it rate-matches (0 at
-      // 48 kHz; a handful of samples when resampling). Keep the dry aligned to that PDC EVERY block
-      // (warm), so that whether the preamp is ON (its inherent latency) or OFF (dry delayed to the
-      // same amount) the plugin's reported latency never changes on the power toggle → no host
-      // re-sync gap. advance() reads the raw input first (before preamp.process overwrites it).
-      float* const* pio = buffer.getArrayOfWritePointers();
-      preampBypassAlign.advance (pio, numCh, numSamples, preamp.latencySamples());
+      // Latency-aligned preamp gate. Inside the island the preamp's OWN latency is 0 (it is prepared
+      // at the model rate, so its rate-matcher never engages) and the island's round trip delays the
+      // whole section including this dry — so the tap is 0 there and the alignment is exact anyway.
+      // Without an island it is whatever the stage reports, as before. advance() reads the input first
+      // (before preamp.process overwrites it).
+      float* const* pio = front.getArrayOfWritePointers();
+      preampBypassAlign.advance (pio, numCh, fN, preamp.latencySamples());
       // NOISE GATE — PHASE A (DETECTOR): key off the CLEAN post-trim input on the frontCh lane(s), NOW,
       // before preamp.process overwrites pio in place. The per-sample gain curve is stashed and applied
-      // after the EQ (phase B). Keying the clean input gives accurate open/close; the preamp's latency
-      // (0 at 48 kHz) between here and the VCA point is a small free lookahead, uncompensated.
-      noiseGate.analyse (pio, frontCh, numSamples, p.gate.on, p.gate.thresholdDb);
+      // after the EQ (phase B). Both phases live in the SAME domain — they must, because phase B may not
+      // read past what phase A analysed — so inside the island the key is the converted clean input.
+      // Its own ballistics are in seconds either way (the gate designs them from the rate it is given).
+      noiseGate.analyse (pio, frontCh, fN, p.gate.on, p.gate.thresholdDb);
       if (p.preampOn)
-          preamp.process (pio, frontCh, numSamples, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
+          preamp.process (pio, frontCh, fN, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
       else
           for (int ch = 0; ch < numCh; ++ch)
-              juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), numSamples);
+              juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), fN);
       nsPre = elapsedNs (a); }
 
     // Preamp VOLUME: post-preamp output gain (block-ramped, zipper-free) — the preamp's own "volume"
@@ -243,16 +345,16 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // fold overwrites it. Sits before the dry tap, so the auto-level reference tracks it.
     {
         const float pvTarget = juce::Decibels::decibelsToGain (p.preampVolumeDb);
-        buffer.applyGainRamp (0, numSamples, preampVolPrev, pvTarget);
+        front.applyGainRamp (0, fN, preampVolPrev, pvTarget);
         preampVolPrev = pvTarget;
     }
 
     { const auto a = PerfClock::now();
-      ampEq.process (buffer.getArrayOfWritePointers(), frontCh, numSamples, p.eq);
+      ampEq.process (front.getArrayOfWritePointers(), frontCh, fN, p.eq);
       // NOISE GATE — PHASE B (VCA): apply the gain curve computed in phase A. Post-EQ (kills the preamp's
       // hiss shaped by the tone stack) and BEFORE the spring-reverb send below, so a closing gate stops
       // feeding the tank while its tail rings out. On the frontCh lane(s); the mono fold carries ch0 across.
-      noiseGate.applyGain (buffer.getArrayOfWritePointers(), frontCh, numSamples);
+      noiseGate.applyGain (front.getArrayOfWritePointers(), frontCh, fN);
       nsEq = elapsedNs (a); }
 
     // --- SPRING REVERB (AFTER the EQ, BEFORE the poweramp): a real amp's built-in spring tank. The wet
@@ -269,15 +371,31 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         reverbMixSm.setTargetValue (revTarget);
         if (reverbHasIR() && (revTarget > 0.0f || reverbMixSm.getCurrentValue() > 1.0e-4f))
         {
-            float* const* pio = buffer.getArrayOfWritePointers();
+            float* const* pio = front.getArrayOfWritePointers();
             float*        rs  = reverbScratch.getWritePointer (0);
             if (frontCh >= 2)
-                for (int n = 0; n < numSamples; ++n) rs[n] = 0.5f * (pio[0][n] + pio[1][n]);   // mono send
+                for (int n = 0; n < fN; ++n) rs[n] = 0.5f * (pio[0][n] + pio[1][n]);   // mono send
             else
-                juce::FloatVectorOperations::copy (rs, pio[0], numSamples);
+                juce::FloatVectorOperations::copy (rs, pio[0], fN);
 
             float* rsPlanes[1] { rs };
-            reverbConv.process (rsPlanes, 1, numSamples);   // mono spring tank, in-place, zero latency
+            if (island)
+            {
+                // The tank is prepared at the HOST rate (its IR is resampled there at load, off the
+                // audio thread), so the mono send makes the trip out and back. That is not a new cost:
+                // today this wet already passes through BOTH NAM stages' round trips, which is the same
+                // four legs. It buys the tank never having to be re-prepared when a capture is armed.
+                float* rh = revHostBuf.getWritePointer (0);
+                float* rhPlanes[1] { rh };
+                revDown.feed (rs, fN);
+                const int hN = revDown.produceAvailable (rh, hostMaxBlock_);
+                if (hN > 0)
+                    reverbConv.process (rhPlanes, 1, hN);
+                revUp.feed (rh, hN);
+                revUp.produceExact (rs, fN);
+            }
+            else
+                reverbConv.process (rsPlanes, 1, fN);   // mono spring tank, in-place, zero latency
 
             // kReverbWetGain calibrates the return level: a spring IR convolved with a sustained note
             // accumulates a LOT of tail energy, so a raw unity return is ~6-7× too hot (the Mix knob felt
@@ -285,7 +403,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             // scale01 = the TEMP wet-level calibration knob (replaces the old fixed 0.15 while per-reverb
             // levels are dialled in). Read per block — a coarse step when dragged, fine for calibration.
             const float wetScale = p.reverb.scale01;
-            for (int n = 0; n < numSamples; ++n)
+            for (int n = 0; n < fN; ++n)
             {
                 const float wet = rs[n] * reverbMixSm.getNextValue() * wetScale;   // parallel return (dry kept)
                 for (int ch = 0; ch < frontCh; ++ch) pio[ch][n] += wet;
@@ -309,7 +427,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // Over the FRONT lane(s) only: in mono-fold + preamp-on, ch ≥ frontCh is stale until the fold below
     // (~line 329), so an all-channels getMagnitude would read the UNGATED stale lane and ignore the gate.
     float preampMag = 0.0f;
-    for (int ch = 0; ch < frontCh; ++ch) preampMag = juce::jmax (preampMag, buffer.getMagnitude (ch, 0, numSamples));
+    for (int ch = 0; ch < frontCh; ++ch) preampMag = juce::jmax (preampMag, front.getMagnitude (ch, 0, fN));
     preampLevel.store (preampMag, std::memory_order_relaxed);
     gateLevel.store  (noiseGate.currentGain(), std::memory_order_relaxed);   // effective gate gain → GR meter (atomic publish)
 
@@ -317,8 +435,29 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // The poweramp seam: ampOn gates the stage; powerAmpMode picks NAM capture (`amp`, default)
       // vs the white-box tube stage. The router crossfades click-free on a live capture<->tube
       // switch and keeps the NAM path bit-identical to the legacy `if (p.ampOn) amp.process(...)`.
-      powerAmpRouter.process (buffer.getArrayOfWritePointers(), frontCh, numSamples,
-                              p.ampOn, p.powerAmpMode, p.tube, amp);
+      //
+      // WHERE it is called is the one thing the island moves. In capture mode it belongs INSIDE, so
+      // the NAM poweramp gets model-rate samples and the round trip is shared. In tube mode it belongs
+      // OUTSIDE: the tube is not a rate-locked model, its 31-sample latency would become a fractional
+      // 28.48 host samples at the model rate, and there is no second NAM stage in that mode to save a
+      // round trip on. With no island the two places are the same place, and the same single call.
+      const bool routerInsideFront = (! island) || captureMode;
+      if (routerInsideFront)
+          powerAmpRouter.process (front.getArrayOfWritePointers(), frontCh, fN,
+                                  p.ampOn, p.powerAmpMode, p.tube, amp, frontRate);
+
+      // Island OUT: one model->host conversion, and the front section is over. produceExact() always
+      // yields exactly numSamples — the block geometry downstream is the host's, untouched.
+      if (island)
+          for (int ch = 0; ch < numCh; ++ch)
+          {
+              outUp[ch].feed (islandBuf.getReadPointer (ch), fN);
+              outUp[ch].produceExact (buffer.getWritePointer (ch), numSamples);
+          }
+
+      if (! routerInsideFront)
+          powerAmpRouter.process (buffer.getArrayOfWritePointers(), frontCh, numSamples,
+                                  p.ampOn, p.powerAmpMode, p.tube, amp, hostRate_);
       nsPwr = elapsedNs (a); }
 
     // The leveler route-snap triggers on ROUTER-ACCEPTED transitions (a change arriving mid-fade

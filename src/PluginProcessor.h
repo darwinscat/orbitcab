@@ -192,6 +192,12 @@ public:
     orbitcab::PreampRig preampRig() const;                                 // devices + display entries
     std::vector<orbitcab::PreampEntry> preampLibrary() const { return preampRig().entries; }
     bool         hasAnyPreamps() const { return ! preampSources().empty(); }
+    // The rate the audible tone stack is designed at (the model-rate island's when it runs).
+    double eqDesignRate() const
+    {
+        const bool tubeMode = ampModeParam != nullptr && ampModeParam->load() > 0.5f;
+        return engine.eqDesignRate (! tubeMode);
+    }
     juce::String selectedPreampId() const { return apvts.state.getProperty ("preampSel", juce::String()).toString(); }
     void         selectPreamp (const juce::String& id);                    // set "preampSel" + reload + bump (message thread)
     juce::File   importPreamp (const juce::File& src);                     // copy a .nam into preampDir; {} on failure

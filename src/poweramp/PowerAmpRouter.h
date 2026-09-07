@@ -49,13 +49,25 @@ namespace cab::poweramp
 class PowerAmpRouter
 {
 public:
-    void prepare (double sampleRate, int maxBlock, int numChannels);
+    // `hostRate`/`hostMaxBlock` are the stream's; `frontMaxBlock` is the largest block this router
+    // will ever be handed, which is NOT the host's when CabEngine's model-rate island is running
+    // (a 44.1 kHz host block of 512 becomes ~558 model samples). The TUBE is prepared at the HOST
+    // rate and is only ever called there — it is not a rate-locked model, its 31-sample latency
+    // would turn into a fractional 28.48 host samples at the model rate, and in tube mode there is
+    // no second NAM stage to save a round trip on. The rest (fade scratch, dry aligner) is sized for
+    // the larger block so the same object serves both rates.
+    void prepare (double hostRate, int hostMaxBlock, int frontMaxBlock, int numChannels);
     void reset();
 
     // The one poweramp-seam call. In place on planar `io`. `nam` is CabEngine's NAM poweramp
     // (used in capture mode); the tube stage lives inside the router.
+    // `callRate` is the rate of the samples being handed in — the host's in tube/off-at-host mode,
+    // the model's when the engine calls this inside its island. Only the 30 ms fade ramp reads it;
+    // it is re-based when it changes, which can only happen at a capture<->tube cut or a model
+    // arm/disarm, both of which are already hard steps.
     void process (float* const* io, int numChannels, int numSamples,
-                  bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams, AmpStage& nam) noexcept;
+                  bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams, AmpStage& nam,
+                  double callRate) noexcept;
 
     int  tubeLatencySamples() const noexcept { return tube[0].latencySamples(); }   // tpp-based, invariant across OS factor
 
@@ -87,6 +99,7 @@ private:
     juce::AudioBuffer<float>   scratch;             // preallocated: holds the fade-FROM render
     DryAligner                 dryAligner;          // latency-aligned dry for the OFF path (see DryAligner.h)
     juce::SmoothedValue<float> xfade { 1.0f };      // 0→1 ramp during a capture<->tube switch
+    double       fadeRate_  = 0.0;                  // the rate `xfade` is currently based on (0 = unset)
     Active current  = Active::off;
     Active fadeFrom = Active::off;
     bool   fading   = false;

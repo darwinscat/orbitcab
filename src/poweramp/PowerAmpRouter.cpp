@@ -12,24 +12,28 @@ namespace cab::poweramp
 namespace
 {
     constexpr double kRampSeconds = 0.03;   // matches CabEngine's other live glides
-    // Dry-alignment ring capacity: covers ANY stage latency (tube oversampling ~31; NAM rate-match
-    // ≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin. Fixed so the delay tap
-    // can vary per block (tube ↔ capture) without ever reallocating on the audio thread.
+    // Dry-alignment ring capacity: covers ANY stage latency (tube oversampling ~31; a NAM rate-match
+    // is 0 inside CabEngine's model-rate island and 2 + 2·hostSR/modelSR without one, i.e. ≤ ~10 at
+    // any sane rate) with wide margin. Fixed so the delay tap can vary per block (tube ↔ capture)
+    // without ever reallocating on the audio thread.
     constexpr int kAlignRingSamples = 256;
 
 }
 
-void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
+void PowerAmpRouter::prepare (double hostRate, int hostMaxBlock, int frontMaxBlock, int numChannels)
 {
     // One tube per OS-quality option, ALL prepared here → the live OS switch is just picking `osSel` (a
     // per-block branch), never a reallocation on the audio thread. Latency is tpp-based (31), invariant
     // across OS factor, so switching costs 0 PDC. Higher OS = softer top (less folded aliasing).
+    // The tube is prepared at the HOST rate and only ever called there (see the header).
     for (int i = 0; i < kNumOs; ++i)
-        tube[i].prepare (sampleRate, maxBlock, kOsFactor[i]);
+        tube[i].prepare (hostRate, hostMaxBlock, kOsFactor[i]);
     const int ch = juce::jmax (1, numChannels);
-    scratch.setSize (ch, juce::jmax (1, maxBlock), false, false, true);
+    const int maxBlock = juce::jmax (1, juce::jmax (hostMaxBlock, frontMaxBlock));
+    scratch.setSize (ch, maxBlock, false, false, true);
     dryAligner.prepare (ch, maxBlock, kAlignRingSamples);
-    xfade.reset (sampleRate, kRampSeconds);
+    fadeRate_ = hostRate;
+    xfade.reset (hostRate, kRampSeconds);
     xfade.setCurrentAndTargetValue (1.0f);
     current = fadeFrom = Active::off;
     fading  = false;
@@ -71,8 +75,20 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
 
 void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
                               bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams,
-                              AmpStage& nam) noexcept
+                              AmpStage& nam, double callRate) noexcept
 {
+    // The 30 ms fade is counted in the samples we are handed, so re-base it when the engine starts
+    // (or stops) calling us from inside its model-rate island. reset() ends any ramp in flight — the
+    // only two events that change this rate are a capture<->tube cut and a NAM arm/disarm, and both
+    // are hard steps already. Allocation-free (juce::SmoothedValue holds no storage).
+    if (callRate > 0.0 && std::abs (callRate - fadeRate_) > 0.5)
+    {
+        const float held = xfade.getCurrentValue();
+        fadeRate_ = callRate;
+        xfade.reset (callRate, kRampSeconds);
+        xfade.setCurrentAndTargetValue (held);
+        fading = false;                    // a ramp cannot survive its own clock changing under it
+    }
     osSel = juce::jlimit (0, kNumOs - 1, tubeParams.osIndex);   // live OS-quality pick (all tubes pre-prepared)
     for (int i = 0; i < kNumOs; ++i) tube[i].setParams (tubeParams);   // cheap (stores targets); keeps the idle
                                                                        // tube's params current so a live switch has no param jump, only a brief state settle
@@ -100,8 +116,10 @@ void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
 
     // Keep the dry-alignment delay warm every block and stage the latency-aligned dry (used by the
     // OFF path). Runs BEFORE any render — `io` still holds the raw block input here. The delay tracks
-    // the ACTIVE mode's PDC: the tube's fixed oversampling latency, or the NAM capture's rate-match
-    // (0 at 48 kHz). This must match what PluginProcessor::updateLatency reports for the same mode.
+    // the ACTIVE mode's PDC IN THE DOMAIN WE ARE CALLED IN: the tube's fixed oversampling latency at
+    // the host rate, or the NAM capture's rate-match — which is 0 inside the island, because a stage
+    // prepared AT the model rate never rate-matches. The island's own round trip is outside us and
+    // delays this dry with everything else, so PluginProcessor::updateLatency adds the two.
     const int alignLatency = tubeMode ? tube[0].latencySamples() : nam.latencySamples();   // tube latency invariant across OS
     dryAligner.advance (io, numChannels, numSamples, alignLatency);
 
