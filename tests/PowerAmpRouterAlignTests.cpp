@@ -37,6 +37,27 @@ namespace
         return v;
     }
 
+    // The rate-match latency, from the GEOMETRY of the resampler rather than from a formula.
+    // felitronics::core::StreamResampler::reset() leaves 3 leading history zeros with pos = 1.0, so
+    // output k reads input position k*inPerOut - 2: EVERY stage delays by exactly 2 of ITS OWN input
+    // samples. A round trip is therefore 2 host samples (down) + 2 model samples (up), the latter
+    // converted to host rate -> 2 + 2*hostSR/modelRunSR, rounded to the nearest integer because the
+    // true delay is fractional (3.8375 at 44.1 kHz, 6.0000 at 96 kHz).
+    //
+    // 🔴 This USED to be pinned as ceil(3*hostSR/48000) + 3, which is the formula core::NamStage
+    // shipped and which is now KNOWN TO BE WRONG: it over-reported by 2.16 samples at 44.1 kHz
+    // (6 against the real 3.84) and by 3.00 at 96 kHz (9 against 6.00), measured back from the
+    // carrier phase of the shipped round trip with the whole-period ambiguity resolved by an
+    // impulse onset (felitronics-core PR #148, docs/STREAM-RESAMPLER-COST.md §7). The mismatch put
+    // the first comb notch of an on<->off crossfade at ~10.2 kHz at 44.1 kHz and 16 kHz at 96 kHz.
+    // If these three expectations ever go red again, the fix is NOT to restore the old formula in
+    // core: it is to check this geometry against what the stage actually does.
+    int rateMatchLatency (double hostSR, double modelRunSR = 48000.0) noexcept
+    {
+        if (std::abs (hostSR - modelRunSR) <= 0.5) return 0;          // no conversion, no latency
+        return (int) std::lround (2.0 + 2.0 * hostSR / modelRunSR);
+    }
+
     // Run `in` through the router in fixed `block`-sized chunks (mono duplicated to stereo) on the OFF
     // path (ampOn = false), so ONLY the alignment delay is exercised. Returns channel-0 output.
     std::vector<float> runOff (PowerAmpRouter& r, AmpStage& nam, PowerAmpMode mode,
@@ -201,7 +222,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 if (ok)
                 {
                     const int Ln = nam.latencySamples();
-                    expectEquals (Ln, (int) std::ceil (3.0 * sr / 48000.0) + 3);   // the rate-match formula = 9 @ 96k
+                    expectEquals (Ln, rateMatchLatency (sr));                       // the rate-match GEOMETRY = 6 @ 96k
                     const auto in  = distinctSignal (8000);
                     const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64);
                     expect (isDelayedBy (out, in, Ln), "capture off = dry delayed by EXACTLY the reported latency");
@@ -225,7 +246,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "preamp model loads");
                 const int L = e.preampLatencySamples();
-                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);      // 9 @ 96k
+                expectEquals (L, rateMatchLatency (sr));                         // 6 @ 96k
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);
                 expectEquals (bestFitDelay (out, in, 24), L,
@@ -245,7 +266,7 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadAmpModelBytes (bytes.getData(), bytes.getSize()), "capture model loads");
                 const int L = e.ampLatencySamples();
-                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);
+                expectEquals (L, rateMatchLatency (sr));
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);
                 expectEquals (bestFitDelay (out, in, 24), L,
