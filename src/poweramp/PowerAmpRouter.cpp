@@ -56,7 +56,12 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
 {
     switch (a)
     {
-        case Active::capture: nam.process  (dst, numChannels, numSamples, /*normalize*/ true); break;
+        case Active::capture:
+            // namUsable_ false => the model must not run on these samples this block (see the header).
+            // Doing nothing here IS the pass-through a stage with no model performs, so the routing,
+            // the fades and the reported latency are all untouched by the refusal.
+            if (namUsable_) nam.process (dst, numChannels, numSamples, /*normalize*/ true);
+            break;
         case Active::tube:
             tube[osSel].process (dst, numChannels, numSamples);
             if (tubeMakeup != 1.0f)   // static per-voicing level trim (params-derived; no follower → no kick)
@@ -75,8 +80,9 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
 
 void PowerAmpRouter::process (float* const* io, int numChannels, int numSamples,
                               bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams,
-                              AmpStage& nam, double callRate) noexcept
+                              AmpStage& nam, double callRate, bool namUsable) noexcept
 {
+    namUsable_ = namUsable;
     // The 30 ms fade is counted in the samples we are handed, so re-base it when the engine starts
     // (or stops) calling us from inside its model-rate island. reset() ends any ramp in flight — the
     // only two events that change this rate are a capture<->tube cut and a NAM arm/disarm, and both

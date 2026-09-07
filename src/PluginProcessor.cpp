@@ -802,13 +802,14 @@ void OrbitCabAudioProcessor::applyPoweramp()
     // Message thread (poll timer). Resolve "ampSel" against the merged library and load that
     // model into the amp stage. No selection / unresolved (model gone) clears the model so the
     // stage is a clean passthrough — never a phantom wrong amp.
-    if (ampOnParam == nullptr || ampOnParam->load() <= 0.5f)
-        return;   // Powered OFF: keep the loaded capture ARMED (do NOT clear). Its rate-match latency
-                  // must persist so toggling the poweramp never changes PDC (no host re-sync gap). The
-                  // router already routes OFF (latency-aligned dry) and never processes the model while
-                  // off, so an armed-but-off model is inaudible — only its latency stays reported.
-
+    // Powered OFF still LOADS — same reason as applyPreamp(): what is armed must be a function of the
+    // SAVED selection, not of whether this session ever switched the stage on, because the armed set
+    // decides the reported PDC and whether the front section rate-matches at all. Skipped when the
+    // selection has not moved, so a power toggle costs no rebuild.
     const auto sel = selectedPowerampId();
+    if (sel == appliedPowerampSel && engine.ampHasModel())
+        return;
+    appliedPowerampSel = sel;
     if (sel.isNotEmpty())
     {
         // 1) Prefer an embedded blob: a restored session/preset carries the .nam in its
@@ -836,6 +837,8 @@ void OrbitCabAudioProcessor::applyPoweramp()
     }
 
     engine.clearAmpModel();
+    if (sel.isNotEmpty())
+        appliedPowerampSel = {};   // the selection did not resolve — retry on the next poll
 }
 
 juce::MemoryBlock OrbitCabAudioProcessor::powerampBytesFor (const juce::String& id) const
@@ -1033,12 +1036,18 @@ void OrbitCabAudioProcessor::applyPreamp()
     // Message thread (poll timer). Resolve "preampSel" against the merged library and load that
     // model into the preamp stage. No selection / unresolved clears the model so the stage is a
     // clean passthrough — never a phantom wrong amp. Mirrors applyPoweramp exactly.
-    if (preampOnParam == nullptr || preampOnParam->load() <= 0.5f)
-        return;   // Powered OFF: keep the loaded preamp ARMED (do NOT clear). Its rate-match latency must
-                  // persist so toggling the preamp never changes PDC (no host re-sync gap). CabEngine
-                  // routes the bypass (latency-aligned dry) and never processes the model while off.
-
+    // Powered OFF still LOADS. The stage's power says whether the model is heard, never whether it is
+    // armed — and what is armed decides both the reported PDC and, since the front section rate-matches
+    // once for the whole chain, whether it converts at all. Returning early here made both depend on
+    // whether the user had ever switched the stage on IN THIS SESSION: save with the preamp off and
+    // reopen, and the restored instance was armed differently from the one that was saved — same
+    // visible state, different latency and (now) different tone. Resolving the SELECTION every time
+    // makes the armed set a pure function of saved state, which is what recall means.
+    // The rebuild is skipped when the selection has not moved, so a power toggle costs nothing.
     const auto sel = selectedPreampId();
+    if (sel == appliedPreampSel && engine.preampHasModel())
+        return;
+    appliedPreampSel = sel;
     if (sel.isNotEmpty() && sel != "bypass")   // "bypass" = preamp stage ON but no model → clean passthrough (standalone EQ)
     {
         // 1) Prefer an embedded blob (a restored session/preset carries the .nam in its PreampPool).
@@ -1063,6 +1072,8 @@ void OrbitCabAudioProcessor::applyPreamp()
     }
 
     engine.clearPreampModel();
+    if (sel.isNotEmpty() && sel != "bypass")
+        appliedPreampSel = {};   // the selection did not resolve — retry on the next poll
 }
 
 juce::MemoryBlock OrbitCabAudioProcessor::preampBytesFor (const juce::String& id) const

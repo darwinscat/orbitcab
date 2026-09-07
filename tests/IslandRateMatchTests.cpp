@@ -65,6 +65,21 @@ namespace
         return p;
     }
 
+    // A short decaying noise burst: enough of a tank to make the detour real, no bundled file needed.
+    std::vector<float> syntheticIr (int n, juce::uint32 seed = 0x9876u)
+    {
+        std::vector<float> ir ((size_t) n);
+        juce::uint32 s = seed;
+        for (int i = 0; i < n; ++i)
+        {
+            s = s * 1664525u + 1013904223u;
+            ir[(size_t) i] = (float) (((double) s / 4294967296.0 - 0.5)
+                                      * std::exp (-4.0 * (double) i / (double) n) * 0.5);
+        }
+        ir[0] = 1.0f;
+        return ir;
+    }
+
     juce::MemoryBlock testModelBytes()
     {
         juce::MemoryBlock mb;
@@ -233,6 +248,122 @@ struct IslandRateMatchTest : juce::UnitTest
                 const int k = onset (out, 1.0e-4f);
                 expect (k >= 64 && k <= 64 + 5,
                         "impulse onset lands within the round trip, at " + juce::String (k - 64));
+            }
+        }
+
+        beginTest ("44.1 kHz: the island never pads, never drops, never repeats — DC through it is DC");
+        {
+            // The one thing a two-stage conversion can do silently is come up SHORT: produceExact()
+            // pads with zeros when the up leg has not been handed enough model frames, and a dropped or
+            // repeated sample would look like nothing in a spectrum. Catmull-Rom weights are a partition
+            // of unity at every phase, so a constant input must come out as the SAME constant, exactly —
+            // and any pad, drop, repeat or stale read breaks that at the sample where it happens.
+            // Ragged blocks on purpose: the model-frame count per host block alternates 557/558 at 512,
+            // and nothing downstream may assume either.
+            if (bytes.getSize() > 0)
+            {
+                for (int blk : { 1, 7, 64, 128, 300, 511, 512 })
+                {
+                    cab::CabEngine e;
+                    e.prepare (44100.0, 512, 2, p);
+                    expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "capture loads");
+                    const std::vector<float> dc (30000, 1.0f);
+                    const auto out = render (e, p, dc, blk);
+                    float worst = 0.0f; int worstAt = -1;
+                    for (size_t i = 1000; i < out.size(); ++i)      // past the priming ramp
+                        if (std::abs (out[i] - 1.0f) > worst) { worst = std::abs (out[i] - 1.0f); worstAt = (int) i; }
+                    expect (worst < 1.0e-5f,
+                            "block " + juce::String (blk) + ": worst DC deviation " + juce::String (worst, 8)
+                            + " at sample " + juce::String (worstAt));
+                }
+            }
+        }
+
+        beginTest ("44.1 kHz: a poweramp A/B must not touch the gate — no hole, no lost hysteresis");
+        {
+            // The island's engagement depends on the poweramp MODE (in tube mode there is no second NAM
+            // stage to save a trip on), so a capture<->tube A/B flips it — and the rate-designed stages
+            // follow. A gate that re-prepared there would restart CLOSED and then judge with the OPEN
+            // threshold, so a note sustaining INSIDE the hysteresis window would never reopen: measured
+            // on the bare gate, a 17-40 sample hole at -90 dB and then silence until the next attack.
+            // This pins that the A/B costs neither.
+            if (bytes.getSize() > 0)
+            {
+                cab::Params g = transparentParams();
+                g.ampOn = true;                       // armed capture, powered, capture mode
+                g.gate.on = true;
+                g.gate.thresholdDb = -46.0f;
+                cab::CabEngine e;
+                e.prepare (44100.0, 512, 2, g);
+                expect (e.loadAmpModelBytes (bytes.getData(), bytes.getSize()), "capture loads");
+                expect (e.islandEngagedFor (true),  "capture mode + armed capture => island");
+                expect (! e.islandEngagedFor (false), "tube mode + no preamp => no island");
+
+                // A note that ARRIVES loud (so the gate opens) and then decays to a level between the
+                // close and open thresholds — held open only by the Schmitt hysteresis, which is exactly
+                // the state a reset destroys.
+                const int N = 44100;
+                std::vector<float> in ((size_t) N);
+                for (int i = 0; i < N; ++i)
+                {
+                    const float amp = (i < 8192) ? 0.25f : 0.0035f;   // pick, then a held decay
+                    in[(size_t) i] = amp * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 196.0 * (double) i / 44100.0);
+                }
+
+                std::vector<float> L (512), R (512);
+                float gateBefore = 1.0f, worstAfter = 1.0f;
+                for (int off = 0, blk = 0; off + 512 <= N; off += 512, ++blk)
+                {
+                    if (blk == 40) { gateBefore = e.gateGain(); g.powerAmpMode = cab::PowerAmpMode::tube; }
+                    for (int i = 0; i < 512; ++i) { L[(size_t) i] = in[(size_t) (off + i)]; R[(size_t) i] = L[(size_t) i]; }
+                    float* io[2] { L.data(), R.data() };
+                    e.process (io, 2, 512, g, false);
+                    if (blk > 40) worstAfter = juce::jmin (worstAfter, e.gateGain());
+                }
+                expect (gateBefore > 0.9f, "precondition: the gate is OPEN before the A/B (" + juce::String (gateBefore, 4) + ")");
+                expect (worstAfter > 0.5f,
+                        "the A/B must not shut the gate — worst gain after it was " + juce::String (worstAfter, 6));
+            }
+        }
+
+        beginTest ("44.1 kHz: the spring detour survives idle/resume without padding the return");
+        {
+            // The detour's two legs balance over an UNBROKEN sequence of blocks; a subsequence (an idle
+            // spring) is a random walk that eventually pads the return with a literal 0.0f and leaves a
+            // permanent extra sample of wet lag. With a unit-impulse tank and a DC input, the wet IS the
+            // dry, so any pad, drop or repeat shows as an exact zero or a level step in the sum.
+            if (bytes.getSize() > 0)
+            {
+                cab::Params r = transparentParams();
+                r.reverb.type = 1; r.reverb.mix01 = 1.0f; r.reverb.scale01 = 1.0f;
+                cab::CabEngine e;
+                e.prepare (44100.0, 512, 2, r);
+                expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "capture loads");
+                std::vector<float> ir (1, 1.0f);                 // a unit impulse: the tank is a wire
+                const float* irPlanes[1] { ir.data() };
+                e.loadReverbIR (irPlanes, 1, 1, 44100.0);
+                for (int i = 0; i < 500; ++i) e.pumpConvolverReloads();
+
+                std::vector<float> L (512), R (512);
+                int  zerosAfterPriming = 0;
+                bool sawWet = false;
+                for (int blk = 0; blk < 400; ++blk)
+                {
+                    r.reverb.mix01 = ((blk / 7) % 2 == 0) ? 1.0f : 0.0f;   // idle / resume, over and over
+                    for (int i = 0; i < 512; ++i) { L[(size_t) i] = 1.0f; R[(size_t) i] = 1.0f; }
+                    float* io[2] { L.data(), R.data() };
+                    e.process (io, 2, 512, r, false);
+                    if (blk > 20 && r.reverb.mix01 > 0.5f)
+                    {
+                        for (int i = 0; i < 512; ++i)
+                        {
+                            if (L[(size_t) i] == 0.0f) ++zerosAfterPriming;
+                            if (L[(size_t) i] > 1.5f)  sawWet = true;      // dry 1 + wet ~1
+                        }
+                    }
+                }
+                expect (sawWet, "precondition: the wet return is actually reaching the sum");
+                expectEquals (zerosAfterPriming, 0);
             }
         }
 

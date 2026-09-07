@@ -177,7 +177,7 @@ int main (int argc, char** argv)
     e.loadReverbIR (springPlanes, 1, (int) spring.size(), sr);
     for (int i = 0; i < 200; ++i) e.pumpConvolverReloads();   // land any coalesced swap
 
-    const int  n = (int) (sr * 6.0);
+    const int  n = (int) (sr * 9.0);
     const auto in = stimulus (n, sr);
     std::vector<float> outL ((size_t) n, 0.0f), outR ((size_t) n, 0.0f);
     std::vector<float> L ((size_t) maxBlock), R ((size_t) maxBlock);
@@ -186,6 +186,7 @@ int main (int argc, char** argv)
     // events at fixed SAMPLE positions (not block positions) so the two builds see the same stream.
     const int blocks[] = { 1, 7, 64, 128, 300, 511, 512, 33 };
     int bi = 0;
+    bool ampArmed = pre.getSize() > 0;
     for (int off = 0; off < n; )
     {
         const int blk = juce::jmin (blocks[bi++ % 8], n - off);
@@ -194,10 +195,18 @@ int main (int argc, char** argv)
         p.ampOn        = ! (tSec > 3.0 && tSec < 3.4);
         p.powerAmpMode = (tSec > 4.0 && tSec < 5.0) ? cab::PowerAmpMode::tube
                                                     : cab::PowerAmpMode::capture;
-        p.monoAmp      = (tSec > 5.2);                                       // mono-fold stretch
+        p.monoAmp      = (tSec > 5.2 && tSec < 6.4);                          // mono-fold stretch, ENTERED AND LEFT
+        p.reverb.mix01 = (tSec > 3.6 && tSec < 4.2) ? 0.0f : 0.4f;            // the spring idles and resumes
+        p.bypass       = (tSec > 6.8 && tSec < 7.1);                          // and the master bypass, in and out
+        // A model CLEARED and re-armed while audio runs — the one event that moves the island's
+        // engagement, and the one the earlier version of this dump never reached.
+        if (tSec > 5.0 && tSec < 5.02 && ampArmed) { e.clearAmpModel(); ampArmed = false; }
+        if (tSec > 7.4 && tSec < 7.42 && ! ampArmed && pre.getSize() > 0)
+        { e.loadAmpModelBytes (pre.getData(), pre.getSize()); ampArmed = true; }
         for (int i = 0; i < blk; ++i) { L[(size_t) i] = in[(size_t) (off + i)]; R[(size_t) i] = 0.7f * L[(size_t) i]; }
         float* io[2] { L.data(), R.data() };
-        e.process (io, 2, blk, p, /*nonRealtime*/ false);
+        // Offline-bounce stretch too: the non-realtime flag gates the spectrum taps.
+        e.process (io, 2, blk, p, /*nonRealtime*/ tSec > 7.6);
         for (int i = 0; i < blk; ++i) { outL[(size_t) (off + i)] = L[(size_t) i]; outR[(size_t) (off + i)] = R[(size_t) i]; }
         off += blk;
     }

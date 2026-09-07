@@ -65,9 +65,14 @@ public:
     // the model's when the engine calls this inside its island. Only the 30 ms fade ramp reads it;
     // it is re-based when it changes, which can only happen at a capture<->tube cut or a model
     // arm/disarm, both of which are already hard steps.
+    // `namUsable` is the caller's ONE-PER-BLOCK verdict that `nam` may be run on these samples at all
+    // — a stage prepared at the model rate must not be handed host-rate audio, and the engine's
+    // engagement read happens a block ahead of the message thread's model swap. False renders the
+    // capture stage as the pass-through a model-less stage already is: same active stage, same fades,
+    // same PDC. It is always true at a host that needs no conversion.
     void process (float* const* io, int numChannels, int numSamples,
                   bool ampOn, PowerAmpMode mode, const TubeParams& tubeParams, AmpStage& nam,
-                  double callRate) noexcept;
+                  double callRate, bool namUsable = true) noexcept;
 
     int  tubeLatencySamples() const noexcept { return tube[0].latencySamples(); }   // tpp-based, invariant across OS factor
 
@@ -93,6 +98,8 @@ private:
     // stage's PDC via `dryAligner`) so an off↔active crossfade stays time-aligned; when the active
     // stage reports 0 latency that dry already equals the raw input, so it's a plain pass-through.
     void render (Active a, float* const* dst, int numChannels, int numSamples, AmpStage& nam) noexcept;
+
+    bool namUsable_ = true;                         // this block's verdict — see process()
 
     TubePowerAmp tube[kNumOs];                      // one instance per OS factor, all prepared; osSel picks which runs
     int          osSel = 1;                         // live-switchable (per-block) selector — no realloc on change (1 = 4×)

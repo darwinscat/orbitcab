@@ -225,6 +225,8 @@ private:
     double      islandRate_     = 48000.0;   // the NAM run rate — the only rate a model may be loaded at
     bool        islandPossible_ = false;     // |hostRate - islandRate| > 0.5: at a 48 kHz host there is no island at all
     bool        islandRunning_  = false;     // last block's engagement, so a flip can re-tune the rate-designed stages
+    bool        gateRateStale_  = false;     // the gate owes a re-tune, held until losing its state is free
+    bool        reverbRunning_  = false;     // the spring detour ran last block — its two legs re-prime together
     int         hostMaxBlock_   = 0;
     int         islandMaxBlock_ = 0;         // ceil(hostMax * islandRate/hostRate) + 16, == hostMax when there is no island
     int         frontMaxBlock_  = 0;         // max of the two — what every stage INSIDE the front section is prepared for

@@ -192,6 +192,10 @@ public:
     orbitcab::PreampRig preampRig() const;                                 // devices + display entries
     std::vector<orbitcab::PreampEntry> preampLibrary() const { return preampRig().entries; }
     bool         hasAnyPreamps() const { return ! preampSources().empty(); }
+    // The selection each stage is currently armed with (message thread only). Loading is driven by
+    // the SELECTION, not by the power toggle, so a power flip costs no model rebuild.
+    juce::String appliedPreampSel, appliedPowerampSel;
+
     // The rate the audible tone stack is designed at (the model-rate island's when it runs).
     double eqDesignRate() const
     {

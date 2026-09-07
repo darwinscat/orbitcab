@@ -39,7 +39,15 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // changes a single call, a single size or a single sample against the code that had no island.
     hostRate_       = sampleRate;
     islandRate_     = kModelRunRate;
-    islandPossible_ = std::abs (hostRate_ - islandRate_) > 0.5;
+    // The rate guard is not decoration: a zero or non-finite rate would make the ratio below infinite
+    // and `(int) ceil(inf)` is undefined, which every neighbour in this tree already refuses
+    // (NamStage clamps to 8000, EqEngine and NoiseGate reject outright). No island, no ratio.
+    // ... and no wider than the pair of boundary resamplers, which is also all a NAM capture can be
+    // (mono or true stereo; NamStage refuses anything else outright). A caller asking for more lanes
+    // gets the pre-island path, where those lanes were untouched anyway.
+    islandPossible_ = std::isfinite (hostRate_) && hostRate_ > 1000.0
+                        && std::abs (hostRate_ - islandRate_) > 0.5
+                        && numChannels <= 2;
     hostMaxBlock_   = juce::jmax (1, maxBlock);
     // A host block of N becomes at most ceil(N * islandRate/hostRate) model frames. +16 is NamStage's
     // own margin for the same quantity (NamStage.cpp) and covers the resampler's leading history.
@@ -54,6 +62,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // and the round trip by 2 host + 2 model samples (3.8375 at 44.1 kHz, 6.0000 at 96 kHz).
     islandRoundTrip_ = islandPossible_ ? (int) std::lround (2.0 + 2.0 * hostRate_ / islandRate_) : 0;
     islandRunning_   = false;
+    reverbRunning_   = false;
     for (int ch = 0; ch < 2; ++ch)
     {
         inDown[ch].reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
@@ -62,7 +71,9 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     revDown.reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);   // spring send: island -> host tank
     revUp  .reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);   // spring return: host tank -> island
     islandBuf .setSize (numChannels, islandMaxBlock_, false, false, true);
-    revHostBuf.setSize (1,           hostMaxBlock_,   false, false, true);
+    // +16 like the island's own margin: a block whose model-frame count runs a couple above the
+    // steady state must still convert back WHOLE, or produceExact would pad the return with silence.
+    revHostBuf.setSize (1,           hostMaxBlock_ + 16, false, false, true);
 
     // Both NAM stages are prepared AT the model rate, so their own rate-matchers never engage and the
     // island owns the one round trip. That is safe precisely because a stage with a model is only ever
@@ -153,6 +164,8 @@ void CabEngine::reset()
     revDown.reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
     revUp  .reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
     islandRunning_ = false;
+    reverbRunning_ = false;
+    gateRateStale_ = false;
     for (int i = 0; i < 2; ++i)
         slot[i].reset();
     autoLeveler.reset();
@@ -212,6 +225,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         gateLevel.store (1.0f, std::memory_order_relaxed);   // bypassed → the gate isn't attenuating; keep its LED open
         const double z[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };   // decay the load meter toward 0 while bypassed
         accumulateLoads (z);
+        reverbRunning_ = false;   // bypass is an idle stretch too: the spring detour re-primes on return
         return;
     }
 
@@ -279,21 +293,60 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     const bool captureMode = (p.powerAmpMode != PowerAmpMode::tube);
     const bool island      = islandEngagedFor (captureMode);
     const double frontRate = island ? islandRate_ : hostRate_;
+    // A NAM stage is prepared AT the model rate, so it may only be CALLED while the section runs
+    // there. Normally that is the same statement as `island`, because the island engages on exactly
+    // the stages that would be called — but the two reads are a block apart from the message thread's
+    // swap, so a model landing between them would put one block of host-rate audio through a
+    // model-rate stage. Deciding it ONCE, here, from the same snapshot closes that: the worst case is
+    // the stage appearing one block later, which it already does. Always true at a 48 kHz host, where
+    // the section IS at the model rate.
+    const bool namCallable = (! islandPossible_) || island;
     if (island != islandRunning_)
     {
-        // The rate-DESIGNED stages follow the section. Both prepares are allocation-free here (the EQ
-        // engine is built with maxBlock 0 and the gate's curve was sized in prepare() for the larger
-        // of the two blocks), and both reset their own state — which is why this is only ever done on
-        // a block that is already a hard step: a capture arming, a capture clearing, or a
-        // capture<->tube cut. Nothing else can move this flag.
+        // The rate-DESIGNED stages follow the section. Both prepares are allocation-free here — the EQ
+        // engine is built with maxBlock 0, so its only buffer is an empty assign, and the gate's curve
+        // was sized once in prepare() for the larger of the two blocks. Only three events can move
+        // this flag: a capture arming, a capture clearing, and a capture<->tube cut.
         islandRunning_ = island;
         const int prepCh = dryBuffer.getNumChannels();
+        // The tone stack MUST follow immediately: leaving it on the other rate would shift every
+        // corner by 8.8 %, about a tone and a half. The price is that prepare() clears its filter
+        // tails — a small transient, at a moment that is already a hard change.
         ampEq.prepare (frontRate, frontMaxBlock_, prepCh);
-        noiseGate.prepare (frontRate, frontMaxBlock_, prepCh);
-        noiseGate.seedEnabled (p.gate.on);            // prepare() clears the on/off crossfade — restore it
+        // The gate must NOT. Its prepare() resets the detector, the Schmitt state and the VCA, and a
+        // gate reset does not degrade gracefully: it restarts CLOSED and then decides with the OPEN
+        // threshold, so a note sustaining inside the hysteresis window — above the close threshold it
+        // was holding, below the open one — never reopens, and the note is gated away until the next
+        // attack. Arming a capture while a note rings is exactly that. So the re-tune is DEFERRED to
+        // the first block where the gate's state carries no information: the feature is off (the VCA
+        // is at unity regardless), or the gate is already shut (which is what a reset would make it).
+        // Until then its ballistics are off by the rate ratio — 8.8 % in seconds at 44.1 kHz, i.e. a
+        // 5 ms attack running 4.6 — which is the smaller of the two wrongs by a wide margin.
+        gateRateStale_ = true;
+        // The island's four resamplers are re-primed rather than resumed. A leg that stops advancing
+        // keeps three history samples, and on re-engagement it would replay them — audio from before
+        // the gap, at whatever level it was. Re-priming instead costs the round trip's own ~4 samples
+        // at the end of the flip block, which is the same priming the stream already pays once.
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            inDown[ch].reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
+            outUp [ch].reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
+        }
+        reverbRunning_ = false;                       // the detour re-primes on its next active block
         const float revHeld = reverbMixSm.getCurrentValue();
         reverbMixSm.reset (frontRate, kRampSeconds);  // the wet ramp is counted in the samples it sees
         reverbMixSm.setCurrentAndTargetValue (revHeld);
+    }
+    if (gateRateStale_ && (! p.gate.on || noiseGate.currentGain() <= noiseGate.floorGainLinear() * 1.001f))
+    {
+        // The deferred re-tune, taken at the first block where losing the gate's state costs nothing.
+        // Alloc-free ONLY because the block is the same one prepare() sized the curve with:
+        // vector::assign(n, v) reallocates iff n > capacity(). Passing anything else here would
+        // allocate on the audio thread.
+        jassert (noiseGate.maxBlock() == frontMaxBlock_);
+        noiseGate.prepare (frontRate, frontMaxBlock_, dryBuffer.getNumChannels());
+        noiseGate.seedEnabled (p.gate.on);            // prepare() clears the on/off crossfade — restore it
+        gateRateStale_ = false;
     }
 
     // Island IN: one host->model conversion for the whole front section. Every lane is converted, not
@@ -320,11 +373,12 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // off or no model is loaded; the EQ is a bit-exact passthrough when eq.on is false. The EQ
     // sits between the stages so its cuts shape what the poweramp distorts. ---
     { const auto a = PerfClock::now();
-      // Latency-aligned preamp gate. Inside the island the preamp's OWN latency is 0 (it is prepared
-      // at the model rate, so its rate-matcher never engages) and the island's round trip delays the
-      // whole section including this dry — so the tap is 0 there and the alignment is exact anyway.
-      // Without an island it is whatever the stage reports, as before. advance() reads the input first
-      // (before preamp.process overwrites it).
+      // Latency-aligned preamp gate. The tap is now structurally ZERO everywhere: the stage is
+      // prepared AT the model rate, so its own rate-matcher never engages and latencySamples() is 0 at
+      // every host rate, while the island's round trip delays the whole section — this dry with it. The
+      // aligner stays because it is what the OFF branch reads, and because it is the seam that would
+      // carry a nonzero tap again the day a stage reports one. advance() reads the input first (before
+      // preamp.process overwrites it).
       float* const* pio = front.getArrayOfWritePointers();
       preampBypassAlign.advance (pio, numCh, fN, preamp.latencySamples());
       // NOISE GATE — PHASE A (DETECTOR): key off the CLEAN post-trim input on the frontCh lane(s), NOW,
@@ -333,7 +387,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // read past what phase A analysed — so inside the island the key is the converted clean input.
       // Its own ballistics are in seconds either way (the gate designs them from the rate it is given).
       noiseGate.analyse (pio, frontCh, fN, p.gate.on, p.gate.thresholdDb);
-      if (p.preampOn)
+      if (p.preampOn && namCallable)
           preamp.process (pio, frontCh, fN, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
       else
           for (int ch = 0; ch < numCh; ++ch)
@@ -371,6 +425,20 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
         reverbMixSm.setTargetValue (revTarget);
         if (reverbHasIR() && (revTarget > 0.0f || reverbMixSm.getCurrentValue() > 1.0e-4f))
         {
+            // The detour's two legs balance only over an UNBROKEN sequence of blocks: each block's
+            // model-frame count is a difference of ceilings, so a subsequence — which is what an idle
+            // spring hands them — is a zero-mean random walk. Simulated over 10 000 active blocks with
+            // random idle segments: 7-9 blocks where the return had to be padded with a literal 0.0f,
+            // and a wet lag that walks permanently by up to 9 samples. So the pair is re-primed on
+            // every idle->active edge, together (a leg cleared without its partner is the same defect
+            // the engine's own reset() comment names). The 4.18-sample priming pad is invisible: the
+            // idle branch below parks the wet ramp at 0, so the return fades in from silence anyway.
+            if (! reverbRunning_)
+            {
+                revDown.reset (islandRate_, hostRate_,   islandMaxBlock_ * 2 + 16);
+                revUp  .reset (hostRate_,   islandRate_, hostMaxBlock_   * 2 + 16);
+                reverbRunning_ = true;
+            }
             float* const* pio = front.getArrayOfWritePointers();
             float*        rs  = reverbScratch.getWritePointer (0);
             if (frontCh >= 2)
@@ -378,24 +446,26 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             else
                 juce::FloatVectorOperations::copy (rs, pio[0], fN);
 
-            float* rsPlanes[1] { rs };
+            // The tank is prepared at the HOST rate (its IR is resampled there at load, which is
+            // message-thread work), so while the island runs the mono send makes the trip out and back.
+            // That is not a new cost: today this wet already passes through BOTH NAM stages' round
+            // trips, i.e. the same four legs. What it buys is the tank never having to be re-prepared
+            // under a running audio thread when a capture is armed.
+            float* rh = revHostBuf.getWritePointer (0);
+            int    hN = fN;
             if (island)
             {
-                // The tank is prepared at the HOST rate (its IR is resampled there at load, off the
-                // audio thread), so the mono send makes the trip out and back. That is not a new cost:
-                // today this wet already passes through BOTH NAM stages' round trips, which is the same
-                // four legs. It buys the tank never having to be re-prepared when a capture is armed.
-                float* rh = revHostBuf.getWritePointer (0);
-                float* rhPlanes[1] { rh };
                 revDown.feed (rs, fN);
-                const int hN = revDown.produceAvailable (rh, hostMaxBlock_);
-                if (hN > 0)
-                    reverbConv.process (rhPlanes, 1, hN);
+                hN = revDown.produceAvailable (rh, revHostBuf.getNumSamples());
+            }
+            float* tankPlanes[1] { island ? rh : rs };
+            if (hN > 0)
+                reverbConv.process (tankPlanes, 1, hN);   // mono spring tank, in-place, zero latency
+            if (island)
+            {
                 revUp.feed (rh, hN);
                 revUp.produceExact (rs, fN);
             }
-            else
-                reverbConv.process (rsPlanes, 1, fN);   // mono spring tank, in-place, zero latency
 
             // kReverbWetGain calibrates the return level: a spring IR convolved with a sustained note
             // accumulates a LOT of tail energy, so a raw unity return is ~6-7× too hot (the Mix knob felt
@@ -418,6 +488,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
             // mid-stream clear is unsafe. Cost: re-enabling after a disable can briefly reveal the previous
             // decayed tail — inaudible in practice (the 30 ms mix ramp fades it in from silence).
             reverbMixSm.setCurrentAndTargetValue (reverbHasIR() ? revTarget : 0.0f);
+            reverbRunning_ = false;   // the detour is re-primed when the tank next runs
         }
         nsRev = elapsedNs (aRev);
     }
@@ -442,9 +513,12 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // 28.48 host samples at the model rate, and there is no second NAM stage in that mode to save a
       // round trip on. With no island the two places are the same place, and the same single call.
       const bool routerInsideFront = (! island) || captureMode;
+      // The same snapshot travels to the capture render as `namUsable` — NOT as ampOn, which would
+      // change which stage is active and buy a spurious 30 ms fade plus a leveler snap the moment a
+      // capture is armed. The tube is untouched by it: it is not a model.
       if (routerInsideFront)
           powerAmpRouter.process (front.getArrayOfWritePointers(), frontCh, fN,
-                                  p.ampOn, p.powerAmpMode, p.tube, amp, frontRate);
+                                  p.ampOn, p.powerAmpMode, p.tube, amp, frontRate, namCallable);
 
       // Island OUT: one model->host conversion, and the front section is over. produceExact() always
       // yields exactly numSamples — the block geometry downstream is the host's, untouched.
@@ -457,7 +531,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
 
       if (! routerInsideFront)
           powerAmpRouter.process (buffer.getArrayOfWritePointers(), frontCh, numSamples,
-                                  p.ampOn, p.powerAmpMode, p.tube, amp, hostRate_);
+                                  p.ampOn, p.powerAmpMode, p.tube, amp, hostRate_, namCallable);
       nsPwr = elapsedNs (a); }
 
     // The leveler route-snap triggers on ROUTER-ACCEPTED transitions (a change arriving mid-fade
