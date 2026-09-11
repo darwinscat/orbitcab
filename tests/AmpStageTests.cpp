@@ -8,6 +8,7 @@
 
 #include "core/StreamResampler.h"
 #include "core/AmpStage.h"
+#include "core/Verdict.h"   // verdictOf — the core's verdict where it gives one (v0.30.0), a plain call where it does not
 
 #include <cmath>
 #include <type_traits>
@@ -139,7 +140,7 @@ struct AmpStageTest : juce::UnitTest
             auto L = sine (512, 48000.0, 220.0, 0.3f), R = L;
             const auto L0 = L, R0 = R;
             float* io[2] = { L.data(), R.data() };
-            amp.process (io, 2, 512, true);
+            expect (cab::verdictOf ([&] { return amp.process (io, 2, 512, true); }));
             expect (L == L0 && R == R0);          // no model loaded → signal untouched
             expect (amp.latencySamples() == 0);
         }
@@ -165,7 +166,7 @@ struct AmpStageTest : juce::UnitTest
                     auto b = sine (512, 48000.0, 330.0, 0.4f);   // ch1 SENTINEL (a NAM would visibly alter it)
                     const auto a0 = a, b0 = b;
                     float* io[2] = { a.data(), b.data() };
-                    amp.process (io, 1, 512, /*normalize*/ true);
+                    expect (cab::verdictOf ([&] { return amp.process (io, 1, 512, /*normalize*/ true); }));
                     expect (b == b0, "mono (numChannels=1) wrote ch1 — a 2nd NAM ran; the ½-CPU contract is broken");
                     expect (a != a0, "mono lane did not process ch0 — the model is not running");
                 }
@@ -174,7 +175,7 @@ struct AmpStageTest : juce::UnitTest
                     auto b = sine (512, 48000.0, 330.0, 0.4f);
                     const auto b0 = b;
                     float* io[2] = { a.data(), b.data() };
-                    amp.process (io, 2, 512, /*normalize*/ true);
+                    expect (cab::verdictOf ([&] { return amp.process (io, 2, 512, /*normalize*/ true); }));
                     expect (b != b0, "stereo (numChannels=2) must process ch1 via the 2nd instance");
                 }
             }
@@ -225,7 +226,7 @@ struct AmpStageTest : juce::UnitTest
                 // models and lands the deferred intent — the LAST command was clearModel().
                 auto x = sine (512, 48000.0, 220.0, 0.3f);
                 float* io1[1] = { x.data() };
-                amp.process (io1, 1, 512, true);
+                expect (cab::verdictOf ([&] { return amp.process (io1, 1, 512, true); }));
                 expect (amp.collectGarbage(), "the drain tick REPORTS the landed clear (PDC re-report signal)");
                 expect (! amp.hasModel(), "after the drain the deferred clear has landed (last command wins)");
                 expect (std::abs (amp.modelSampleRate()) < 1.0e-9 && ! amp.modelHasLoudness(),
@@ -247,7 +248,7 @@ struct AmpStageTest : juce::UnitTest
 
                 const auto in = sine (512, 48000.0, 220.0, 0.3f);
                 auto run = [&] { auto b = in; float* io[1] = { b.data() };
-                                 amp2.process (io, 1, 512, true); return b; };
+                                 expect (cab::verdictOf ([&] { return amp2.process (io, 1, 512, true); })); return b; };
                 (void) run();                     // warm the trim-0 model…
                 const float r1 = rms (run());     // …then measure it
                 expect (amp2.collectGarbage(),    // audio has advanced → the drain lands the -20 dB load
@@ -281,7 +282,7 @@ struct AmpStageTest : juce::UnitTest
 
                 auto y = sine (512, 96000.0, 220.0, 0.3f);       // audio resumes for one block
                 float* io3[1] = { y.data() };
-                amp3.process (io3, 1, 512, true);
+                expect (cab::verdictOf ([&] { return amp3.process (io3, 1, 512, true); }));
                 expect (amp3.collectGarbage(),
                         "the drain tick REPORTS the landed clear so the host re-reports PDC");
                 expect (! amp3.hasModel() && amp3.latencySamples() == 0,
