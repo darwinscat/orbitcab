@@ -3,6 +3,7 @@
 
 #include "CabEngine.h"
 #include "DryAlignCapacity.h"                       // namDryAlignCapacity — the core's latency bound, asked
+#include "Verdict.h"                                // expectAccepted — the core's verdict, where it gives one
 
 #include <juce_audio_basics/juce_audio_basics.h>   // AudioBuffer, Decibels, FloatVectorOperations
 #include <chrono>
@@ -33,7 +34,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // Dry-alignment for the preamp bypass: a ring as long as the core says any accepted model's
     // rate-match can be at this host rate (DryAlignCapacity.h) — the same sizing the router's ring asks.
     preampBypassAlign.prepare (numChannels, maxBlock, namDryAlignCapacity (sampleRate));
-    noiseGate.prepare (sampleRate, maxBlock, numChannels);
+    expectAccepted ([&] { return noiseGate.prepare (sampleRate, maxBlock, numChannels); });
     noiseGate.seedEnabled (initial.gate.on);   // seed the on/off crossfade from the restored on-state (no fade-in leak)
     ampEq.prepare (sampleRate, maxBlock, numChannels);
     amp.prepare (sampleRate, maxBlock);
@@ -82,7 +83,7 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     // Reverb: a MONO convolver (½ the CPU of stereo, no false width — "not a stereo reverb") with the
     // reference-unity RMS normalization DISABLED (the spring IRs are peak-normalized at bundle time). The
     // default 4 s NUPC schedule covers the ≤ 3.5 s spring tails. reverbScratch is the mono send/return buffer.
-    reverbConv.prepare (sampleRate, maxBlock, 1, 4.0, /*normalize*/ false);
+    expectAccepted ([&] { return reverbConv.prepare (sampleRate, maxBlock, 1, 4.0, /*normalize*/ false); });
     reverbScratch.setSize (1, maxBlock, false, false, true);
 }
 
@@ -232,9 +233,9 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // after the EQ (phase B). Keying the clean input gives accurate open/close; the preamp's latency
       // between here and the VCA point is a free lookahead, uncompensated — 0 at 48 kHz, elsewhere whatever
       // the core's rate-match costs (preamp.latencySamples(); about a millisecond since the 64-tap kernel).
-      noiseGate.analyse (pio, frontCh, numSamples, p.gate.on, p.gate.thresholdDb);
+      expectAccepted ([&] { return noiseGate.analyse (pio, frontCh, numSamples, p.gate.on, p.gate.thresholdDb); });
       if (p.preampOn)
-          preamp.process (pio, frontCh, numSamples, /*normalize*/ true);   // frontCh: 1 lane when mono-folded
+          expectAccepted ([&] { return preamp.process (pio, frontCh, numSamples, /*normalize*/ true); });   // frontCh: 1 lane when mono-folded
       else
           for (int ch = 0; ch < numCh; ++ch)
               juce::FloatVectorOperations::copy (pio[ch], preampBypassAlign.delayed (ch), numSamples);
@@ -254,7 +255,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // NOISE GATE — PHASE B (VCA): apply the gain curve computed in phase A. Post-EQ (kills the preamp's
       // hiss shaped by the tone stack) and BEFORE the spring-reverb send below, so a closing gate stops
       // feeding the tank while its tail rings out. On the frontCh lane(s); the mono fold carries ch0 across.
-      noiseGate.applyGain (buffer.getArrayOfWritePointers(), frontCh, numSamples);
+      expectAccepted ([&] { return noiseGate.applyGain (buffer.getArrayOfWritePointers(), frontCh, numSamples); });
       nsEq = elapsedNs (a); }
 
     // --- SPRING REVERB (AFTER the EQ, BEFORE the poweramp): a real amp's built-in spring tank. The wet
@@ -279,7 +280,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
                 juce::FloatVectorOperations::copy (rs, pio[0], numSamples);
 
             float* rsPlanes[1] { rs };
-            reverbConv.process (rsPlanes, 1, numSamples);   // mono spring tank, in-place, zero latency
+            expectAccepted ([&] { return reverbConv.process (rsPlanes, 1, numSamples); });   // mono spring tank, in-place, zero latency
 
             // kReverbWetGain calibrates the return level: a spring IR convolved with a sustained note
             // accumulates a LOT of tail energy, so a raw unity return is ~6-7× too hot (the Mix knob felt

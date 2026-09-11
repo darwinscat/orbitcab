@@ -3,6 +3,7 @@
 
 #include "IRSlot.h"
 #include "IRMath.h"
+#include "Verdict.h"                                 // expectAccepted — the core's verdict, where it gives one
 
 #include <juce_audio_formats/juce_audio_formats.h>   // MemoryInputStream + WAV reader for the byte-decode fallback
 #include <cmath>
@@ -34,7 +35,7 @@ void IRSlot::loadBytesFallback (const void* data, size_t size)
 //==============================================================================
 void IRSlot::prepare (double sampleRate, int maxBlock, int numChannels)
 {
-    conv.prepare (sampleRate, maxBlock, numChannels);
+    expectAccepted ([&] { return conv.prepare (sampleRate, maxBlock, numChannels); });
 
     // JUCE-free HPF/LPF (felitronics::eq::Svf — same Zavalishin TPT as juce::dsp::StateVariableTPTFilter).
     // Type + Butterworth Q are fixed; the cutoff is set per block in processWet. The Svf is per-sample, so it
@@ -149,7 +150,7 @@ void IRSlot::processWet (juce::AudioBuffer<float>& wetDst, const juce::AudioBuff
             for (int i = 0; i < numSamples; ++i) w[ch][i] = lpf.processSample (ch, w[ch][i]);
         lpf.flushDenormals();
     }
-    conv.process (wetDst.getArrayOfWritePointers(), numChannels, numSamples);
+    expectAccepted ([&] { return conv.process (wetDst.getArrayOfWritePointers(), numChannels, numSamples); });
 }
 
 } // namespace cab

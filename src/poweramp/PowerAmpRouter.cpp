@@ -5,6 +5,7 @@
 #include "../core/AmpStage.h"           // full def — render() calls nam.process()
 #include "TubeKernel.h"                 // kTubeVoicings — per-voicing level-match threshold
 #include "../core/DryAlignCapacity.h"   // namDryAlignCapacity — the core's latency bound, asked
+#include "../core/Verdict.h"            // expectAccepted — the core's verdict, where it gives one
 #include <cmath>
 
 namespace cab::poweramp
@@ -55,7 +56,7 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
     switch (a)
     {
         case Active::capture:
-            nam.process (dst, numChannels, numSamples, /*normalize*/ true);
+            cab::expectAccepted ([&] { return nam.process (dst, numChannels, numSamples, /*normalize*/ true); });
             break;
         case Active::tube:
             tube[osSel].process (dst, numChannels, numSamples);
