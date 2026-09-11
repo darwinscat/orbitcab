@@ -74,6 +74,9 @@ The bundled content (IRs, font) is ledgered in
   that module compiles `NAMZ_IMPLEMENTATION` exactly once and exports the declarations and symbols to
   OrbitCab. It backs `src/core/NamCodec.{h,cpp}` and the rig readers: the lossless `.nam` (JSON
   weights) ↔ `.namz` (float32-packed) round-trip for bundled/imported captures.
+- **Also carried as source:** `src/PreampRigPolicy.h` is namz v1.1.1's preamp device policy
+  (`include/namz_rig.h`: the filename-token grammar, device grouping, defaults and resolution), ported
+  into OrbitCab with its logic unchanged when later namz releases dropped it — MIT, same authors.
 
 ### pffft (SIMD FFT backend for the cab convolution — vendored in felitronics-core)
 - **License:** BSD-style (FFTPACK5 / UCAR) — AGPL-compatible.

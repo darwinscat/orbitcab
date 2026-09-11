@@ -731,7 +731,8 @@ target_sources(OrbitCab_Tests PRIVATE
     # (cab::NoiseGate unit tests moved to felitronics-core modules/dynamics — the gate math lives there now;
     #  OrbitCab keeps only the CabEngine END-TO-END gate + leveler-hold integration tests, in CabEngineTests.)
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
-    tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via namz::rig (legacy fallback, ≥2-rule, resolve)
+    tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via orbitcab::rigpolicy (legacy fallback, ≥2-rule, resolve)
+    tests/PreampRigGoldenTests.cpp # orbitcab::PreampRig — EVERY answer vs tests/golden/preamp-rig.txt (the shipped model, byte-for-byte)
     tests/RigPackTests.cpp         # orbitcab::readRigPack — .orbitrig zip/folder reader (zip-slip, size cap, manifest)
     tests/RigConformanceTests.cpp  # READER duty vs namz's golden .orbitrig pack (conformance/rig) — the shared contract
     tests/WaveformMathTests.cpp

@@ -1,0 +1,1674 @@
+## factory library (resources/preamps)
+src #0 fp:GtrVolt-blue-07h
+src #1 fp:GtrVolt-blue-07h-boost
+src #2 fp:GtrVolt-blue-08h
+src #3 fp:GtrVolt-blue-08h-boost
+src #4 fp:GtrVolt-blue-09h
+src #5 fp:GtrVolt-blue-09h-boost
+src #6 fp:GtrVolt-blue-10h
+src #7 fp:GtrVolt-blue-10h-boost
+src #8 fp:GtrVolt-blue-11h
+src #9 fp:GtrVolt-blue-11h-boost
+src #10 fp:GtrVolt-blue-12h
+src #11 fp:GtrVolt-blue-12h-boost
+src #12 fp:GtrVolt-blue-13h
+src #13 fp:GtrVolt-blue-13h-boost
+src #14 fp:GtrVolt-blue-14h
+src #15 fp:GtrVolt-blue-14h-boost
+src #16 fp:GtrVolt-blue-15h
+src #17 fp:GtrVolt-blue-15h-boost
+src #18 fp:GtrVolt-blue-16h
+src #19 fp:GtrVolt-blue-16h-boost
+src #20 fp:GtrVolt-blue-17h
+src #21 fp:GtrVolt-blue-17h-boost
+src #22 fp:GtrVolt-green-07h
+src #23 fp:GtrVolt-green-07h-boost
+src #24 fp:GtrVolt-green-08h
+src #25 fp:GtrVolt-green-08h-boost
+src #26 fp:GtrVolt-green-09h
+src #27 fp:GtrVolt-green-09h-boost
+src #28 fp:GtrVolt-green-10h
+src #29 fp:GtrVolt-green-10h-boost
+src #30 fp:GtrVolt-green-11h
+src #31 fp:GtrVolt-green-11h-boost
+src #32 fp:GtrVolt-green-12h
+src #33 fp:GtrVolt-green-12h-boost
+src #34 fp:GtrVolt-green-13h
+src #35 fp:GtrVolt-green-13h-boost
+src #36 fp:GtrVolt-green-14h
+src #37 fp:GtrVolt-green-14h-boost
+src #38 fp:GtrVolt-green-15h
+src #39 fp:GtrVolt-green-15h-boost
+src #40 fp:GtrVolt-green-16h
+src #41 fp:GtrVolt-green-16h-boost
+src #42 fp:GtrVolt-green-17h
+src #43 fp:GtrVolt-green-17h-boost
+src #44 fp:GtrVolt-orange-07h
+src #45 fp:GtrVolt-orange-07h-boost
+src #46 fp:GtrVolt-orange-08h
+src #47 fp:GtrVolt-orange-08h-boost
+src #48 fp:GtrVolt-orange-09h
+src #49 fp:GtrVolt-orange-09h-boost
+src #50 fp:GtrVolt-orange-10h
+src #51 fp:GtrVolt-orange-10h-boost
+src #52 fp:GtrVolt-orange-11h
+src #53 fp:GtrVolt-orange-11h-boost
+src #54 fp:GtrVolt-orange-12h
+src #55 fp:GtrVolt-orange-12h-boost
+src #56 fp:GtrVolt-orange-13h
+src #57 fp:GtrVolt-orange-13h-boost
+src #58 fp:GtrVolt-orange-14h
+src #59 fp:GtrVolt-orange-14h-boost
+src #60 fp:GtrVolt-orange-15h
+src #61 fp:GtrVolt-orange-15h-boost
+src #62 fp:GtrVolt-orange-16h
+src #63 fp:GtrVolt-orange-16h-boost
+src #64 fp:GtrVolt-orange-17h
+src #65 fp:GtrVolt-orange-17h-boost
+src #66 fp:ISA Studio Pre
+src #67 fp:V4COPP-green-07h
+src #68 fp:V4COPP-green-08h
+src #69 fp:V4COPP-green-09h
+src #70 fp:V4COPP-green-10h
+src #71 fp:V4COPP-green-11h
+src #72 fp:V4COPP-green-12h
+src #73 fp:V4COPP-green-13h
+src #74 fp:V4COPP-green-14h
+src #75 fp:V4COPP-green-15h
+src #76 fp:V4COPP-green-16h
+src #77 fp:V4COPP-green-17h
+src #78 fp:V4COPP-red-07h
+src #79 fp:V4COPP-red-08h
+src #80 fp:V4COPP-red-09h
+src #81 fp:V4COPP-red-10h
+src #82 fp:V4COPP-red-11h
+src #83 fp:V4COPP-red-12h
+src #84 fp:V4COPP-red-13h
+src #85 fp:V4COPP-red-14h
+src #86 fp:V4COPP-red-15h
+src #87 fp:V4COPP-red-16h
+src #88 fp:V4COPP-red-17h
+src #89 fp:V4KRAK-green-07h
+src #90 fp:V4KRAK-green-08h
+src #91 fp:V4KRAK-green-09h
+src #92 fp:V4KRAK-green-10h
+src #93 fp:V4KRAK-green-11h
+src #94 fp:V4KRAK-green-12h
+src #95 fp:V4KRAK-green-13h
+src #96 fp:V4KRAK-green-14h
+src #97 fp:V4KRAK-green-15h
+src #98 fp:V4KRAK-green-16h
+src #99 fp:V4KRAK-green-17h
+src #100 fp:V4KRAK-red-07h
+src #101 fp:V4KRAK-red-08h
+src #102 fp:V4KRAK-red-09h
+src #103 fp:V4KRAK-red-10h
+src #104 fp:V4KRAK-red-11h
+src #105 fp:V4KRAK-red-12h
+src #106 fp:V4KRAK-red-13h
+src #107 fp:V4KRAK-red-14h
+src #108 fp:V4KRAK-red-15h
+src #109 fp:V4KRAK-red-16h
+src #110 fp:V4KRAK-red-17h
+src #111 fp:V4SHER-green-07h
+src #112 fp:V4SHER-green-08h
+src #113 fp:V4SHER-green-09h
+src #114 fp:V4SHER-green-10h
+src #115 fp:V4SHER-green-11h
+src #116 fp:V4SHER-green-12h
+src #117 fp:V4SHER-green-13h
+src #118 fp:V4SHER-green-14h
+src #119 fp:V4SHER-green-15h
+src #120 fp:V4SHER-green-16h
+src #121 fp:V4SHER-green-17h
+src #122 fp:V4SHER-red-07h
+src #123 fp:V4SHER-red-08h
+src #124 fp:V4SHER-red-09h
+src #125 fp:V4SHER-red-10h
+src #126 fp:V4SHER-red-11h
+src #127 fp:V4SHER-red-12h
+src #128 fp:V4SHER-red-13h
+src #129 fp:V4SHER-red-14h
+src #130 fp:V4SHER-red-15h
+src #131 fp:V4SHER-red-16h
+src #132 fp:V4SHER-red-17h
+device 0 family="GtrVolt" rig="" slot="" key=fam:GtrVolt group=1
+  control channel:channel=blue|green|orange
+  control boost:boost=off|on
+  control gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h
+  file #0 {boost=off,channel=blue,gain=07h}
+  file #1 {boost=on,channel=blue,gain=07h}
+  file #2 {boost=off,channel=blue,gain=08h}
+  file #3 {boost=on,channel=blue,gain=08h}
+  file #4 {boost=off,channel=blue,gain=09h}
+  file #5 {boost=on,channel=blue,gain=09h}
+  file #6 {boost=off,channel=blue,gain=10h}
+  file #7 {boost=on,channel=blue,gain=10h}
+  file #8 {boost=off,channel=blue,gain=11h}
+  file #9 {boost=on,channel=blue,gain=11h}
+  file #10 {boost=off,channel=blue,gain=12h}
+  file #11 {boost=on,channel=blue,gain=12h}
+  file #12 {boost=off,channel=blue,gain=13h}
+  file #13 {boost=on,channel=blue,gain=13h}
+  file #14 {boost=off,channel=blue,gain=14h}
+  file #15 {boost=on,channel=blue,gain=14h}
+  file #16 {boost=off,channel=blue,gain=15h}
+  file #17 {boost=on,channel=blue,gain=15h}
+  file #18 {boost=off,channel=blue,gain=16h}
+  file #19 {boost=on,channel=blue,gain=16h}
+  file #20 {boost=off,channel=blue,gain=17h}
+  file #21 {boost=on,channel=blue,gain=17h}
+  file #22 {boost=off,channel=green,gain=07h}
+  file #23 {boost=on,channel=green,gain=07h}
+  file #24 {boost=off,channel=green,gain=08h}
+  file #25 {boost=on,channel=green,gain=08h}
+  file #26 {boost=off,channel=green,gain=09h}
+  file #27 {boost=on,channel=green,gain=09h}
+  file #28 {boost=off,channel=green,gain=10h}
+  file #29 {boost=on,channel=green,gain=10h}
+  file #30 {boost=off,channel=green,gain=11h}
+  file #31 {boost=on,channel=green,gain=11h}
+  file #32 {boost=off,channel=green,gain=12h}
+  file #33 {boost=on,channel=green,gain=12h}
+  file #34 {boost=off,channel=green,gain=13h}
+  file #35 {boost=on,channel=green,gain=13h}
+  file #36 {boost=off,channel=green,gain=14h}
+  file #37 {boost=on,channel=green,gain=14h}
+  file #38 {boost=off,channel=green,gain=15h}
+  file #39 {boost=on,channel=green,gain=15h}
+  file #40 {boost=off,channel=green,gain=16h}
+  file #41 {boost=on,channel=green,gain=16h}
+  file #42 {boost=off,channel=green,gain=17h}
+  file #43 {boost=on,channel=green,gain=17h}
+  file #44 {boost=off,channel=orange,gain=07h}
+  file #45 {boost=on,channel=orange,gain=07h}
+  file #46 {boost=off,channel=orange,gain=08h}
+  file #47 {boost=on,channel=orange,gain=08h}
+  file #48 {boost=off,channel=orange,gain=09h}
+  file #49 {boost=on,channel=orange,gain=09h}
+  file #50 {boost=off,channel=orange,gain=10h}
+  file #51 {boost=on,channel=orange,gain=10h}
+  file #52 {boost=off,channel=orange,gain=11h}
+  file #53 {boost=on,channel=orange,gain=11h}
+  file #54 {boost=off,channel=orange,gain=12h}
+  file #55 {boost=on,channel=orange,gain=12h}
+  file #56 {boost=off,channel=orange,gain=13h}
+  file #57 {boost=on,channel=orange,gain=13h}
+  file #58 {boost=off,channel=orange,gain=14h}
+  file #59 {boost=on,channel=orange,gain=14h}
+  file #60 {boost=off,channel=orange,gain=15h}
+  file #61 {boost=on,channel=orange,gain=15h}
+  file #62 {boost=off,channel=orange,gain=16h}
+  file #63 {boost=on,channel=orange,gain=16h}
+  file #64 {boost=off,channel=orange,gain=17h}
+  file #65 {boost=on,channel=orange,gain=17h}
+device 1 family="ISA Studio Pre" rig="" slot="" key=fam:ISA Studio Pre group=0
+  file #66 {}
+device 2 family="V4COPP" rig="" slot="" key=fam:V4COPP group=1
+  control channel:channel=green|red
+  control gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h
+  file #67 {channel=green,gain=07h}
+  file #68 {channel=green,gain=08h}
+  file #69 {channel=green,gain=09h}
+  file #70 {channel=green,gain=10h}
+  file #71 {channel=green,gain=11h}
+  file #72 {channel=green,gain=12h}
+  file #73 {channel=green,gain=13h}
+  file #74 {channel=green,gain=14h}
+  file #75 {channel=green,gain=15h}
+  file #76 {channel=green,gain=16h}
+  file #77 {channel=green,gain=17h}
+  file #78 {channel=red,gain=07h}
+  file #79 {channel=red,gain=08h}
+  file #80 {channel=red,gain=09h}
+  file #81 {channel=red,gain=10h}
+  file #82 {channel=red,gain=11h}
+  file #83 {channel=red,gain=12h}
+  file #84 {channel=red,gain=13h}
+  file #85 {channel=red,gain=14h}
+  file #86 {channel=red,gain=15h}
+  file #87 {channel=red,gain=16h}
+  file #88 {channel=red,gain=17h}
+device 3 family="V4KRAK" rig="" slot="" key=fam:V4KRAK group=1
+  control channel:channel=green|red
+  control gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h
+  file #89 {channel=green,gain=07h}
+  file #90 {channel=green,gain=08h}
+  file #91 {channel=green,gain=09h}
+  file #92 {channel=green,gain=10h}
+  file #93 {channel=green,gain=11h}
+  file #94 {channel=green,gain=12h}
+  file #95 {channel=green,gain=13h}
+  file #96 {channel=green,gain=14h}
+  file #97 {channel=green,gain=15h}
+  file #98 {channel=green,gain=16h}
+  file #99 {channel=green,gain=17h}
+  file #100 {channel=red,gain=07h}
+  file #101 {channel=red,gain=08h}
+  file #102 {channel=red,gain=09h}
+  file #103 {channel=red,gain=10h}
+  file #104 {channel=red,gain=11h}
+  file #105 {channel=red,gain=12h}
+  file #106 {channel=red,gain=13h}
+  file #107 {channel=red,gain=14h}
+  file #108 {channel=red,gain=15h}
+  file #109 {channel=red,gain=16h}
+  file #110 {channel=red,gain=17h}
+device 4 family="V4SHER" rig="" slot="" key=fam:V4SHER group=1
+  control channel:channel=green|red
+  control gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h
+  file #111 {channel=green,gain=07h}
+  file #112 {channel=green,gain=08h}
+  file #113 {channel=green,gain=09h}
+  file #114 {channel=green,gain=10h}
+  file #115 {channel=green,gain=11h}
+  file #116 {channel=green,gain=12h}
+  file #117 {channel=green,gain=13h}
+  file #118 {channel=green,gain=14h}
+  file #119 {channel=green,gain=15h}
+  file #120 {channel=green,gain=16h}
+  file #121 {channel=green,gain=17h}
+  file #122 {channel=red,gain=07h}
+  file #123 {channel=red,gain=08h}
+  file #124 {channel=red,gain=09h}
+  file #125 {channel=red,gain=10h}
+  file #126 {channel=red,gain=11h}
+  file #127 {channel=red,gain=12h}
+  file #128 {channel=red,gain=13h}
+  file #129 {channel=red,gain=14h}
+  file #130 {channel=red,gain=15h}
+  file #131 {channel=red,gain=16h}
+  file #132 {channel=red,gain=17h}
+entry #0 name="GtrVolt" variant="Blue · 07h" factory=1
+entry #1 name="GtrVolt" variant="Blue · boost · 07h" factory=1
+entry #2 name="GtrVolt" variant="Blue · 08h" factory=1
+entry #3 name="GtrVolt" variant="Blue · boost · 08h" factory=1
+entry #4 name="GtrVolt" variant="Blue · 09h" factory=1
+entry #5 name="GtrVolt" variant="Blue · boost · 09h" factory=1
+entry #6 name="GtrVolt" variant="Blue · 10h" factory=1
+entry #7 name="GtrVolt" variant="Blue · boost · 10h" factory=1
+entry #8 name="GtrVolt" variant="Blue · 11h" factory=1
+entry #9 name="GtrVolt" variant="Blue · boost · 11h" factory=1
+entry #10 name="GtrVolt" variant="Blue · 12h" factory=1
+entry #11 name="GtrVolt" variant="Blue · boost · 12h" factory=1
+entry #12 name="GtrVolt" variant="Blue · 13h" factory=1
+entry #13 name="GtrVolt" variant="Blue · boost · 13h" factory=1
+entry #14 name="GtrVolt" variant="Blue · 14h" factory=1
+entry #15 name="GtrVolt" variant="Blue · boost · 14h" factory=1
+entry #16 name="GtrVolt" variant="Blue · 15h" factory=1
+entry #17 name="GtrVolt" variant="Blue · boost · 15h" factory=1
+entry #18 name="GtrVolt" variant="Blue · 16h" factory=1
+entry #19 name="GtrVolt" variant="Blue · boost · 16h" factory=1
+entry #20 name="GtrVolt" variant="Blue · 17h" factory=1
+entry #21 name="GtrVolt" variant="Blue · boost · 17h" factory=1
+entry #22 name="GtrVolt" variant="Green · 07h" factory=1
+entry #23 name="GtrVolt" variant="Green · boost · 07h" factory=1
+entry #24 name="GtrVolt" variant="Green · 08h" factory=1
+entry #25 name="GtrVolt" variant="Green · boost · 08h" factory=1
+entry #26 name="GtrVolt" variant="Green · 09h" factory=1
+entry #27 name="GtrVolt" variant="Green · boost · 09h" factory=1
+entry #28 name="GtrVolt" variant="Green · 10h" factory=1
+entry #29 name="GtrVolt" variant="Green · boost · 10h" factory=1
+entry #30 name="GtrVolt" variant="Green · 11h" factory=1
+entry #31 name="GtrVolt" variant="Green · boost · 11h" factory=1
+entry #32 name="GtrVolt" variant="Green · 12h" factory=1
+entry #33 name="GtrVolt" variant="Green · boost · 12h" factory=1
+entry #34 name="GtrVolt" variant="Green · 13h" factory=1
+entry #35 name="GtrVolt" variant="Green · boost · 13h" factory=1
+entry #36 name="GtrVolt" variant="Green · 14h" factory=1
+entry #37 name="GtrVolt" variant="Green · boost · 14h" factory=1
+entry #38 name="GtrVolt" variant="Green · 15h" factory=1
+entry #39 name="GtrVolt" variant="Green · boost · 15h" factory=1
+entry #40 name="GtrVolt" variant="Green · 16h" factory=1
+entry #41 name="GtrVolt" variant="Green · boost · 16h" factory=1
+entry #42 name="GtrVolt" variant="Green · 17h" factory=1
+entry #43 name="GtrVolt" variant="Green · boost · 17h" factory=1
+entry #44 name="GtrVolt" variant="Orange · 07h" factory=1
+entry #45 name="GtrVolt" variant="Orange · boost · 07h" factory=1
+entry #46 name="GtrVolt" variant="Orange · 08h" factory=1
+entry #47 name="GtrVolt" variant="Orange · boost · 08h" factory=1
+entry #48 name="GtrVolt" variant="Orange · 09h" factory=1
+entry #49 name="GtrVolt" variant="Orange · boost · 09h" factory=1
+entry #50 name="GtrVolt" variant="Orange · 10h" factory=1
+entry #51 name="GtrVolt" variant="Orange · boost · 10h" factory=1
+entry #52 name="GtrVolt" variant="Orange · 11h" factory=1
+entry #53 name="GtrVolt" variant="Orange · boost · 11h" factory=1
+entry #54 name="GtrVolt" variant="Orange · 12h" factory=1
+entry #55 name="GtrVolt" variant="Orange · boost · 12h" factory=1
+entry #56 name="GtrVolt" variant="Orange · 13h" factory=1
+entry #57 name="GtrVolt" variant="Orange · boost · 13h" factory=1
+entry #58 name="GtrVolt" variant="Orange · 14h" factory=1
+entry #59 name="GtrVolt" variant="Orange · boost · 14h" factory=1
+entry #60 name="GtrVolt" variant="Orange · 15h" factory=1
+entry #61 name="GtrVolt" variant="Orange · boost · 15h" factory=1
+entry #62 name="GtrVolt" variant="Orange · 16h" factory=1
+entry #63 name="GtrVolt" variant="Orange · boost · 16h" factory=1
+entry #64 name="GtrVolt" variant="Orange · 17h" factory=1
+entry #65 name="GtrVolt" variant="Orange · boost · 17h" factory=1
+entry #66 name="ISA Studio Pre" variant="" factory=1
+entry #67 name="V4COPP" variant="Green · 07h" factory=1
+entry #68 name="V4COPP" variant="Green · 08h" factory=1
+entry #69 name="V4COPP" variant="Green · 09h" factory=1
+entry #70 name="V4COPP" variant="Green · 10h" factory=1
+entry #71 name="V4COPP" variant="Green · 11h" factory=1
+entry #72 name="V4COPP" variant="Green · 12h" factory=1
+entry #73 name="V4COPP" variant="Green · 13h" factory=1
+entry #74 name="V4COPP" variant="Green · 14h" factory=1
+entry #75 name="V4COPP" variant="Green · 15h" factory=1
+entry #76 name="V4COPP" variant="Green · 16h" factory=1
+entry #77 name="V4COPP" variant="Green · 17h" factory=1
+entry #78 name="V4COPP" variant="Red · 07h" factory=1
+entry #79 name="V4COPP" variant="Red · 08h" factory=1
+entry #80 name="V4COPP" variant="Red · 09h" factory=1
+entry #81 name="V4COPP" variant="Red · 10h" factory=1
+entry #82 name="V4COPP" variant="Red · 11h" factory=1
+entry #83 name="V4COPP" variant="Red · 12h" factory=1
+entry #84 name="V4COPP" variant="Red · 13h" factory=1
+entry #85 name="V4COPP" variant="Red · 14h" factory=1
+entry #86 name="V4COPP" variant="Red · 15h" factory=1
+entry #87 name="V4COPP" variant="Red · 16h" factory=1
+entry #88 name="V4COPP" variant="Red · 17h" factory=1
+entry #89 name="V4KRAK" variant="Green · 07h" factory=1
+entry #90 name="V4KRAK" variant="Green · 08h" factory=1
+entry #91 name="V4KRAK" variant="Green · 09h" factory=1
+entry #92 name="V4KRAK" variant="Green · 10h" factory=1
+entry #93 name="V4KRAK" variant="Green · 11h" factory=1
+entry #94 name="V4KRAK" variant="Green · 12h" factory=1
+entry #95 name="V4KRAK" variant="Green · 13h" factory=1
+entry #96 name="V4KRAK" variant="Green · 14h" factory=1
+entry #97 name="V4KRAK" variant="Green · 15h" factory=1
+entry #98 name="V4KRAK" variant="Green · 16h" factory=1
+entry #99 name="V4KRAK" variant="Green · 17h" factory=1
+entry #100 name="V4KRAK" variant="Red · 07h" factory=1
+entry #101 name="V4KRAK" variant="Red · 08h" factory=1
+entry #102 name="V4KRAK" variant="Red · 09h" factory=1
+entry #103 name="V4KRAK" variant="Red · 10h" factory=1
+entry #104 name="V4KRAK" variant="Red · 11h" factory=1
+entry #105 name="V4KRAK" variant="Red · 12h" factory=1
+entry #106 name="V4KRAK" variant="Red · 13h" factory=1
+entry #107 name="V4KRAK" variant="Red · 14h" factory=1
+entry #108 name="V4KRAK" variant="Red · 15h" factory=1
+entry #109 name="V4KRAK" variant="Red · 16h" factory=1
+entry #110 name="V4KRAK" variant="Red · 17h" factory=1
+entry #111 name="V4SHER" variant="Green · 07h" factory=1
+entry #112 name="V4SHER" variant="Green · 08h" factory=1
+entry #113 name="V4SHER" variant="Green · 09h" factory=1
+entry #114 name="V4SHER" variant="Green · 10h" factory=1
+entry #115 name="V4SHER" variant="Green · 11h" factory=1
+entry #116 name="V4SHER" variant="Green · 12h" factory=1
+entry #117 name="V4SHER" variant="Green · 13h" factory=1
+entry #118 name="V4SHER" variant="Green · 14h" factory=1
+entry #119 name="V4SHER" variant="Green · 15h" factory=1
+entry #120 name="V4SHER" variant="Green · 16h" factory=1
+entry #121 name="V4SHER" variant="Green · 17h" factory=1
+entry #122 name="V4SHER" variant="Red · 07h" factory=1
+entry #123 name="V4SHER" variant="Red · 08h" factory=1
+entry #124 name="V4SHER" variant="Red · 09h" factory=1
+entry #125 name="V4SHER" variant="Red · 10h" factory=1
+entry #126 name="V4SHER" variant="Red · 11h" factory=1
+entry #127 name="V4SHER" variant="Red · 12h" factory=1
+entry #128 name="V4SHER" variant="Red · 13h" factory=1
+entry #129 name="V4SHER" variant="Red · 14h" factory=1
+entry #130 name="V4SHER" variant="Red · 15h" factory=1
+entry #131 name="V4SHER" variant="Red · 16h" factory=1
+entry #132 name="V4SHER" variant="Red · 17h" factory=1
+view #0 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#0 green>#22 orange>#44 never-captured>-
+  turn boost: off>#0 on>#1 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#1 green>#23 orange>#45 never-captured>-
+  turn boost: off>#0 on>#1 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#2 green>#24 orange>#46 never-captured>-
+  turn boost: off>#2 on>#3 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#3 green>#25 orange>#47 never-captured>-
+  turn boost: off>#2 on>#3 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #4 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#4 green>#26 orange>#48 never-captured>-
+  turn boost: off>#4 on>#5 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #5 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#5 green>#27 orange>#49 never-captured>-
+  turn boost: off>#4 on>#5 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #6 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#6 green>#28 orange>#50 never-captured>-
+  turn boost: off>#6 on>#7 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #7 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#7 green>#29 orange>#51 never-captured>-
+  turn boost: off>#6 on>#7 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #8 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#8 green>#30 orange>#52 never-captured>-
+  turn boost: off>#8 on>#9 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #9 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#9 green>#31 orange>#53 never-captured>-
+  turn boost: off>#8 on>#9 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #10 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#10 green>#32 orange>#54 never-captured>-
+  turn boost: off>#10 on>#11 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #11 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#11 green>#33 orange>#55 never-captured>-
+  turn boost: off>#10 on>#11 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #12 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#12 green>#34 orange>#56 never-captured>-
+  turn boost: off>#12 on>#13 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #13 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#13 green>#35 orange>#57 never-captured>-
+  turn boost: off>#12 on>#13 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #14 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#14 green>#36 orange>#58 never-captured>-
+  turn boost: off>#14 on>#15 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #15 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#15 green>#37 orange>#59 never-captured>-
+  turn boost: off>#14 on>#15 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #16 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#16 green>#38 orange>#60 never-captured>-
+  turn boost: off>#16 on>#17 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #17 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#17 green>#39 orange>#61 never-captured>-
+  turn boost: off>#16 on>#17 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #18 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#18 green>#40 orange>#62 never-captured>-
+  turn boost: off>#18 on>#19 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #19 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#19 green>#41 orange>#63 never-captured>-
+  turn boost: off>#18 on>#19 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #20 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#20 green>#42 orange>#64 never-captured>-
+  turn boost: off>#20 on>#21 never-captured>-
+  turn gain: 07h>#0 08h>#2 09h>#4 10h>#6 11h>#8 12h>#10 13h>#12 14h>#14 15h>#16 16h>#18 17h>#20 never-captured>-
+view #21 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#21 green>#43 orange>#65 never-captured>-
+  turn boost: off>#20 on>#21 never-captured>-
+  turn gain: 07h>#1 08h>#3 09h>#5 10h>#7 11h>#9 12h>#11 13h>#13 14h>#15 15h>#17 16h>#19 17h>#21 never-captured>-
+view #22 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#0 green>#22 orange>#44 never-captured>-
+  turn boost: off>#22 on>#23 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #23 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#1 green>#23 orange>#45 never-captured>-
+  turn boost: off>#22 on>#23 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #24 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#2 green>#24 orange>#46 never-captured>-
+  turn boost: off>#24 on>#25 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #25 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#3 green>#25 orange>#47 never-captured>-
+  turn boost: off>#24 on>#25 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #26 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#4 green>#26 orange>#48 never-captured>-
+  turn boost: off>#26 on>#27 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #27 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#5 green>#27 orange>#49 never-captured>-
+  turn boost: off>#26 on>#27 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #28 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#6 green>#28 orange>#50 never-captured>-
+  turn boost: off>#28 on>#29 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #29 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#7 green>#29 orange>#51 never-captured>-
+  turn boost: off>#28 on>#29 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #30 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#8 green>#30 orange>#52 never-captured>-
+  turn boost: off>#30 on>#31 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #31 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#9 green>#31 orange>#53 never-captured>-
+  turn boost: off>#30 on>#31 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #32 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#10 green>#32 orange>#54 never-captured>-
+  turn boost: off>#32 on>#33 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #33 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#11 green>#33 orange>#55 never-captured>-
+  turn boost: off>#32 on>#33 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #34 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#12 green>#34 orange>#56 never-captured>-
+  turn boost: off>#34 on>#35 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #35 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#13 green>#35 orange>#57 never-captured>-
+  turn boost: off>#34 on>#35 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #36 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#14 green>#36 orange>#58 never-captured>-
+  turn boost: off>#36 on>#37 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #37 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#15 green>#37 orange>#59 never-captured>-
+  turn boost: off>#36 on>#37 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #38 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#16 green>#38 orange>#60 never-captured>-
+  turn boost: off>#38 on>#39 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #39 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#17 green>#39 orange>#61 never-captured>-
+  turn boost: off>#38 on>#39 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #40 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#18 green>#40 orange>#62 never-captured>-
+  turn boost: off>#40 on>#41 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #41 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#19 green>#41 orange>#63 never-captured>-
+  turn boost: off>#40 on>#41 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #42 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#20 green>#42 orange>#64 never-captured>-
+  turn boost: off>#42 on>#43 never-captured>-
+  turn gain: 07h>#22 08h>#24 09h>#26 10h>#28 11h>#30 12h>#32 13h>#34 14h>#36 15h>#38 16h>#40 17h>#42 never-captured>-
+view #43 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#21 green>#43 orange>#65 never-captured>-
+  turn boost: off>#42 on>#43 never-captured>-
+  turn gain: 07h>#23 08h>#25 09h>#27 10h>#29 11h>#31 12h>#33 13h>#35 14h>#37 15h>#39 16h>#41 17h>#43 never-captured>-
+view #44 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#0 green>#22 orange>#44 never-captured>-
+  turn boost: off>#44 on>#45 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #45 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: blue>#1 green>#23 orange>#45 never-captured>-
+  turn boost: off>#44 on>#45 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #46 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#2 green>#24 orange>#46 never-captured>-
+  turn boost: off>#46 on>#47 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #47 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: blue>#3 green>#25 orange>#47 never-captured>-
+  turn boost: off>#46 on>#47 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #48 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#4 green>#26 orange>#48 never-captured>-
+  turn boost: off>#48 on>#49 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #49 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: blue>#5 green>#27 orange>#49 never-captured>-
+  turn boost: off>#48 on>#49 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #50 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#6 green>#28 orange>#50 never-captured>-
+  turn boost: off>#50 on>#51 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #51 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: blue>#7 green>#29 orange>#51 never-captured>-
+  turn boost: off>#50 on>#51 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #52 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#8 green>#30 orange>#52 never-captured>-
+  turn boost: off>#52 on>#53 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #53 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: blue>#9 green>#31 orange>#53 never-captured>-
+  turn boost: off>#52 on>#53 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #54 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#10 green>#32 orange>#54 never-captured>-
+  turn boost: off>#54 on>#55 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #55 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: blue>#11 green>#33 orange>#55 never-captured>-
+  turn boost: off>#54 on>#55 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #56 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#12 green>#34 orange>#56 never-captured>-
+  turn boost: off>#56 on>#57 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #57 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: blue>#13 green>#35 orange>#57 never-captured>-
+  turn boost: off>#56 on>#57 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #58 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#14 green>#36 orange>#58 never-captured>-
+  turn boost: off>#58 on>#59 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #59 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: blue>#15 green>#37 orange>#59 never-captured>-
+  turn boost: off>#58 on>#59 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #60 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#16 green>#38 orange>#60 never-captured>-
+  turn boost: off>#60 on>#61 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #61 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: blue>#17 green>#39 orange>#61 never-captured>-
+  turn boost: off>#60 on>#61 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #62 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#18 green>#40 orange>#62 never-captured>-
+  turn boost: off>#62 on>#63 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #63 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: blue>#19 green>#41 orange>#63 never-captured>-
+  turn boost: off>#62 on>#63 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #64 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#20 green>#42 orange>#64 never-captured>-
+  turn boost: off>#64 on>#65 never-captured>-
+  turn gain: 07h>#44 08h>#46 09h>#48 10h>#50 11h>#52 12h>#54 13h>#56 14h>#58 15h>#60 16h>#62 17h>#64 never-captured>-
+view #65 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: blue>#21 green>#43 orange>#65 never-captured>-
+  turn boost: off>#64 on>#65 never-captured>-
+  turn gain: 07h>#45 08h>#47 09h>#49 10h>#51 11h>#53 12h>#55 13h>#57 14h>#59 15h>#61 16h>#63 17h>#65 never-captured>-
+view #66 group=0 dev=1
+view #67 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#67 red>#78 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #68 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#68 red>#79 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #69 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#69 red>#80 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #70 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#70 red>#81 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #71 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#71 red>#82 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #72 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#72 red>#83 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #73 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#73 red>#84 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #74 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#74 red>#85 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #75 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#75 red>#86 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #76 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#76 red>#87 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #77 group=1 dev=2 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#77 red>#88 never-captured>-
+  turn gain: 07h>#67 08h>#68 09h>#69 10h>#70 11h>#71 12h>#72 13h>#73 14h>#74 15h>#75 16h>#76 17h>#77 never-captured>-
+view #78 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#67 red>#78 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #79 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#68 red>#79 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #80 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#69 red>#80 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #81 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#70 red>#81 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #82 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#71 red>#82 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #83 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#72 red>#83 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #84 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#73 red>#84 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #85 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#74 red>#85 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #86 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#75 red>#86 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #87 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#76 red>#87 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #88 group=1 dev=2 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#77 red>#88 never-captured>-
+  turn gain: 07h>#78 08h>#79 09h>#80 10h>#81 11h>#82 12h>#83 13h>#84 14h>#85 15h>#86 16h>#87 17h>#88 never-captured>-
+view #89 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#89 red>#100 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #90 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#90 red>#101 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #91 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#91 red>#102 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #92 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#92 red>#103 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #93 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#93 red>#104 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #94 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#94 red>#105 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #95 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#95 red>#106 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #96 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#96 red>#107 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #97 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#97 red>#108 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #98 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#98 red>#109 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #99 group=1 dev=3 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#99 red>#110 never-captured>-
+  turn gain: 07h>#89 08h>#90 09h>#91 10h>#92 11h>#93 12h>#94 13h>#95 14h>#96 15h>#97 16h>#98 17h>#99 never-captured>-
+view #100 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#89 red>#100 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #101 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#90 red>#101 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #102 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#91 red>#102 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #103 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#92 red>#103 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #104 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#93 red>#104 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #105 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#94 red>#105 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #106 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#95 red>#106 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #107 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#96 red>#107 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #108 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#97 red>#108 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #109 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#98 red>#109 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #110 group=1 dev=3 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#99 red>#110 never-captured>-
+  turn gain: 07h>#100 08h>#101 09h>#102 10h>#103 11h>#104 12h>#105 13h>#106 14h>#107 15h>#108 16h>#109 17h>#110 never-captured>-
+view #111 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#111 red>#122 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #112 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#112 red>#123 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #113 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#113 red>#124 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #114 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#114 red>#125 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #115 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#115 red>#126 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #116 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#116 red>#127 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #117 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#117 red>#128 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #118 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#118 red>#129 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #119 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#119 red>#130 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #120 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#120 red>#131 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #121 group=1 dev=4 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#121 red>#132 never-captured>-
+  turn gain: 07h>#111 08h>#112 09h>#113 10h>#114 11h>#115 12h>#116 13h>#117 14h>#118 15h>#119 16h>#120 17h>#121 never-captured>-
+view #122 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=07h vis=1]
+  turn channel: green>#111 red>#122 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #123 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=08h vis=1]
+  turn channel: green>#112 red>#123 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #124 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=09h vis=1]
+  turn channel: green>#113 red>#124 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #125 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=10h vis=1]
+  turn channel: green>#114 red>#125 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #126 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=11h vis=1]
+  turn channel: green>#115 red>#126 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #127 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=12h vis=1]
+  turn channel: green>#116 red>#127 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #128 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=13h vis=1]
+  turn channel: green>#117 red>#128 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #129 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=14h vis=1]
+  turn channel: green>#118 red>#129 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #130 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=15h vis=1]
+  turn channel: green>#119 red>#130 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #131 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=16h vis=1]
+  turn channel: green>#120 red>#131 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+view #132 group=1 dev=4 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|08h|09h|10h|11h|12h|13h|14h|15h|16h|17h cur=17h vis=1]
+  turn channel: green>#121 red>#132 never-captured>-
+  turn gain: 07h>#122 08h>#123 09h>#124 10h>#125 11h>#126 12h>#127 13h>#128 14h>#129 15h>#130 16h>#131 17h>#132 never-captured>-
+switch -: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #0: 0>#0 1>#66 2>#67 3>#89 4>#111 5>-
+switch #1: 0>#1 1>#66 2>#67 3>#89 4>#111 5>-
+switch #2: 0>#2 1>#66 2>#68 3>#90 4>#112 5>-
+switch #3: 0>#3 1>#66 2>#68 3>#90 4>#112 5>-
+switch #4: 0>#4 1>#66 2>#69 3>#91 4>#113 5>-
+switch #5: 0>#5 1>#66 2>#69 3>#91 4>#113 5>-
+switch #6: 0>#6 1>#66 2>#70 3>#92 4>#114 5>-
+switch #7: 0>#7 1>#66 2>#70 3>#92 4>#114 5>-
+switch #8: 0>#8 1>#66 2>#71 3>#93 4>#115 5>-
+switch #9: 0>#9 1>#66 2>#71 3>#93 4>#115 5>-
+switch #10: 0>#10 1>#66 2>#72 3>#94 4>#116 5>-
+switch #11: 0>#11 1>#66 2>#72 3>#94 4>#116 5>-
+switch #12: 0>#12 1>#66 2>#73 3>#95 4>#117 5>-
+switch #13: 0>#13 1>#66 2>#73 3>#95 4>#117 5>-
+switch #14: 0>#14 1>#66 2>#74 3>#96 4>#118 5>-
+switch #15: 0>#15 1>#66 2>#74 3>#96 4>#118 5>-
+switch #16: 0>#16 1>#66 2>#75 3>#97 4>#119 5>-
+switch #17: 0>#17 1>#66 2>#75 3>#97 4>#119 5>-
+switch #18: 0>#18 1>#66 2>#76 3>#98 4>#120 5>-
+switch #19: 0>#19 1>#66 2>#76 3>#98 4>#120 5>-
+switch #20: 0>#20 1>#66 2>#77 3>#99 4>#121 5>-
+switch #21: 0>#21 1>#66 2>#77 3>#99 4>#121 5>-
+switch #22: 0>#22 1>#66 2>#67 3>#89 4>#111 5>-
+switch #23: 0>#23 1>#66 2>#67 3>#89 4>#111 5>-
+switch #24: 0>#24 1>#66 2>#68 3>#90 4>#112 5>-
+switch #25: 0>#25 1>#66 2>#68 3>#90 4>#112 5>-
+switch #26: 0>#26 1>#66 2>#69 3>#91 4>#113 5>-
+switch #27: 0>#27 1>#66 2>#69 3>#91 4>#113 5>-
+switch #28: 0>#28 1>#66 2>#70 3>#92 4>#114 5>-
+switch #29: 0>#29 1>#66 2>#70 3>#92 4>#114 5>-
+switch #30: 0>#30 1>#66 2>#71 3>#93 4>#115 5>-
+switch #31: 0>#31 1>#66 2>#71 3>#93 4>#115 5>-
+switch #32: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #33: 0>#33 1>#66 2>#72 3>#94 4>#116 5>-
+switch #34: 0>#34 1>#66 2>#73 3>#95 4>#117 5>-
+switch #35: 0>#35 1>#66 2>#73 3>#95 4>#117 5>-
+switch #36: 0>#36 1>#66 2>#74 3>#96 4>#118 5>-
+switch #37: 0>#37 1>#66 2>#74 3>#96 4>#118 5>-
+switch #38: 0>#38 1>#66 2>#75 3>#97 4>#119 5>-
+switch #39: 0>#39 1>#66 2>#75 3>#97 4>#119 5>-
+switch #40: 0>#40 1>#66 2>#76 3>#98 4>#120 5>-
+switch #41: 0>#41 1>#66 2>#76 3>#98 4>#120 5>-
+switch #42: 0>#42 1>#66 2>#77 3>#99 4>#121 5>-
+switch #43: 0>#43 1>#66 2>#77 3>#99 4>#121 5>-
+switch #44: 0>#44 1>#66 2>#67 3>#89 4>#111 5>-
+switch #45: 0>#45 1>#66 2>#67 3>#89 4>#111 5>-
+switch #46: 0>#46 1>#66 2>#68 3>#90 4>#112 5>-
+switch #47: 0>#47 1>#66 2>#68 3>#90 4>#112 5>-
+switch #48: 0>#48 1>#66 2>#69 3>#91 4>#113 5>-
+switch #49: 0>#49 1>#66 2>#69 3>#91 4>#113 5>-
+switch #50: 0>#50 1>#66 2>#70 3>#92 4>#114 5>-
+switch #51: 0>#51 1>#66 2>#70 3>#92 4>#114 5>-
+switch #52: 0>#52 1>#66 2>#71 3>#93 4>#115 5>-
+switch #53: 0>#53 1>#66 2>#71 3>#93 4>#115 5>-
+switch #54: 0>#54 1>#66 2>#72 3>#94 4>#116 5>-
+switch #55: 0>#55 1>#66 2>#72 3>#94 4>#116 5>-
+switch #56: 0>#56 1>#66 2>#73 3>#95 4>#117 5>-
+switch #57: 0>#57 1>#66 2>#73 3>#95 4>#117 5>-
+switch #58: 0>#58 1>#66 2>#74 3>#96 4>#118 5>-
+switch #59: 0>#59 1>#66 2>#74 3>#96 4>#118 5>-
+switch #60: 0>#60 1>#66 2>#75 3>#97 4>#119 5>-
+switch #61: 0>#61 1>#66 2>#75 3>#97 4>#119 5>-
+switch #62: 0>#62 1>#66 2>#76 3>#98 4>#120 5>-
+switch #63: 0>#63 1>#66 2>#76 3>#98 4>#120 5>-
+switch #64: 0>#64 1>#66 2>#77 3>#99 4>#121 5>-
+switch #65: 0>#65 1>#66 2>#77 3>#99 4>#121 5>-
+switch #66: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #67: 0>#22 1>#66 2>#67 3>#89 4>#111 5>-
+switch #68: 0>#24 1>#66 2>#68 3>#90 4>#112 5>-
+switch #69: 0>#26 1>#66 2>#69 3>#91 4>#113 5>-
+switch #70: 0>#28 1>#66 2>#70 3>#92 4>#114 5>-
+switch #71: 0>#30 1>#66 2>#71 3>#93 4>#115 5>-
+switch #72: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #73: 0>#34 1>#66 2>#73 3>#95 4>#117 5>-
+switch #74: 0>#36 1>#66 2>#74 3>#96 4>#118 5>-
+switch #75: 0>#38 1>#66 2>#75 3>#97 4>#119 5>-
+switch #76: 0>#40 1>#66 2>#76 3>#98 4>#120 5>-
+switch #77: 0>#42 1>#66 2>#77 3>#99 4>#121 5>-
+switch #78: 0>#22 1>#66 2>#78 3>#100 4>#122 5>-
+switch #79: 0>#24 1>#66 2>#79 3>#101 4>#123 5>-
+switch #80: 0>#26 1>#66 2>#80 3>#102 4>#124 5>-
+switch #81: 0>#28 1>#66 2>#81 3>#103 4>#125 5>-
+switch #82: 0>#30 1>#66 2>#82 3>#104 4>#126 5>-
+switch #83: 0>#32 1>#66 2>#83 3>#105 4>#127 5>-
+switch #84: 0>#34 1>#66 2>#84 3>#106 4>#128 5>-
+switch #85: 0>#36 1>#66 2>#85 3>#107 4>#129 5>-
+switch #86: 0>#38 1>#66 2>#86 3>#108 4>#130 5>-
+switch #87: 0>#40 1>#66 2>#87 3>#109 4>#131 5>-
+switch #88: 0>#42 1>#66 2>#88 3>#110 4>#132 5>-
+switch #89: 0>#22 1>#66 2>#67 3>#89 4>#111 5>-
+switch #90: 0>#24 1>#66 2>#68 3>#90 4>#112 5>-
+switch #91: 0>#26 1>#66 2>#69 3>#91 4>#113 5>-
+switch #92: 0>#28 1>#66 2>#70 3>#92 4>#114 5>-
+switch #93: 0>#30 1>#66 2>#71 3>#93 4>#115 5>-
+switch #94: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #95: 0>#34 1>#66 2>#73 3>#95 4>#117 5>-
+switch #96: 0>#36 1>#66 2>#74 3>#96 4>#118 5>-
+switch #97: 0>#38 1>#66 2>#75 3>#97 4>#119 5>-
+switch #98: 0>#40 1>#66 2>#76 3>#98 4>#120 5>-
+switch #99: 0>#42 1>#66 2>#77 3>#99 4>#121 5>-
+switch #100: 0>#22 1>#66 2>#78 3>#100 4>#122 5>-
+switch #101: 0>#24 1>#66 2>#79 3>#101 4>#123 5>-
+switch #102: 0>#26 1>#66 2>#80 3>#102 4>#124 5>-
+switch #103: 0>#28 1>#66 2>#81 3>#103 4>#125 5>-
+switch #104: 0>#30 1>#66 2>#82 3>#104 4>#126 5>-
+switch #105: 0>#32 1>#66 2>#83 3>#105 4>#127 5>-
+switch #106: 0>#34 1>#66 2>#84 3>#106 4>#128 5>-
+switch #107: 0>#36 1>#66 2>#85 3>#107 4>#129 5>-
+switch #108: 0>#38 1>#66 2>#86 3>#108 4>#130 5>-
+switch #109: 0>#40 1>#66 2>#87 3>#109 4>#131 5>-
+switch #110: 0>#42 1>#66 2>#88 3>#110 4>#132 5>-
+switch #111: 0>#22 1>#66 2>#67 3>#89 4>#111 5>-
+switch #112: 0>#24 1>#66 2>#68 3>#90 4>#112 5>-
+switch #113: 0>#26 1>#66 2>#69 3>#91 4>#113 5>-
+switch #114: 0>#28 1>#66 2>#70 3>#92 4>#114 5>-
+switch #115: 0>#30 1>#66 2>#71 3>#93 4>#115 5>-
+switch #116: 0>#32 1>#66 2>#72 3>#94 4>#116 5>-
+switch #117: 0>#34 1>#66 2>#73 3>#95 4>#117 5>-
+switch #118: 0>#36 1>#66 2>#74 3>#96 4>#118 5>-
+switch #119: 0>#38 1>#66 2>#75 3>#97 4>#119 5>-
+switch #120: 0>#40 1>#66 2>#76 3>#98 4>#120 5>-
+switch #121: 0>#42 1>#66 2>#77 3>#99 4>#121 5>-
+switch #122: 0>#22 1>#66 2>#78 3>#100 4>#122 5>-
+switch #123: 0>#24 1>#66 2>#79 3>#101 4>#123 5>-
+switch #124: 0>#26 1>#66 2>#80 3>#102 4>#124 5>-
+switch #125: 0>#28 1>#66 2>#81 3>#103 4>#125 5>-
+switch #126: 0>#30 1>#66 2>#82 3>#104 4>#126 5>-
+switch #127: 0>#32 1>#66 2>#83 3>#105 4>#127 5>-
+switch #128: 0>#34 1>#66 2>#84 3>#106 4>#128 5>-
+switch #129: 0>#36 1>#66 2>#85 3>#107 4>#129 5>-
+switch #130: 0>#38 1>#66 2>#86 3>#108 4>#130 5>-
+switch #131: 0>#40 1>#66 2>#87 3>#109 4>#131 5>-
+switch #132: 0>#42 1>#66 2>#88 3>#110 4>#132 5>-
+unknown id: dev=-1 turn=-
+## legacy family + singleton
+src #0 up:Voltage ch1 12h
+src #1 up:Voltage ch2 12h
+src #2 up:Voltage ch2 12h boost
+src #3 up:Voltage ch2 16h
+src #4 up:Voltage ch3 12h
+src #5 up:Studio Pre
+device 0 family="Voltage" rig="" slot="" key=fam:Voltage group=1
+  control channel:channel=ch1|ch2|ch3
+  control boost:boost=off|on
+  control gain:gain=12h|16h
+  file #0 {boost=off,channel=ch1,gain=12h}
+  file #1 {boost=off,channel=ch2,gain=12h}
+  file #2 {boost=on,channel=ch2,gain=12h}
+  file #3 {boost=off,channel=ch2,gain=16h}
+  file #4 {boost=off,channel=ch3,gain=12h}
+device 1 family="Studio Pre" rig="" slot="" key=fam:Studio Pre group=0
+  file #5 {}
+entry #0 name="Voltage" variant="Ch 1 · 12h" factory=0
+entry #1 name="Voltage" variant="Ch 2 · 12h" factory=0
+entry #2 name="Voltage" variant="Ch 2 · boost · 12h" factory=0
+entry #3 name="Voltage" variant="Ch 2 · 16h" factory=0
+entry #4 name="Voltage" variant="Ch 3 · 12h" factory=0
+entry #5 name="Studio Pre" variant="" factory=0
+view #0 group=1 dev=0 [channel:channel=ch1|ch2|ch3 cur=ch1 vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: ch1>#0 ch2>#1 ch3>#4 never-captured>-
+  turn boost: off>#0 on>#2 never-captured>-
+  turn gain: 12h>#0 16h>#3 never-captured>-
+view #1 group=1 dev=0 [channel:channel=ch1|ch2|ch3 cur=ch2 vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: ch1>#0 ch2>#1 ch3>#4 never-captured>-
+  turn boost: off>#1 on>#2 never-captured>-
+  turn gain: 12h>#1 16h>#3 never-captured>-
+view #2 group=1 dev=0 [channel:channel=ch1|ch2|ch3 cur=ch2 vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: ch1>#0 ch2>#2 ch3>#4 never-captured>-
+  turn boost: off>#1 on>#2 never-captured>-
+  turn gain: 12h>#2 16h>#3 never-captured>-
+view #3 group=1 dev=0 [channel:channel=ch1|ch2|ch3 cur=ch2 vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=16h vis=1]
+  turn channel: ch1>#0 ch2>#3 ch3>#4 never-captured>-
+  turn boost: off>#3 on>#2 never-captured>-
+  turn gain: 12h>#1 16h>#3 never-captured>-
+view #4 group=1 dev=0 [channel:channel=ch1|ch2|ch3 cur=ch3 vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: ch1>#0 ch2>#1 ch3>#4 never-captured>-
+  turn boost: off>#4 on>#2 never-captured>-
+  turn gain: 12h>#4 16h>#3 never-captured>-
+view #5 group=0 dev=1
+switch -: 0>#0 1>#5 2>-
+switch #0: 0>#0 1>#5 2>-
+switch #1: 0>#1 1>#5 2>-
+switch #2: 0>#2 1>#5 2>-
+switch #3: 0>#3 1>#5 2>-
+switch #4: 0>#4 1>#5 2>-
+switch #5: 0>#0 1>#5 2>-
+unknown id: dev=-1 turn=-
+## colour rank
+src #0 up:GtrVolt-blue-12h
+src #1 up:GtrVolt-green-12h
+src #2 up:GtrVolt-orange-12h
+src #3 up:GtrVolt-green-16h
+device 0 family="GtrVolt" rig="" slot="" key=fam:GtrVolt group=1
+  control channel:channel=blue|green|orange
+  control gain:gain=12h|16h
+  file #0 {channel=blue,gain=12h}
+  file #1 {channel=green,gain=12h}
+  file #2 {channel=orange,gain=12h}
+  file #3 {channel=green,gain=16h}
+entry #0 name="GtrVolt" variant="Blue · 12h" factory=0
+entry #1 name="GtrVolt" variant="Green · 12h" factory=0
+entry #2 name="GtrVolt" variant="Orange · 12h" factory=0
+entry #3 name="GtrVolt" variant="Green · 16h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|orange|blue cur=blue vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: blue>#0 green>#1 orange>#2 never-captured>-
+  turn gain: 12h>#0 16h>#3 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: blue>#0 green>#1 orange>#2 never-captured>-
+  turn gain: 12h>#1 16h>#3 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|orange|blue cur=orange vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: blue>#0 green>#1 orange>#2 never-captured>-
+  turn gain: 12h>#2 16h>#3 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|orange|blue cur=green vis=1] [gain:gain=12h|16h cur=16h vis=1]
+  turn channel: blue>#0 green>#3 orange>#2 never-captured>-
+  turn gain: 12h>#1 16h>#3 never-captured>-
+switch -: 0>#1 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+switch #3: 0>#3 1>-
+unknown id: dev=-1 turn=-
+## grammar edges
+src #0 up:ch5 amp
+src #1 up:Channel Two
+src #2 up:Boosted
+src #3 up:Reactor X1
+device 0 family="ch5 amp" rig="" slot="" key=fam:ch5 amp group=0
+  file #0 {}
+device 1 family="Channel Two" rig="" slot="" key=fam:Channel Two group=0
+  file #1 {}
+device 2 family="Boosted" rig="" slot="" key=fam:Boosted group=0
+  file #2 {}
+device 3 family="Reactor X1" rig="" slot="" key=fam:Reactor X1 group=0
+  file #3 {}
+entry #0 name="ch5 amp" variant="" factory=0
+entry #1 name="Channel Two" variant="" factory=0
+entry #2 name="Boosted" variant="" factory=0
+entry #3 name="Reactor X1" variant="" factory=0
+view #0 group=0 dev=0
+view #1 group=0 dev=1
+view #2 group=0 dev=2
+view #3 group=0 dev=3
+switch -: 0>#0 1>#1 2>#2 3>#3 4>-
+switch #0: 0>#0 1>#1 2>#2 3>#3 4>-
+switch #1: 0>#0 1>#1 2>#2 3>#3 4>-
+switch #2: 0>#0 1>#1 2>#2 3>#3 4>-
+switch #3: 0>#0 1>#1 2>#2 3>#3 4>-
+unknown id: dev=-1 turn=-
+## variant badges
+src #0 up:GtrVolt-green-12h-boost
+src #1 up:GtrVolt-green-12h
+src #2 up:GtrVolt-red-07h
+device 0 family="GtrVolt" rig="" slot="" key=fam:GtrVolt group=1
+  control channel:channel=green|red
+  control boost:boost=off|on
+  control gain:gain=07h|12h
+  file #0 {boost=on,channel=green,gain=12h}
+  file #1 {boost=off,channel=green,gain=12h}
+  file #2 {boost=off,channel=red,gain=07h}
+entry #0 name="GtrVolt" variant="Green · boost · 12h" factory=0
+entry #1 name="GtrVolt" variant="Green · 12h" factory=0
+entry #2 name="GtrVolt" variant="Red · 07h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=07h|12h cur=12h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn boost: off>#1 on>#0 never-captured>-
+  turn gain: 07h>#2 12h>#0 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|12h cur=12h vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn boost: off>#1 on>#0 never-captured>-
+  turn gain: 07h>#2 12h>#1 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=07h|12h cur=07h vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn boost: off>#2 on>#0 never-captured>-
+  turn gain: 07h>#2 12h>#1 never-captured>-
+switch -: 0>#1 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## metadata path
+src #0 up:take-001
+src #1 up:take-002
+src #2 up:take-003
+src #3 up:take-004
+device 0 family="ReVolt Guitar" rig="dc-test-rig" slot="" key=rig:dc-test-rig group=1
+  control channel:channel=green|red
+  control mode:generic=classic|modern
+  file #0 {channel=green,mode=classic}
+  file #1 {channel=green,mode=modern}
+  file #2 {channel=red,mode=classic}
+  file #3 {channel=red,mode=modern}
+entry #0 name="ReVolt Guitar" variant="Green · classic" factory=0
+entry #1 name="ReVolt Guitar" variant="Green · modern" factory=0
+entry #2 name="ReVolt Guitar" variant="Red · classic" factory=0
+entry #3 name="ReVolt Guitar" variant="Red · modern" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [mode:generic=classic|modern cur=classic vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn mode: classic>#0 modern>#1 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [mode:generic=classic|modern cur=modern vis=1]
+  turn channel: green>#1 red>#3 never-captured>-
+  turn mode: classic>#0 modern>#1 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [mode:generic=classic|modern cur=classic vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn mode: classic>#2 modern>#3 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [mode:generic=classic|modern cur=modern vis=1]
+  turn channel: green>#1 red>#3 never-captured>-
+  turn mode: classic>#2 modern>#3 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+switch #3: 0>#3 1>-
+unknown id: dev=-1 turn=-
+## rig_id grouping
+src #0 up:A-07
+src #1 up:B-12-renamed
+device 0 family="ReVolt Guitar" rig="dc-test-rig" slot="" key=rig:dc-test-rig group=1
+  control gain:gain=07h|12h
+  file #0 {gain=07h}
+  file #1 {gain=12h}
+entry #0 name="ReVolt Guitar" variant="07h" factory=0
+entry #1 name="ReVolt Guitar" variant="12h" factory=0
+view #0 group=1 dev=0 [gain:gain=07h|12h cur=07h vis=1]
+  turn gain: 07h>#0 12h>#1 never-captured>-
+view #1 group=1 dev=0 [gain:gain=07h|12h cur=12h vis=1]
+  turn gain: 07h>#0 12h>#1 never-captured>-
+switch -: 0>#1 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+unknown id: dev=-1 turn=-
+## rig_id grouping, reversed
+src #0 up:B-12-renamed
+src #1 up:A-07
+device 0 family="ReVolt Guitar" rig="" slot="" key=fam:ReVolt Guitar group=0
+  control gain:gain=07h|12h
+  file #0 {gain=12h}
+device 1 family="ReVolt Guitar" rig="dc-test-rig" slot="" key=rig:dc-test-rig group=0
+  control gain:gain=07h|12h
+  file #1 {gain=07h}
+entry #0 name="ReVolt Guitar" variant="12h" factory=0
+entry #1 name="ReVolt Guitar" variant="07h" factory=0
+view #0 group=0 dev=0 [gain:gain=07h|12h cur=12h vis=1]
+  turn gain: 07h>- 12h>#0 never-captured>-
+view #1 group=0 dev=1 [gain:gain=07h|12h cur=07h vis=1]
+  turn gain: 07h>#1 12h>- never-captured>-
+switch -: 0>#0 1>#1 2>-
+switch #0: 0>#0 1>#1 2>-
+switch #1: 0>#0 1>#1 2>-
+unknown id: dev=-1 turn=-
+## sparse metadata matrix
+src #0 up:t1
+src #1 up:t2
+src #2 up:t3
+device 0 family="ReVolt Guitar" rig="dc-test-rig" slot="" key=rig:dc-test-rig group=1
+  control channel:channel=green|red
+  control gain:gain=07h|12h|17h
+  file #0 {channel=green,gain=07h}
+  file #1 {channel=green,gain=12h}
+  file #2 {channel=red,gain=12h}
+entry #0 name="ReVolt Guitar" variant="Green · 07h" factory=0
+entry #1 name="ReVolt Guitar" variant="Green · 12h" factory=0
+entry #2 name="ReVolt Guitar" variant="Red · 12h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|12h|17h cur=07h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn gain: 07h>#0 12h>#1 17h>- never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|12h|17h cur=12h vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn gain: 07h>#0 12h>#1 17h>- never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|12h|17h cur=12h vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn gain: 07h>#0 12h>#2 17h>- never-captured>-
+switch -: 0>#1 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## sparse legacy: the default decides
+src #0 up:Amp green 07h
+src #1 up:Amp green 17h
+src #2 up:Amp red 07h
+src #3 up:Amp red 12h
+device 0 family="Amp" rig="" slot="" key=fam:Amp group=1
+  control channel:channel=green|red
+  control gain:gain=07h|12h|17h
+  file #0 {channel=green,gain=07h}
+  file #1 {channel=green,gain=17h}
+  file #2 {channel=red,gain=07h}
+  file #3 {channel=red,gain=12h}
+entry #0 name="Amp" variant="Green · 07h" factory=0
+entry #1 name="Amp" variant="Green · 17h" factory=0
+entry #2 name="Amp" variant="Red · 07h" factory=0
+entry #3 name="Amp" variant="Red · 12h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|12h|17h cur=07h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn gain: 07h>#0 12h>#3 17h>#1 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=07h|12h|17h cur=17h vis=1]
+  turn channel: green>#1 red>#3 never-captured>-
+  turn gain: 07h>#0 12h>#3 17h>#1 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|12h|17h cur=07h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn gain: 07h>#2 12h>#3 17h>#1 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [gain:gain=07h|12h|17h cur=12h vis=1]
+  turn channel: green>#0 red>#3 never-captured>-
+  turn gain: 07h>#2 12h>#3 17h>#1 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+switch #3: 0>#3 1>-
+unknown id: dev=-1 turn=-
+## legacy then stamped, one family
+src #0 up:Voltage ch1 12h
+src #1 up:Voltage ch2 16h
+src #2 up:Voltage stamped
+device 0 family="Voltage" rig="" slot="" key=fam:Voltage group=1
+  control gain:gain=12h|16h
+  file #0 {gain=12h}
+  file #1 {gain=16h}
+  file #2 {gain=12h}
+entry #0 name="Voltage" variant="12h" factory=0
+entry #1 name="Voltage" variant="16h" factory=0
+entry #2 name="Voltage" variant="12h" factory=0
+view #0 group=1 dev=0 [gain:gain=12h|16h cur=12h vis=1]
+  turn gain: 12h>#0 16h>#1 never-captured>-
+view #1 group=1 dev=0 [gain:gain=12h|16h cur=16h vis=1]
+  turn gain: 12h>#0 16h>#1 never-captured>-
+view #2 group=1 dev=0 [gain:gain=12h|16h cur=12h vis=1]
+  turn gain: 12h>#0 16h>#1 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#0 1>-
+unknown id: dev=-1 turn=-
+## stamped then legacy, one family
+src #0 up:Voltage stamped
+src #1 up:Voltage ch1 12h
+src #2 up:Voltage ch2 16h
+device 0 family="Voltage" rig="" slot="" key=fam:Voltage group=1
+  control gain:gain=12h|16h
+  file #0 {gain=12h}
+  file #1 {gain=12h}
+  file #2 {gain=16h}
+entry #0 name="Voltage" variant="12h" factory=0
+entry #1 name="Voltage" variant="12h" factory=0
+entry #2 name="Voltage" variant="16h" factory=0
+view #0 group=1 dev=0 [gain:gain=12h|16h cur=12h vis=1]
+  turn gain: 12h>#0 16h>#2 never-captured>-
+view #1 group=1 dev=0 [gain:gain=12h|16h cur=12h vis=1]
+  turn gain: 12h>#0 16h>#2 never-captured>-
+view #2 group=1 dev=0 [gain:gain=12h|16h cur=16h vis=1]
+  turn gain: 12h>#0 16h>#2 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#0 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## legacy family + degree stamp of the same name
+src #0 up:Voltage ch1 12h
+src #1 up:Voltage ch2 16h boost
+src #2 up:Voltage stamped
+device 0 family="Voltage" rig="" slot="" key=fam:Voltage group=1
+  control gain:gain=0|150|300
+  file #0 {gain=12h}
+  file #1 {gain=16h}
+  file #2 {gain=150}
+entry #0 name="Voltage" variant="12h" factory=0
+entry #1 name="Voltage" variant="16h" factory=0
+entry #2 name="Voltage" variant="150" factory=0
+view #0 group=1 dev=0 [gain:gain=0|150|300 cur=12h vis=1]
+  turn gain: 0>- 150>#2 300>- never-captured>-
+view #1 group=1 dev=0 [gain:gain=0|150|300 cur=16h vis=1]
+  turn gain: 0>- 150>#2 300>- never-captured>-
+view #2 group=1 dev=0 [gain:gain=0|150|300 cur=150 vis=1]
+  turn gain: 0>- 150>#2 300>- never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#0 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## token-only pack
+src #0 up:green 12h
+src #1 up:red 12h
+src #2 up:red 12h boost
+src #3 up:green 17h
+src #4 up:Clean 12h
+device 0 family="" rig="" slot="" key=fam: group=1
+  control channel:channel=green|red
+  control boost:boost=off|on
+  control gain:gain=12h|17h
+  file #0 {boost=off,channel=green,gain=12h}
+  file #1 {boost=off,channel=red,gain=12h}
+  file #2 {boost=on,channel=red,gain=12h}
+  file #3 {boost=off,channel=green,gain=17h}
+device 1 family="Clean" rig="" slot="" key=fam:Clean group=0
+  file #4 {}
+entry #0 name="green 12h" variant="Green · 12h" factory=0
+entry #1 name="red 12h" variant="Red · 12h" factory=0
+entry #2 name="red 12h boost" variant="Red · boost · 12h" factory=0
+entry #3 name="green 17h" variant="Green · 17h" factory=0
+entry #4 name="Clean" variant="" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=12h vis=1]
+  turn channel: green>#0 red>#1 never-captured>-
+  turn boost: off>#0 on>#2 never-captured>-
+  turn gain: 12h>#0 17h>#3 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=12h vis=1]
+  turn channel: green>#0 red>#1 never-captured>-
+  turn boost: off>#1 on>#2 never-captured>-
+  turn gain: 12h>#1 17h>#3 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=12h|17h cur=12h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn boost: off>#1 on>#2 never-captured>-
+  turn gain: 12h>#2 17h>#3 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=17h vis=1]
+  turn channel: green>#3 red>#1 never-captured>-
+  turn boost: off>#3 on>#2 never-captured>-
+  turn gain: 12h>#0 17h>#3 never-captured>-
+view #4 group=0 dev=1
+switch -: 0>#0 1>#4 2>-
+switch #0: 0>#0 1>#4 2>-
+switch #1: 0>#1 1>#4 2>-
+switch #2: 0>#2 1>#4 2>-
+switch #3: 0>#3 1>#4 2>-
+switch #4: 0>#0 1>#4 2>-
+unknown id: dev=-1 turn=-
+## topology, chN, colour mid-name
+src #0 up:PowerX PP 12h
+src #1 up:PowerX SE 12h
+src #2 up:PowerX pp 16h
+src #3 up:Duo ch1
+src #4 up:Duo ch2
+src #5 up:Duo ch4
+src #6 up:Bad ch5 thing
+src #7 up:Studio green Pre 12h
+src #8 up:Studio red Pre 12h
+device 0 family="PowerX" rig="" slot="" key=fam:PowerX group=1
+  control topology:topology=PP|SE|pp
+  control gain:gain=12h|16h
+  file #0 {gain=12h,topology=PP}
+  file #1 {gain=12h,topology=SE}
+  file #2 {gain=16h,topology=pp}
+device 1 family="Duo" rig="" slot="" key=fam:Duo group=1
+  control channel:channel=ch1|ch2|ch4
+  file #3 {channel=ch1}
+  file #4 {channel=ch2}
+  file #5 {channel=ch4}
+device 2 family="Bad ch5 thing" rig="" slot="" key=fam:Bad ch5 thing group=0
+  file #6 {}
+device 3 family="Studio Pre" rig="" slot="" key=fam:Studio Pre group=1
+  control channel:channel=green|red
+  file #7 {channel=green}
+  file #8 {channel=red}
+entry #0 name="PowerX" variant="PP · 12h" factory=0
+entry #1 name="PowerX" variant="SE · 12h" factory=0
+entry #2 name="PowerX" variant="pp · 16h" factory=0
+entry #3 name="Duo" variant="Ch 1" factory=0
+entry #4 name="Duo" variant="Ch 2" factory=0
+entry #5 name="Duo" variant="Ch 4" factory=0
+entry #6 name="Bad ch5 thing" variant="" factory=0
+entry #7 name="Studio Pre" variant="Green" factory=0
+entry #8 name="Studio Pre" variant="Red" factory=0
+view #0 group=1 dev=0 [topology:topology=PP|SE|pp cur=PP vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn topology: PP>#0 SE>#1 pp>#2 never-captured>-
+  turn gain: 12h>#0 16h>#2 never-captured>-
+view #1 group=1 dev=0 [topology:topology=PP|SE|pp cur=SE vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn topology: PP>#0 SE>#1 pp>#2 never-captured>-
+  turn gain: 12h>#1 16h>#2 never-captured>-
+view #2 group=1 dev=0 [topology:topology=PP|SE|pp cur=pp vis=1] [gain:gain=12h|16h cur=16h vis=1]
+  turn topology: PP>#0 SE>#1 pp>#2 never-captured>-
+  turn gain: 12h>#0 16h>#2 never-captured>-
+view #3 group=1 dev=1 [channel:channel=ch1|ch2|ch4 cur=ch1 vis=1]
+  turn channel: ch1>#3 ch2>#4 ch4>#5 never-captured>-
+view #4 group=1 dev=1 [channel:channel=ch1|ch2|ch4 cur=ch2 vis=1]
+  turn channel: ch1>#3 ch2>#4 ch4>#5 never-captured>-
+view #5 group=1 dev=1 [channel:channel=ch1|ch2|ch4 cur=ch4 vis=1]
+  turn channel: ch1>#3 ch2>#4 ch4>#5 never-captured>-
+view #6 group=0 dev=2
+view #7 group=1 dev=3 [channel:channel=green|red cur=green vis=1]
+  turn channel: green>#7 red>#8 never-captured>-
+view #8 group=1 dev=3 [channel:channel=green|red cur=red vis=1]
+  turn channel: green>#7 red>#8 never-captured>-
+switch -: 0>#0 1>#3 2>#6 3>#7 4>-
+switch #0: 0>#0 1>#3 2>#6 3>#7 4>-
+switch #1: 0>#1 1>#3 2>#6 3>#7 4>-
+switch #2: 0>#2 1>#3 2>#6 3>#7 4>-
+switch #3: 0>#0 1>#3 2>#6 3>#7 4>-
+switch #4: 0>#0 1>#4 2>#6 3>#7 4>-
+switch #5: 0>#0 1>#5 2>#6 3>#7 4>-
+switch #6: 0>#0 1>#3 2>#6 3>#7 4>-
+switch #7: 0>#0 1>#3 2>#6 3>#7 4>-
+switch #8: 0>#0 1>#3 2>#6 3>#8 4>-
+unknown id: dev=-1 turn=-
+## factory + user copy
+src #0 fp:Amp green 12h
+src #1 fp:Amp red 12h
+src #2 up:Amp green 12h
+src #3 up:Amp green 16h BOOST
+device 0 family="Amp" rig="" slot="" key=fam:Amp group=1
+  control channel:channel=green|red
+  control boost:boost=off|on
+  control gain:gain=12h|16h
+  file #0 {boost=off,channel=green,gain=12h}
+  file #1 {boost=off,channel=red,gain=12h}
+  file #2 {boost=off,channel=green,gain=12h}
+  file #3 {boost=on,channel=green,gain=16h}
+entry #0 name="Amp" variant="Green · 12h" factory=1
+entry #1 name="Amp" variant="Red · 12h" factory=1
+entry #2 name="Amp" variant="Green · 12h" factory=0
+entry #3 name="Amp" variant="Green · boost · 16h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: green>#0 red>#1 never-captured>-
+  turn boost: off>#0 on>#3 never-captured>-
+  turn gain: 12h>#0 16h>#3 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: green>#0 red>#1 never-captured>-
+  turn boost: off>#1 on>#3 never-captured>-
+  turn gain: 12h>#1 16h>#3 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|16h cur=12h vis=1]
+  turn channel: green>#0 red>#1 never-captured>-
+  turn boost: off>#0 on>#3 never-captured>-
+  turn gain: 12h>#0 16h>#3 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=12h|16h cur=16h vis=1]
+  turn channel: green>#3 red>#1 never-captured>-
+  turn boost: off>#0 on>#3 never-captured>-
+  turn gain: 12h>#0 16h>#3 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#0 1>-
+switch #3: 0>#3 1>-
+unknown id: dev=-1 turn=-
+## degree-stamped dial
+src #0 up:d1
+src #1 up:d2
+src #2 up:d3
+device 0 family="Deg Amp" rig="deg-rig" slot="" key=rig:deg-rig group=1
+  control channel:channel=green|red
+  control gain:gain=0|150|300
+  file #0 {channel=green,gain=0}
+  file #1 {channel=green,gain=300}
+  file #2 {channel=red,gain=150}
+entry #0 name="Deg Amp" variant="Green · 0" factory=0
+entry #1 name="Deg Amp" variant="Green · 300" factory=0
+entry #2 name="Deg Amp" variant="Red · 150" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=0|150|300 cur=0 vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn gain: 0>#0 150>#2 300>#1 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [gain:gain=0|150|300 cur=300 vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn gain: 0>#0 150>#2 300>#1 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [gain:gain=0|150|300 cur=150 vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn gain: 0>#0 150>#2 300>#1 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## stamped file with a grammar name
+src #0 up:Voltage ch2 12h boost
+src #1 up:V4 ch1 12h
+src #2 up:Voltage ch1 12h
+device 0 family="V4" rig="" slot="" key=fam:V4 group=1
+  control gain:gain=12h|16h
+  file #0 {gain=16h}
+  file #1 {gain=12h}
+device 1 family="Voltage" rig="" slot="" key=fam:Voltage group=0
+  file #2 {}
+entry #0 name="V4" variant="16h" factory=0
+entry #1 name="V4" variant="12h" factory=0
+entry #2 name="Voltage" variant="" factory=0
+view #0 group=1 dev=0 [gain:gain=12h|16h cur=16h vis=1]
+  turn gain: 12h>#1 16h>#0 never-captured>-
+view #1 group=1 dev=0 [gain:gain=12h|16h cur=12h vis=1]
+  turn gain: 12h>#1 16h>#0 never-captured>-
+view #2 group=0 dev=1
+switch -: 0>#1 1>#2 2>-
+switch #0: 0>#0 1>#2 2>-
+switch #1: 0>#1 1>#2 2>-
+switch #2: 0>#1 1>#2 2>-
+unknown id: dev=-1 turn=-
+## clock edges
+src #0 up:Amp 7h
+src #1 up:Amp 12h
+src #2 up:Amp 100h
+src #3 up:Amp 17h
+device 0 family="Amp" rig="" slot="" key=fam:Amp group=1
+  control gain:gain=7h|12h|17h
+  file #0 {gain=7h}
+  file #1 {gain=12h}
+  file #3 {gain=17h}
+device 1 family="Amp 100h" rig="" slot="" key=fam:Amp 100h group=0
+  file #2 {}
+entry #0 name="Amp" variant="7h" factory=0
+entry #1 name="Amp" variant="12h" factory=0
+entry #3 name="Amp" variant="17h" factory=0
+entry #2 name="Amp 100h" variant="" factory=0
+view #0 group=1 dev=0 [gain:gain=7h|12h|17h cur=7h vis=1]
+  turn gain: 7h>#0 12h>#1 17h>#3 never-captured>-
+view #1 group=1 dev=0 [gain:gain=7h|12h|17h cur=12h vis=1]
+  turn gain: 7h>#0 12h>#1 17h>#3 never-captured>-
+view #2 group=0 dev=1
+view #3 group=1 dev=0 [gain:gain=7h|12h|17h cur=17h vis=1]
+  turn gain: 7h>#0 12h>#1 17h>#3 never-captured>-
+switch -: 0>#1 1>#2 2>-
+switch #0: 0>#0 1>#2 2>-
+switch #1: 0>#1 1>#2 2>-
+switch #2: 0>#1 1>#2 2>-
+switch #3: 0>#3 1>#2 2>-
+unknown id: dev=-1 turn=-
+## keeping outweighs defaults
+src #0 up:Q green 17h boost
+src #1 up:Q green 12h
+src #2 up:Q red 17h
+src #3 up:Q red 12h
+device 0 family="Q" rig="" slot="" key=fam:Q group=1
+  control channel:channel=green|red
+  control boost:boost=off|on
+  control gain:gain=12h|17h
+  file #0 {boost=on,channel=green,gain=17h}
+  file #1 {boost=off,channel=green,gain=12h}
+  file #2 {boost=off,channel=red,gain=17h}
+  file #3 {boost=off,channel=red,gain=12h}
+entry #0 name="Q" variant="Green · boost · 17h" factory=0
+entry #1 name="Q" variant="Green · 12h" factory=0
+entry #2 name="Q" variant="Red · 17h" factory=0
+entry #3 name="Q" variant="Red · 12h" factory=0
+view #0 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=on vis=1] [gain:gain=12h|17h cur=17h vis=1]
+  turn channel: green>#0 red>#2 never-captured>-
+  turn boost: off>#1 on>#0 never-captured>-
+  turn gain: 12h>#1 17h>#0 never-captured>-
+view #1 group=1 dev=0 [channel:channel=green|red cur=green vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=12h vis=1]
+  turn channel: green>#1 red>#3 never-captured>-
+  turn boost: off>#1 on>#0 never-captured>-
+  turn gain: 12h>#1 17h>#0 never-captured>-
+view #2 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=17h vis=1]
+  turn channel: green>#1 red>#2 never-captured>-
+  turn boost: off>#2 on>#0 never-captured>-
+  turn gain: 12h>#3 17h>#2 never-captured>-
+view #3 group=1 dev=0 [channel:channel=green|red cur=red vis=1] [boost:boost=off|on cur=off vis=1] [gain:gain=12h|17h cur=12h vis=1]
+  turn channel: green>#1 red>#3 never-captured>-
+  turn boost: off>#3 on>#0 never-captured>-
+  turn gain: 12h>#3 17h>#2 never-captured>-
+switch -: 0>#1 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+switch #3: 0>#3 1>-
+unknown id: dev=-1 turn=-
+## a tie on score
+src #0 up:T-user
+src #1 up:T-keeps-a
+src #2 up:T-keeps-b
+device 0 family="Tie Amp" rig="tie-rig" slot="" key=rig:tie-rig group=1
+  control a:generic=x|y|z
+  control b:generic=p|q|r
+  control c:generic=u|v
+  file #0 {a=x,b=q,c=u}
+  file #1 {a=x,b=r,c=v}
+  file #2 {a=y,b=q,c=v}
+entry #0 name="Tie Amp" variant="x · q · u" factory=0
+entry #1 name="Tie Amp" variant="x · r · v" factory=0
+entry #2 name="Tie Amp" variant="y · q · v" factory=0
+view #0 group=1 dev=0 [a:generic=x|y|z cur=x vis=1] [b:generic=p|q|r cur=q vis=1] [c:generic=u|v cur=u vis=1]
+  turn a: x>#0 y>#2 z>- never-captured>-
+  turn b: p>- q>#0 r>#1 never-captured>-
+  turn c: u>#0 v>#1 never-captured>-
+view #1 group=1 dev=0 [a:generic=x|y|z cur=x vis=1] [b:generic=p|q|r cur=r vis=1] [c:generic=u|v cur=v vis=1]
+  turn a: x>#1 y>#2 z>- never-captured>-
+  turn b: p>- q>#0 r>#1 never-captured>-
+  turn c: u>#0 v>#1 never-captured>-
+view #2 group=1 dev=0 [a:generic=x|y|z cur=y vis=1] [b:generic=p|q|r cur=q vis=1] [c:generic=u|v cur=v vis=1]
+  turn a: x>#0 y>#2 z>- never-captured>-
+  turn b: p>- q>#2 r>#1 never-captured>-
+  turn c: u>#0 v>#2 never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#1 1>-
+switch #2: 0>#2 1>-
+unknown id: dev=-1 turn=-
+## two specs, one device
+src #0 up:S1
+src #1 up:S2
+device 0 family="Spec Amp" rig="two-spec" slot="" key=rig:two-spec group=1
+  control gain:gain=07h|12h
+  file #0 {gain=07h}
+  file #1 {gain=17h}
+entry #0 name="Spec Amp" variant="07h" factory=0
+entry #1 name="Spec Amp" variant="17h" factory=0
+view #0 group=1 dev=0 [gain:gain=07h|12h cur=07h vis=1]
+  turn gain: 07h>#0 12h>- never-captured>-
+view #1 group=1 dev=0 [gain:gain=07h|12h cur=17h vis=1]
+  turn gain: 07h>#0 12h>- never-captured>-
+switch -: 0>#0 1>-
+switch #0: 0>#0 1>-
+switch #1: 0>#0 1>-
+unknown id: dev=-1 turn=-
