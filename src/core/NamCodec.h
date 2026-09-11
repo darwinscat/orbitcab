@@ -8,8 +8,8 @@
 #include <cstddef>
 
 //==============================================================================
-// NamCodec — OrbitCab's juce-typed adapter over the `namz` library (github.com/darwinscat/namz v1.1.1,
-// MIT). felitronics-core v0.13.0's NAM module compiles the single `namz.h` implementation; this thin
+// NamCodec — OrbitCab's juce-typed adapter over the `namz` library (github.com/darwinscat/namz, MIT; the
+// release is felitronics-core's pin). The core's NAM module compiles the single `namz.h` implementation; this thin
 // wrapper only converts at the juce boundary (juce::MemoryBlock <-> std::vector,
 // juce::StringPairArray <-> std::map) so the rest of OrbitCab keeps its juce-only surface and nlohmann
 // never leaks out. The `namz` lib was extracted from this very codec, so the bytes are identical — the

@@ -43,9 +43,9 @@ The bundled content (IRs, font) is ledgered in
 - **License:** MIT.
 - **Copyright:** © Steven Atkinson and the Neural Amp Modeler contributors.
 - **Source:** https://github.com/sdatkinson/NeuralAmpModelerCore — consumed transitively through
-  felitronics-core v0.13.0's opt-in `felitronics::nam` module. felitronics-core fetches NAM at a
-  pinned commit and compiles its sources into the backend used for the optional amp stages in front
-  of the cab. OrbitCab bundles no user-supplied `.nam` models; captures retain their own licenses.
+  felitronics-core's opt-in `felitronics::nam` module, which pins NAM to a release (v0.5.4 as of
+  felitronics-core v0.30.0) and compiles its sources into the backend used for the optional amp stages in
+  front of the cab. OrbitCab bundles no user-supplied `.nam` models; captures retain their own licenses.
 - **Dependencies fetched at felitronics-core's pins:**
   - **Eigen** (linear algebra, header-only) — **MPL-2.0** — © the Eigen authors —
     https://gitlab.com/libeigen/eigen (NAM git submodule).
@@ -58,7 +58,7 @@ The bundled content (IRs, font) is ledgered in
   **separately versioned** sibling library (the shared JUCE-free DSP core), so it's recorded here.
 - **Source:** https://github.com/darwinscat/felitronics-core — fetched via CMake `FetchContent`
   at a pinned release tag (`ORBITCAB_FCORE_TAG` in [`CMakeLists.txt`](CMakeLists.txt)), or a local
-  sibling checkout for core co-development. OrbitCab consumes v0.13.0's header-only DSP modules plus
+  sibling checkout for core co-development. OrbitCab consumes the pinned release's header-only DSP modules plus
   the opt-in compiled `felitronics::nam` module: `teq::core` (the matched-EQ engine used by
   `cab::AmpEq`), `felitronics::analysis` (the lock-free `SpectrumTap`),
   `felitronics::convolution` (`CabConvolver`, aliased as `cab::Convolver`), `felitronics::core`
@@ -69,8 +69,8 @@ The bundled content (IRs, font) is ledgered in
 - **Copyright:** © Darwin's Cat — Oleh Tsymaienko and Alisa Lafoks. First-party, but a
   **separately versioned** sibling library — extracted from OrbitCab's own codec (byte-identical) and
   released under **MIT** so other tools can reuse it, so it's recorded here.
-- **Source:** https://github.com/darwinscat/namz — consumed transitively through felitronics-core
-  v0.13.0's `felitronics::nam` module, which pins namz v1.1.1 by immutable commit. `NamStage.cpp` in
+- **Source:** https://github.com/darwinscat/namz — consumed transitively through felitronics-core's
+  `felitronics::nam` module, which pins the namz release (v4.1.0 as of felitronics-core v0.30.0). `NamStage.cpp` in
   that module compiles `NAMZ_IMPLEMENTATION` exactly once and exports the declarations and symbols to
   OrbitCab. It backs `src/core/NamCodec.{h,cpp}` and the rig readers: the lossless `.nam` (JSON
   weights) ↔ `.namz` (float32-packed) round-trip for bundled/imported captures.
