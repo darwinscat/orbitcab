@@ -12,9 +12,11 @@
 #include "core/AmpStage.h"
 #include "core/CabEngine.h"
 #include "core/DryAligner.h"
+#include "core/DryAlignCapacity.h"
 #include "core/Params.h"
 #include <juce_core/juce_core.h>
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 using cab::AmpStage;
@@ -92,6 +94,12 @@ namespace
         }
         return best;
     }
+
+    // The window bestFitDelay searches for a path that should carry `latency`: twice that, and never
+    // less than 8 — a path delayed by anything from nothing to double is found where it actually is. A
+    // FIXED window (it was 24, sized on the old 9-sample figure) goes blind the day the core's number
+    // outgrows it and returns a plausible wrong answer ("10") instead of the real one.
+    int fitWindow (int latency) { return 2 * latency + 8; }
 
     // Run `in` through a CabEngine in `block`-sized chunks with params `p`; return channel-0 output.
     std::vector<float> runEngine (cab::CabEngine& e, const cab::Params& p, const std::vector<float>& in, int block)
@@ -201,7 +209,9 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 if (ok)
                 {
                     const int Ln = nam.latencySamples();
-                    expectEquals (Ln, (int) std::ceil (3.0 * sr / 48000.0) + 3);   // the rate-match formula = 9 @ 96k
+                    // The LENGTH is the core's (9 samples under its old kernel, 96 under the 64-tap one, and it
+                    // may move again) — this gate owns only that the dry path carries exactly what is reported.
+                    expect (Ln > 0, "precondition: a 48k model at 96 kHz rate-matches, so there is a latency to carry");
                     const auto in  = distinctSignal (8000);
                     const auto out = runOff (r, nam, PowerAmpMode::capture, in, 64);
                     expect (isDelayedBy (out, in, Ln), "capture off = dry delayed by EXACTLY the reported latency");
@@ -225,12 +235,84 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadPreampModelBytes (bytes.getData(), bytes.getSize()), "preamp model loads");
                 const int L = e.preampLatencySamples();
-                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);      // 9 @ 96k
+                expect (L > 0, "precondition: the armed model rate-matches at 96 kHz");
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);
-                expectEquals (bestFitDelay (out, in, 24), L,
+                expectEquals (bestFitDelay (out, in, fitWindow (L)), L,
                               "preamp-OFF dry must be delayed by the armed model's rate-match latency");
             }
+           #endif
+        }
+
+        // THE WET PATH, which every gate above leaves unmeasured (they bypass the stage, so they check the dry
+        // copy against the reported number and never the number against the signal). With the stage ON, an
+        // identity capture — a 1-tap Linear .nam — makes the output the input delayed by exactly what the
+        // rate-match really costs, and that must BE the reported latency: the host compensates it and the bypass
+        // paths copy it. Asserted where the core publishes its latency bound (felitronics-core >= v0.30.0).
+        // v0.13.1 reports more than its path costs (6 vs 4 samples at 44.1 kHz, 9 vs 6 at 96, 27 vs 18 at 384)
+        // and its resampler crashes above a 4:1 ratio (216 - 352.8 kHz): there this gate could only measure the
+        // defect the bump removes, so it is skipped and says so.
+        beginTest ("the WET path arrives exactly the reported latency late (identity capture, 44.1k .. 384k)");
+        {
+            if constexpr (! cab::PublishesLatencyBound<AmpStage>)
+            {
+                logMessage ("  skipped: this core publishes no latency bound, and its reported latency is not its path's");
+                expect (true);
+            }
+            else
+            {
+                const char* identity = R"({"version":"0.5.2","architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[1.0],"sample_rate":48000})";
+                for (double rate : { 44100.0, 88200.0, 96000.0, 192000.0, 216000.0, 352800.0, 384000.0 })
+                    for (int block : { 7, 64, 512 })
+                        for (bool capture : { false, true })
+                        {
+                            cab::Params p; p.autoLevel = false; p.slot[0].dryWet01 = 0.0f;
+                            p.preampOn = ! capture; p.ampOn = capture;
+                            if (capture) p.powerAmpMode = cab::PowerAmpMode::capture;
+                            cab::CabEngine e; e.prepare (rate, block, 2, p);
+                            const juce::String where = juce::String (rate, 0) + " block " + juce::String (block)
+                                                     + (capture ? " capture" : " preamp");
+                            const bool loaded = capture ? e.loadAmpModelBytes (identity, std::strlen (identity))
+                                                        : e.loadPreampModelBytes (identity, std::strlen (identity));
+                            expect (loaded, "identity capture loads at " + where);
+                            const int L = capture ? e.ampLatencySamples() : e.preampLatencySamples();
+                            expect (L > 0, "precondition (rate-match) at " + where);
+                            const auto in  = distinctSignal (16000);
+                            const auto out = runEngine (e, p, in, block);
+                            expectEquals (bestFitDelay (out, in, fitWindow (L)), L, "wet path == reported latency at " + where);
+                        }
+            }
+        }
+
+        // Every host rate the rate-match meets, both bypass paths: the dry carries EXACTLY the reported
+        // latency. This is the gate the 256-sample ring failed — at 352.8 and 384 kHz it clamped the core's
+        // 267 and 288 to 255, silently, while the host compensated the full amount. 705.6 and 768 kHz
+        // reach past every ring a CONSTANT could have been sized for on either core (48 and 51 on v0.13.1,
+        // 502 and 544 on v0.30.0), so a capacity that stops following the core fails here on both.
+        beginTest ("CabEngine bypass paths carry exactly the reported latency at every host rate (44.1k .. 768k)");
+        {
+           #ifdef ORBITCAB_RES_DIR
+            const auto bytes = loadTestModelBytes();
+            expect (bytes.getSize() > 0, "embedded test .nam present");
+            if (bytes.getSize() > 0)
+                for (int rate : { 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000 })   // integers: compared below
+                    for (bool capture : { false, true })
+                    {
+                        cab::Params p; p.autoLevel = false; p.slot[0].dryWet01 = 0.0f;
+                        p.preampOn = false; p.ampOn = false;
+                        if (capture) p.powerAmpMode = cab::PowerAmpMode::capture;
+                        cab::CabEngine e; e.prepare (rate, prepBlock, 2, p);
+                        const juce::String where = juce::String (rate) + (capture ? " capture" : " preamp");
+                        const bool loaded = capture ? e.loadAmpModelBytes (bytes.getData(), bytes.getSize())
+                                                    : e.loadPreampModelBytes (bytes.getData(), bytes.getSize());
+                        expect (loaded, "model loads at " + where);
+                        const int L = capture ? e.ampLatencySamples() : e.preampLatencySamples();
+                        // Precondition: at the model's own 48 kHz nothing rate-matches; anywhere else it does.
+                        expect (rate == 48000 ? L == 0 : L > 0, "precondition (rate-match) at " + where);
+                        const auto in  = distinctSignal (16000);
+                        const auto out = runEngine (e, p, in, 128);
+                        expectEquals (bestFitDelay (out, in, fitWindow (L)), L, "dry == reported latency at " + where);
+                    }
            #endif
         }
 
@@ -245,10 +327,10 @@ struct PowerAmpRouterAlignTest : juce::UnitTest
                 cab::CabEngine e; e.prepare (sr, prepBlock, 2, p);
                 expect (e.loadAmpModelBytes (bytes.getData(), bytes.getSize()), "capture model loads");
                 const int L = e.ampLatencySamples();
-                expectEquals (L, (int) std::ceil (3.0 * sr / 48000.0) + 3);
+                expect (L > 0, "precondition: the armed capture rate-matches at 96 kHz");
                 const auto in  = distinctSignal (12000);
                 const auto out = runEngine (e, p, in, 128);
-                expectEquals (bestFitDelay (out, in, 24), L,
+                expectEquals (bestFitDelay (out, in, fitWindow (L)), L,
                               "poweramp-OFF dry must be delayed by the armed capture's rate-match latency");
             }
            #endif

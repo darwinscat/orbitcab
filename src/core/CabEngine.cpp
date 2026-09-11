@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 #include "CabEngine.h"
+#include "DryAlignCapacity.h"                       // namDryAlignCapacity — the core's latency bound, asked
 
 #include <juce_audio_basics/juce_audio_basics.h>   // AudioBuffer, Decibels, FloatVectorOperations
 #include <chrono>
@@ -29,9 +30,9 @@ void CabEngine::prepare (double sampleRate, int maxBlock, int numChannels, const
     currentSampleRate = sampleRate;
 
     preamp.prepare (sampleRate, maxBlock);
-    // Dry-alignment for the preamp bypass: 256-sample capacity covers any NAM rate-match latency
-    // (≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin — matches the router.
-    preampBypassAlign.prepare (numChannels, maxBlock, 256);
+    // Dry-alignment for the preamp bypass: a ring as long as the core says any accepted model's
+    // rate-match can be at this host rate (DryAlignCapacity.h) — the same sizing the router's ring asks.
+    preampBypassAlign.prepare (numChannels, maxBlock, namDryAlignCapacity (sampleRate));
     noiseGate.prepare (sampleRate, maxBlock, numChannels);
     noiseGate.seedEnabled (initial.gate.on);   // seed the on/off crossfade from the restored on-state (no fade-in leak)
     ampEq.prepare (sampleRate, maxBlock, numChannels);
@@ -220,7 +221,7 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
     // sits between the stages so its cuts shape what the poweramp distorts. ---
     { const auto a = PerfClock::now();
       // Latency-aligned preamp gate. The preamp has host-rate latency when it rate-matches (0 at
-      // 48 kHz; a handful of samples when resampling). Keep the dry aligned to that PDC EVERY block
+      // 48 kHz; when resampling, the core's number — not restated here). Keep the dry aligned to that PDC EVERY block
       // (warm), so that whether the preamp is ON (its inherent latency) or OFF (dry delayed to the
       // same amount) the plugin's reported latency never changes on the power toggle → no host
       // re-sync gap. advance() reads the raw input first (before preamp.process overwrites it).
@@ -229,7 +230,8 @@ void CabEngine::process (float* const* io, int numChannels, int numSamples,
       // NOISE GATE — PHASE A (DETECTOR): key off the CLEAN post-trim input on the frontCh lane(s), NOW,
       // before preamp.process overwrites pio in place. The per-sample gain curve is stashed and applied
       // after the EQ (phase B). Keying the clean input gives accurate open/close; the preamp's latency
-      // (0 at 48 kHz) between here and the VCA point is a small free lookahead, uncompensated.
+      // between here and the VCA point is a free lookahead, uncompensated — 0 at 48 kHz, elsewhere whatever
+      // the core's rate-match costs (preamp.latencySamples(); about a millisecond since the 64-tap kernel).
       noiseGate.analyse (pio, frontCh, numSamples, p.gate.on, p.gate.thresholdDb);
       if (p.preampOn)
           preamp.process (pio, frontCh, numSamples, /*normalize*/ true);   // frontCh: 1 lane when mono-folded

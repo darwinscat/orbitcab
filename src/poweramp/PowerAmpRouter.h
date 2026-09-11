@@ -31,7 +31,7 @@
 // resumes from stale state — acceptable for a 30 ms fade, revisited if it ever audibly matters.
 //
 // Latency alignment (BOTH modes): the active stage has host-rate latency — the tube's oversampling
-// (~31 samples), or the NAM capture's rate-match (0 at 48 kHz, a handful of samples when resampling).
+// (~31 samples), or the NAM capture's rate-match (0 at 48 kHz; when resampling, the core's number).
 // If the reported PDC changed when the power toggled (0 ↔ stageLatency), the host would re-sync — an
 // audible GAP — and the off↔active crossfade would blend a 0-latency dry against a late wet (comb /
 // level jump). So in a given mode this router reports a CONSTANT latency (= that mode's stage) for

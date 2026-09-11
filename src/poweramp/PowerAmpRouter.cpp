@@ -4,6 +4,7 @@
 #include "PowerAmpRouter.h"
 #include "../core/AmpStage.h"           // full def — render() calls nam.process()
 #include "TubeKernel.h"                 // kTubeVoicings — per-voicing level-match threshold
+#include "../core/DryAlignCapacity.h"   // namDryAlignCapacity — the core's latency bound, asked
 #include <cmath>
 
 namespace cab::poweramp
@@ -12,11 +13,6 @@ namespace cab::poweramp
 namespace
 {
     constexpr double kRampSeconds = 0.03;   // matches CabEngine's other live glides
-    // Dry-alignment ring capacity: covers ANY stage latency (tube oversampling ~31; NAM rate-match
-    // ≈ ceil(3·hostSR/modelSR)+3, ≤ ~27 even at 384 kHz) with wide margin. Fixed so the delay tap
-    // can vary per block (tube ↔ capture) without ever reallocating on the audio thread.
-    constexpr int kAlignRingSamples = 256;
-
 }
 
 void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
@@ -28,7 +24,13 @@ void PowerAmpRouter::prepare (double sampleRate, int maxBlock, int numChannels)
         tube[i].prepare (sampleRate, maxBlock, kOsFactor[i]);
     const int ch = juce::jmax (1, numChannels);
     scratch.setSize (ch, juce::jmax (1, maxBlock), false, false, true);
-    dryAligner.prepare (ch, maxBlock, kAlignRingSamples);
+    // Dry-alignment ring: long enough for EITHER stage the OFF path stands in for — the tube's fixed
+    // oversampling latency, or the longest rate-match the core says an accepted capture can cost at this
+    // host rate (DryAlignCapacity.h). The tube's term stays even while the capture's bound covers it: it keeps
+    // the ring whole if the tube's oversampling filter (kTpp, TubePowerAmp.cpp) ever outgrows that bound.
+    // Sized here, once, so the tap moves per block (tube ↔ capture, a model landing) without the audio thread
+    // ever reallocating.
+    dryAligner.prepare (ch, maxBlock, juce::jmax (tube[0].latencySamples() + 1, cab::namDryAlignCapacity (sampleRate)));
     xfade.reset (sampleRate, kRampSeconds);
     xfade.setCurrentAndTargetValue (1.0f);
     current = fadeFrom = Active::off;
@@ -52,7 +54,9 @@ void PowerAmpRouter::render (Active a, float* const* dst, int numChannels, int n
 {
     switch (a)
     {
-        case Active::capture: nam.process  (dst, numChannels, numSamples, /*normalize*/ true); break;
+        case Active::capture:
+            nam.process (dst, numChannels, numSamples, /*normalize*/ true);
+            break;
         case Active::tube:
             tube[osSel].process (dst, numChannels, numSamples);
             if (tubeMakeup != 1.0f)   // static per-voicing level trim (params-derived; no follower → no kick)
