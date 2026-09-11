@@ -25,9 +25,9 @@ namespace orbitcab
 //
 // This header is the raw FILE layer only: the source list (scan + factory enumeration feed
 // PreampSource rows) and the display entry the manager rows show. WHAT a family of files means —
-// devices, controls, knob positions — is decided by orbitcab::PreampRig (PreampRig.h) on top of
-// namz::rig: `controls`/`settings.*` metadata first, the legacy filename-token grammar (colour/chN
-// channel, NNh gain, "boost") as the fallback for files without metadata.
+// devices, controls, knob positions — is decided by orbitcab::PreampRig (PreampRig.h) through
+// orbitcab::rigpolicy (PreampRigPolicy.h): `controls`/`settings.*` metadata first, the legacy
+// filename-token grammar (colour/chN channel, NNh gain, "boost") as the fallback for files without it.
 //==============================================================================
 
 // One file feeding the device model: the stable id, the filename stem (display fallback + the

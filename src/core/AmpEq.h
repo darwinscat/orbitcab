@@ -5,6 +5,8 @@
 
 #include <teq/EqEngine.h>
 
+#include "Verdict.h"   // expectAccepted — the core's verdict, where it gives one
+
 #include "Params.h"
 
 #include <memory>
@@ -70,7 +72,7 @@ public:
     void prepare (double sampleRate, int /*maxBlock*/, int numChannels)
     {
         if (! eng) eng = std::make_unique<teq::EqEngine>();   // message thread — allocation allowed here
-        eng->prepare (sampleRate, 0, numChannels);
+        cab::expectAccepted ([&] { return eng->prepare (sampleRate, 0, numChannels); });
     }
 
     void reset() noexcept
@@ -94,7 +96,7 @@ public:
         describe (eq, b);                      // same mapping the GUI curve draws
         for (int i = 0; i < kNumBands; ++i) eng->setBand (i, b[i]);
 
-        eng->process (io, numChannels, numSamples);
+        cab::expectAccepted ([&] { return eng->process (io, numChannels, numSamples); });
     }
 
 private:

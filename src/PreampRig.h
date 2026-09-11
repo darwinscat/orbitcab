@@ -4,6 +4,7 @@
 #pragma once
 
 #include "PreampLibrary.h"
+#include "PreampRigPolicy.h"
 
 #include <namz_rig.h>
 
@@ -15,12 +16,12 @@ namespace orbitcab
 
 //==============================================================================
 // orbitcab::PreampRig — the metadata-first PREAMP device model, replacing the filename-parsing
-// PreampSelector. The grouping/selection brains live in namz::rig (namz_rig.h — the player-side
-// twin of the capture conventions in NAMZ-FORMAT.md): files that carry `controls` + `settings.*`
-// metadata in their .namz header become a device with REAL controls (any names, any values —
-// generic switches included), and files without metadata fall back to the legacy filename-token
-// grammar (colour/chN channel, NNh gain, "boost") INSIDE the lib, so every pre-convention library
-// keeps working unchanged.
+// PreampSelector. The grouping/selection POLICY is orbitcab::rigpolicy (PreampRigPolicy.h — OrbitCab's
+// own, brought home from namz v1.1.1 when namz dropped it); namz supplies only the FORMAT (the types and
+// the `controls` spec reader). Files that carry `controls` + `settings.*` metadata in their .namz header
+// become a device with REAL controls (any names, any values — generic switches included), and files
+// without metadata fall back to the legacy filename-token grammar (colour/chN channel, NNh gain, "boost")
+// — the grammar the whole factory set is named in — so every pre-convention library keeps working.
 //
 // This header is the thin juce_core adapter + editor policy around it:
 //   • build()  — feed the merged factory+user file list (with each file's meta, read cheaply via
@@ -30,7 +31,7 @@ namespace orbitcab
 //                only when it offers ≥2 values (the OrbitCab rule); channel values are presented
 //                in colour order (green → orange → blue → red — clean to hi-gain), chN numerically.
 //   • resolveControl() / resolveDevice() — "the user turned ONE control / picked another device";
-//                namz::rig pins the turned control, keeps every other where it is, and falls back
+//                the policy pins the turned control, keeps every other where it is, and falls back
 //                to the closest captured combination. A value no file carries resolves to "" (the
 //                UI simply stays put) — sparse matrices never mis-select a contradicting file.
 //
@@ -86,8 +87,9 @@ struct PreampRig
 
     //--- build ----------------------------------------------------------------
     // Feed the merged factory+user list (factory first — a device's combo section follows its
-    // FIRST file's source, as before). Meta-driven and legacy files group inside namz::rig; the
-    // returned entries carry the device's display family + a per-file variant badge.
+    // FIRST file's source, as before). Meta-driven and legacy files group inside
+    // rigpolicy::buildDevices; the returned entries carry the device's display family + a per-file
+    // variant badge.
     void build (const std::vector<PreampSource>& files)
     {
         entries.clear();
@@ -104,7 +106,7 @@ struct PreampRig
                 m.meta[rigdetail::toStd (k)] = rigdetail::toStd (f.meta[k]);
             fm.push_back (std::move (m));
         }
-        devices = namz::rig::buildDevices (fm);
+        devices = rigpolicy::buildDevices (fm);
 
         // Entries in device order (manager rows group naturally). Name = the device family (first
         // file's base when a token-only legacy pack left it empty); variant = the file's settings
@@ -230,7 +232,7 @@ struct PreampRig
 
     //--- resolution -----------------------------------------------------------
     // The user set `control` to `value`: pin it, keep the rest, closest captured combination wins
-    // (namz::rig policy). "" when the current id is unknown or NO file carries that value (sparse
+    // (rigpolicy::resolve). "" when the current id is unknown or NO file carries that value (sparse
     // matrix) — the caller simply doesn't switch.
     juce::String resolveControl (const juce::String& currentId, const juce::String& control,
                                  const juce::String& value) const
@@ -242,7 +244,7 @@ struct PreampRig
         namz::rig::Settings s;
         const auto sid = rigdetail::toStd (currentId);
         for (const auto& fe : d.files) if (fe.id == sid) { s = fe.settings; break; }
-        const auto* fe = namz::rig::resolve (d, s, rigdetail::toStd (control), rigdetail::toStd (value));
+        const auto* fe = rigpolicy::resolve (d, s, rigdetail::toStd (control), rigdetail::toStd (value));
         return fe != nullptr ? rigdetail::fromStd (fe->id) : juce::String();
     }
 
@@ -276,10 +278,10 @@ struct PreampRig
             return rigdetail::fromStd (exact->id);
         if (! d.controls.empty())
         {
-            // Pin the first control to its desired value and let the lib score the rest.
+            // Pin the first control to its desired value and let the policy score the rest.
             auto s = desired;
             const auto& c0 = d.controls.front();
-            if (const auto* fe = namz::rig::resolve (d, s, c0.name, desired[c0.name]))
+            if (const auto* fe = rigpolicy::resolve (d, s, c0.name, desired[c0.name]))
                 return rigdetail::fromStd (fe->id);
         }
         return rigdetail::fromStd (d.files.front().id);   // sparse edge: never "picked but nothing loads"
@@ -294,7 +296,7 @@ private:
 
     // Per-control default when landing on a device: channels take the PRESENTATION-first value
     // (lowest colour rank — green before an alphabetically-earlier "blue"), everything else the
-    // lib's default (noon-most gain, falsy boost, first value).
+    // policy's default (noon-most gain, falsy boost, first value).
     static juce::String defaultForControl (const namz::rig::Control& c)
     {
         if (c.role == namz::rig::Role::Channel && ! c.values.empty())
@@ -312,7 +314,7 @@ private:
             }
             return best;
         }
-        return rigdetail::fromStd (namz::rig::defaultValue (c));
+        return rigdetail::fromStd (rigpolicy::defaultValue (c));
     }
 
     // "Green · 12h · boost" — the file's position in control order. Boost contributes only when

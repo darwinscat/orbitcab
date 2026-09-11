@@ -77,7 +77,7 @@ FetchContent_MakeAvailable(clap-juce-extensions)
 # HYBRID: a sibling ../felitronics-core checkout if present (core co-development), else the pinned
 # public release is fetched — so a clean clone / CI is self-contained. In THIRD_PARTY_NOTICES.md.
 # ----------------------------------------------------------------------------
-set(ORBITCAB_FCORE_TAG "v0.13.1" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
+set(ORBITCAB_FCORE_TAG "v0.30.0" CACHE STRING "felitronics-core release tag (fetched when no local checkout)")
 set(ORBITCAB_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH "Local felitronics-core checkout (used if present); else the pinned release is fetched")
 if(ORBITCAB_FCORE_DIR AND EXISTS "${ORBITCAB_FCORE_DIR}/CMakeLists.txt")
     message(STATUS "felitronics-core: local checkout — ${ORBITCAB_FCORE_DIR}")
@@ -731,7 +731,8 @@ target_sources(OrbitCab_Tests PRIVATE
     # (cab::NoiseGate unit tests moved to felitronics-core modules/dynamics — the gate math lives there now;
     #  OrbitCab keeps only the CabEngine END-TO-END gate + leveler-hold integration tests, in CabEngineTests.)
     tests/PowerampLibraryTests.cpp # orbitcab::PowerampLibrary — filename → mode/tubes parse + scan
-    tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via namz::rig (legacy fallback, ≥2-rule, resolve)
+    tests/PreampRigTests.cpp       # orbitcab::PreampRig — metadata-first devices via orbitcab::rigpolicy (legacy fallback, ≥2-rule, resolve)
+    tests/PreampRigGoldenTests.cpp # orbitcab::PreampRig — EVERY answer vs tests/golden/preamp-rig.txt (the shipped model, byte-for-byte)
     tests/RigPackTests.cpp         # orbitcab::readRigPack — .orbitrig zip/folder reader (zip-slip, size cap, manifest)
     tests/RigConformanceTests.cpp  # READER duty vs namz's golden .orbitrig pack (conformance/rig) — the shared contract
     tests/WaveformMathTests.cpp

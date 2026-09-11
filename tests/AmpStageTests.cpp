@@ -8,8 +8,10 @@
 
 #include "core/StreamResampler.h"
 #include "core/AmpStage.h"
+#include "core/Verdict.h"   // verdictOf — the core's verdict where it gives one (v0.30.0), a plain call where it does not
 
 #include <cmath>
+#include <type_traits>
 #include <vector>
 
 using namespace cab;
@@ -41,6 +43,20 @@ namespace
     float peak (const std::vector<float>& v)
     { float p = 0; for (float x : v) p = std::max (p, std::fabs (x)); return p; }
 
+    // Distinct-per-sample noise (a pure LCG, reproducible): no value repeats within the window, so a delay is
+    // identified UNIQUELY — a periodic fixture accepts any delay a whole number of periods away from the true one.
+    std::vector<float> noise (int n, float amp = 0.5f)
+    {
+        std::vector<float> v ((size_t) n);
+        juce::uint32 s = 0x1234567u;
+        for (int i = 0; i < n; ++i)
+        {
+            s = s * 1664525u + 1013904223u;
+            v[(size_t) i] = amp * (float) ((double) s / 4294967296.0 * 2.0 - 1.0);
+        }
+        return v;
+    }
+
     std::vector<float> sine (int n, double rate, double f, float amp = 0.5f)
     {
         std::vector<float> v ((size_t) n);
@@ -55,15 +71,38 @@ struct AmpStageTest : juce::UnitTest
 
     void runTest() override
     {
-        beginTest ("resampler identity at ratio 1 (clean 2-sample delay)");
+        beginTest ("resampler identity at ratio 1 (a clean delay; its length is the kernel's)");
         {
-            auto in = sine (4000, 48000.0, 600.0);
+            auto in = noise (4000);
             auto out = runResampler (48000.0, 48000.0, in, 512);
             expect (! anyBad (out));
-            int matched = 0, checked = 0;
-            for (size_t k = 2; k + 2 < out.size() && k < in.size() && k < 2000; ++k, ++checked)
-                if (std::abs (out[k] - in[k - 2]) < 1.0e-4f) ++matched;          // catmull@t=0 → 2-sample delay
-            expect (checked > 1000 && matched > checked - 4);
+            // The LAW is this test's: at ratio 1 the resampler is a clean delay and nothing else. HOW LONG belongs
+            // to the kernel — 2 samples for the cubic of felitronics-core v0.13.1, its half-length 32 for the 64-tap
+            // sinc since v0.30.0 — and v0.13.1 cannot be asked, so the delay is FOUND: the one delay under which the
+            // output is the input. Noise makes it unique (a 600 Hz sine matched at the true delay AND every 80
+            // samples after it, so a resampler 80 samples late passed).
+            const auto cleanAt = [&] (int d)
+            {
+                int matched = 0, checked = 0;
+                for (size_t k = (size_t) d; k + 2 < out.size() && k < in.size() && k < 2000 + (size_t) d; ++k, ++checked)
+                    if (std::abs (out[k] - in[k - (size_t) d]) < 1.0e-4f) ++matched;
+                return checked > 1000 && matched > checked - 4;
+            };
+            int D = -1;
+            for (int d = 0; d <= 256 && D < 0; ++d)               // up to a 512-tap kernel's half-length
+                if (cleanAt (d)) D = d;
+            expect (D >= 0, "at ratio 1 the resampler must be a clean delay");
+            // Where the core publishes its geometry, the delay found must BE the one it states.
+            const auto published = [] (auto* tag) -> double
+            {
+                using R = std::remove_pointer_t<decltype (tag)>;
+                if constexpr (requires { R::delayInputSamples (48000.0, 48000.0); })
+                    return R::delayInputSamples (48000.0, 48000.0);
+                else
+                    return -1.0;                                  // core v0.13.1 publishes nothing to ask
+            };
+            if (const double g = published ((StreamResampler*) nullptr); g >= 0.0)
+                expectEquals ((double) D, g, "the clean delay is the one the core publishes");
         }
 
         beginTest ("upsample 44100 -> 48000 (no NaN, level kept, count ~ ratio)");
@@ -101,7 +140,7 @@ struct AmpStageTest : juce::UnitTest
             auto L = sine (512, 48000.0, 220.0, 0.3f), R = L;
             const auto L0 = L, R0 = R;
             float* io[2] = { L.data(), R.data() };
-            amp.process (io, 2, 512, true);
+            expect (cab::verdictOf ([&] { return amp.process (io, 2, 512, true); }));
             expect (L == L0 && R == R0);          // no model loaded → signal untouched
             expect (amp.latencySamples() == 0);
         }
@@ -127,7 +166,7 @@ struct AmpStageTest : juce::UnitTest
                     auto b = sine (512, 48000.0, 330.0, 0.4f);   // ch1 SENTINEL (a NAM would visibly alter it)
                     const auto a0 = a, b0 = b;
                     float* io[2] = { a.data(), b.data() };
-                    amp.process (io, 1, 512, /*normalize*/ true);
+                    expect (cab::verdictOf ([&] { return amp.process (io, 1, 512, /*normalize*/ true); }));
                     expect (b == b0, "mono (numChannels=1) wrote ch1 — a 2nd NAM ran; the ½-CPU contract is broken");
                     expect (a != a0, "mono lane did not process ch0 — the model is not running");
                 }
@@ -136,7 +175,7 @@ struct AmpStageTest : juce::UnitTest
                     auto b = sine (512, 48000.0, 330.0, 0.4f);
                     const auto b0 = b;
                     float* io[2] = { a.data(), b.data() };
-                    amp.process (io, 2, 512, /*normalize*/ true);
+                    expect (cab::verdictOf ([&] { return amp.process (io, 2, 512, /*normalize*/ true); }));
                     expect (b != b0, "stereo (numChannels=2) must process ch1 via the 2nd instance");
                 }
             }
@@ -187,7 +226,7 @@ struct AmpStageTest : juce::UnitTest
                 // models and lands the deferred intent — the LAST command was clearModel().
                 auto x = sine (512, 48000.0, 220.0, 0.3f);
                 float* io1[1] = { x.data() };
-                amp.process (io1, 1, 512, true);
+                expect (cab::verdictOf ([&] { return amp.process (io1, 1, 512, true); }));
                 expect (amp.collectGarbage(), "the drain tick REPORTS the landed clear (PDC re-report signal)");
                 expect (! amp.hasModel(), "after the drain the deferred clear has landed (last command wins)");
                 expect (std::abs (amp.modelSampleRate()) < 1.0e-9 && ! amp.modelHasLoudness(),
@@ -209,7 +248,7 @@ struct AmpStageTest : juce::UnitTest
 
                 const auto in = sine (512, 48000.0, 220.0, 0.3f);
                 auto run = [&] { auto b = in; float* io[1] = { b.data() };
-                                 amp2.process (io, 1, 512, true); return b; };
+                                 expect (cab::verdictOf ([&] { return amp2.process (io, 1, 512, true); })); return b; };
                 (void) run();                     // warm the trim-0 model…
                 const float r1 = rms (run());     // …then measure it
                 expect (amp2.collectGarbage(),    // audio has advanced → the drain lands the -20 dB load
@@ -243,7 +282,7 @@ struct AmpStageTest : juce::UnitTest
 
                 auto y = sine (512, 96000.0, 220.0, 0.3f);       // audio resumes for one block
                 float* io3[1] = { y.data() };
-                amp3.process (io3, 1, 512, true);
+                expect (cab::verdictOf ([&] { return amp3.process (io3, 1, 512, true); }));
                 expect (amp3.collectGarbage(),
                         "the drain tick REPORTS the landed clear so the host re-reports PDC");
                 expect (! amp3.hasModel() && amp3.latencySamples() == 0,

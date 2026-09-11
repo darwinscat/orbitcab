@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko <oleh@darwinscat.com> & Alisa Lafoks <alisa@darwinscat.com>. Part of OrbitCab — see LICENSE.
 
 // Headless unit tests for orbitcab::PreampRig — the metadata-first PREAMP device model over
-// namz::rig (replacing the old PreampLibrary parse + PreampSelector policy; their scenarios are
+// orbitcab::rigpolicy (replacing the old PreampLibrary parse + PreampSelector policy; their scenarios are
 // ported here against the SAME library shapes). Covers: the legacy filename-token fallback, the
 // `controls`/`settings.*` metadata path (generic switches included), rig_id grouping, the ≥2
 // visibility rule, keep-else-default resolution, colour-ranked channel presentation, sparse-matrix
@@ -137,12 +137,18 @@ struct PreampRigTest : juce::UnitTest
                          src ("GtrVolt-orange-12h"),
                          src ("GtrVolt-green-16h") });
             auto v = rig.viewFor ("up:GtrVolt-green-12h");
+            int channels = 0;
             for (const auto& cv : v.controls)
                 if (cv.name == "channel")
                 {
+                    ++channels;
                     expect (cv.values.size() == 3);
                     expect (cv.values[0] == "green" && cv.values[1] == "orange" && cv.values[2] == "blue");
                 }
+            // Precondition: the checks above run INSIDE a loop over the device's controls — on a model that
+            // grew no controls they pass by never running (they did, on namz v4, before the policy came home).
+            expect (rig.devices.size() == 1 && v.group && channels == 1,
+                    "precondition: the grammar made ONE device with a channel control");
             // …and the device-switch default channel follows that rank (green, NOT alphabetical blue).
             const int di = rig.deviceIndexForId ("up:GtrVolt-green-12h");
             expect (rig.resolveDevice ("", di) == "up:GtrVolt-green-12h");
@@ -158,11 +164,18 @@ struct PreampRigTest : juce::UnitTest
 
         beginTest ("legacy grammar edges: whole-word tokens only; ch5/Boosted/Channel stay in the name");
         {
+            // A positive control IN THE SAME LIBRARY: "Reactor ch1/ch2" must form one device with a channel switch.
+            // Without it, "none of the others parse" below holds for the wrong reason — nothing parsing at all.
             PreampRig rig;
-            rig.build ({ src ("ch5 amp"), src ("Channel Two"), src ("Boosted"), src ("Reactor X1") });
-            expect (rig.devices.size() == 4);   // none of these parse as control tokens → 4 singletons
+            rig.build ({ src ("ch5 amp"), src ("Channel Two"), src ("Boosted"), src ("Reactor X1"),
+                         src ("Reactor ch1"), src ("Reactor ch2") });
+            expect (rig.devices.size() == 5);   // the four edge names stand alone; Reactor ch1/ch2 is one device
+            const auto* reactor = deviceNamed (rig, "Reactor");
+            expect (reactor != nullptr && reactor->controls.size() == 1 && reactor->controls.front().name == "channel",
+                    "precondition: the grammar is live (Reactor ch1/ch2 -> one device with a channel switch)");
             for (const auto& e : rig.entries)
-                expect (e.variant.isEmpty());   // and none grew a bogus position badge
+                if (! e.id.startsWith ("up:Reactor ch"))
+                    expect (e.variant.isEmpty());   // and none of the edge names grew a bogus position badge
         }
 
         beginTest ("metadata path: opaque filenames, controls spec verbatim, generic switch works");

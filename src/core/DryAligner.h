@@ -24,8 +24,9 @@ namespace cab
 class DryAligner
 {
 public:
-    // `capacity` must exceed any latency the tap will ever request (the delay is clamped to
-    // [0, capacity-1]). Size it to the largest stage latency plus margin.
+    // `capacity` must exceed any latency the tap will ever request — the delay is clamped to
+    // [0, capacity-1], SILENTLY. For a NAM stage ask the core (namDryAlignCapacity, DryAlignCapacity.h);
+    // never size it from a restated formula.
     void prepare (int numChannels, int maxBlock, int capacity)
     {
         const int ch = juce::jmax (1, numChannels);

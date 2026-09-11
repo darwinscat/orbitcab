@@ -908,8 +908,9 @@ std::vector<orbitcab::PreampSource> OrbitCabAudioProcessor::preampSources() cons
 orbitcab::PreampRig OrbitCabAudioProcessor::preampRig() const
 {
     // The device model: each file's .namz display metadata (controls/settings.*/rig_id/gear_*) is
-    // read cheaply from its header — user .nam files (raw imports) carry none and fall back to the
-    // legacy filename grammar inside namz::rig. Message thread; called on library rebuilds only.
+    // read cheaply from its header. Files that carry no `controls` — raw .nam imports, and the whole
+    // factory set, which is named in the grammar — fall back to the legacy filename grammar in
+    // orbitcab::rigpolicy (PreampRigPolicy.h). Message thread; called on library rebuilds only.
     auto sources = preampSources();
     for (auto& s : sources)
     {
