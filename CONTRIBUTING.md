@@ -33,6 +33,12 @@ are not copyrightable — only their expression is — so a well-described probl
 implemented here freely. You get the fix you wanted, with credit, and the project keeps its
 options open.
 
+Describe it in prose, though — **please do not paste code into the issue**. A pasted patch brings
+the same copyright question in through the side door, and code that has been read cannot be
+unread: someone who has seen your implementation can no longer write that part independently. The
+problem, the approach and the behaviour you expect are what is useful here, and none of that needs
+a diff.
+
 ## What this policy does NOT do
 
 It takes away none of the freedoms the AGPL grants you. You may use OrbitCab, study it, modify
